@@ -1,0 +1,17 @@
+{
+  "name": "gilbyy",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Gilbyy: a website of small apps under one roof, navigated through an Overcooked-style map. See docs/vision.md.",
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "lint": "pnpm --filter web lint",
+    "typecheck": "pnpm --filter web typecheck",
+    "test": "pnpm --filter web test"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
