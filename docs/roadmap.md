@@ -2,7 +2,7 @@
 
 End-to-end path from "empty repo with design docs" to "gilbyy.com live with multiple levels." Update the **You are here** marker as you progress.
 
-> **You are here:** Phase 2 complete (2026-04-30, smoke test passed end-to-end). Supabase Auth wired with magic-link only; site is gated via `src/proxy.ts`. Login at `/`, interactive map at `/map`, hub-click logout all verified working. Latest checkpoint: `docs/sessions/2026-04-30-supabase-auth-gate.md`. Next: **Phase 3 — first public deploy on Vercel**. Still outstanding: Google OAuth (deferred from Phase 2), CI workflow at `.github/workflows/ci.yml`, Vitest setup in `apps/web` — none of these block Phase 3.
+> **You are here:** Phase 3 complete (2026-04-30, production smoke test passed). Live at https://gilbyy-web.vercel.app — auth-gated, magic-link sign-in, map renders, hub-click logout all working in production. Stable URL + a wildcard for preview deploys (`https://gilbyy-*-nevin-gilbert-s-projects.vercel.app/**`) are in Supabase's redirect allowlist. Next: **Phase 4 — wire gilbyy.com to this deployment** (requires buying the domain — recommend Cloudflare Registrar). Still outstanding: Google OAuth (Phase 2 deferral), CI workflow, Vitest setup — none block Phase 4 or 5.
 
 > **First-level priority:** Meals (changed from Bets, 2026-04-30).
 
