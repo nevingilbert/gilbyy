@@ -28,6 +28,12 @@ The home page is a top-down map with a central hub. Each level is a node connect
 
 The map should be designed assuming new levels will be added. Adding a level means: write a level doc, scaffold a route group, add a node to the map.
 
+## The home spot is the auth gate
+
+The site is gated end-to-end. gilbyy.com itself loads a login screen; the map only renders for authenticated users. The home spot in the center of the map represents authentication semantically — it's the player's driveway. Entering it from inside the map prompts to log out. This makes the "home spot" double as the entrance and exit of the experience and gives the auth flow a place in the metaphor instead of being a generic modal.
+
+Public website, gated content. SEO and link previews can describe the project; everything past the front door is private to logged-in users.
+
 ## Initial levels
 
 - **Bets** (`/bets`) — party prop-bet platform with freeform stakes. See `levels/bets.md`.

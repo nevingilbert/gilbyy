@@ -51,16 +51,26 @@ Packages start empty. Don't create one until two places need the same thing.
 
 ## Auth
 
-Supabase Auth, magic-link email by default. The gilbyy account is the same across levels. Per-level "membership" or "role" data lives in the level's own schema (e.g., `bets.party_members` for who's the host of a given party).
+The site is **gated end-to-end**. The landing at gilbyy.com is a login screen; the map and every level only render for authenticated users. The home spot at the center of the map is the auth gate semantically — see `vision.md`.
 
-**Auth options that are free** and that levels can choose between:
+Implementation: Supabase Auth (magic-link email as the default flow) plus a Next.js middleware that checks the session on every route and redirects to `/` (login) when missing. Per-level "membership" or "role" data lives in the level's own schema (e.g., `bets.party_members` for who's the host of a given party) — that's relational, not authentication.
 
-- **Magic-link email** (Supabase Auth default) — most secure, requires user to have email handy.
-- **Anonymous-with-handle** — Supabase supports anonymous sign-in. User picks a display name, gets a real auth row, can later upgrade to a full account. Best for low-friction party flows like Bets.
-- **OAuth providers** (Google, GitHub, Discord) — free at Supabase's tier, requires per-provider OAuth app setup.
-- **Self-hosted SMS gateway** (Android phone running an SMS-relay app) — works, fragile, only worth doing if a level really needs phone-number identity. Not the default.
+### Login methods enabled
 
-Each level chooses its login method based on what fits the product. This decision is documented in the level's doc.
+We enable two providers at the login screen, both free at Supabase's tier:
+
+- **Magic-link email** (Supabase Auth default) — fallback for users who prefer not to use OAuth.
+- **Google OAuth** — one-click sign-up, removes friction for first-time users. Requires a one-time setup in Google Cloud Console (create OAuth Client ID, add Supabase's callback URL, paste credentials into Supabase Auth → Providers → Google).
+
+Add **Discord OAuth** later when Karts is on the table — fits gaming friend groups. Same pattern, ~10 minutes to wire up.
+
+All providers feed into the same `auth.users` table, same session, same RLS. Multi-provider has no extra cost or complexity beyond the per-provider OAuth setup.
+
+### What we explicitly are not doing
+
+- **No anonymous-with-handle anywhere.** All gilbyy users are full accounts. This decision was reached after considering a narrow middleware exception for Bets party-joins; see `docs/decisions/0002-bets-full-accounts.md`. The simplification cascades into cleaner RLS, simpler persistence (close-and-return-later just works), and one less security boundary.
+- **No SMS auth.** The original SMS-OTP idea is shelved. OAuth covers the "I don't want to type my email" case.
+- **No middleware exemptions for product flows.** Every route past `/` requires a session. The login page is the only public route.
 
 ## Database design
 

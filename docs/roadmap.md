@@ -2,41 +2,49 @@
 
 End-to-end path from "empty repo with design docs" to "gilbyy.com live with multiple levels." Update the **You are here** marker as you progress.
 
-> **You are here:** between Phase 0 and Phase 1.
+> **You are here:** Phase 2 complete (2026-04-30, smoke test passed end-to-end). Supabase Auth wired with magic-link only; site is gated via `src/proxy.ts`. Login at `/`, interactive map at `/map`, hub-click logout all verified working. Latest checkpoint: `docs/sessions/2026-04-30-supabase-auth-gate.md`. Next: **Phase 3 — first public deploy on Vercel**. Still outstanding: Google OAuth (deferred from Phase 2), CI workflow at `.github/workflows/ci.yml`, Vitest setup in `apps/web` — none of these block Phase 3.
+
+> **First-level priority:** Meals (changed from Bets, 2026-04-30).
 
 ## Phase 0 — Push the skeleton to GitHub
 
 Run `git init`, make the first commit, create a public repo at [github.com/new](https://github.com/new) (or via `gh repo create gilbyy --public --source=. --remote=origin --push`). No external services yet.
 
-## Phase 1 — Get the Next.js app running locally
+## Phase 1 — Local Next.js scaffold
 
-Open Claude Code (`claude` in the `gilbyy` folder). First thing it should do is read the latest file in `docs/sessions/`. Then have Claude run `pnpm dlx create-next-app` against `apps/web`, scaffold the route groups (`(marketing)`, `(bets)`, `(meals)`, `(karts)`), and build the Overcooked map landing in `(marketing)/page.tsx`. Smoke-test with `pnpm dev`. End each session with `/checkpoint`.
+Open Claude Code (`claude` in the `gilbyy` folder). First thing it should do is read the latest file in `docs/sessions/`. Then have Claude run `pnpm dlx create-next-app` against `apps/web`, scaffold the route groups (`(marketing)`, `(bets)`, `(meals)`, `(karts)`), and stub a placeholder Overcooked map landing in `(marketing)/page.tsx`. Smoke-test with `pnpm dev`. End each session with `/checkpoint`.
 
-No accounts in this phase. Pure local dev. Roughly one week of casual sessions.
+No external accounts yet. Pure local dev. Roughly one week of casual sessions.
 
-## Phase 2 — First public deploy
+## Phase 2 — Supabase + the auth gate
 
-Create a Vercel account (free, sign in with GitHub, no credit card). Import the `gilbyy` repo. Vercel auto-detects Next.js; in ~90 seconds you have a live URL like `gilbyy-abc123.vercel.app`. Every PR from this point on gets its own preview URL automatically.
+Because the map itself is gated, we set up Supabase Auth before the map is "real."
 
-Still no database, still no auth. The map landing is publicly browsable.
-
-## Phase 3 — Wire up gilbyy.com
-
-Buy the domain. **Cloudflare Registrar** is the cheapest place — at-cost pricing, ~$10/year for `.com` with no markup. In Vercel: Settings → Domains → Add `gilbyy.com`. Vercel shows you DNS records to set at your registrar (an A record and a CNAME for `www`). Propagation takes well under an hour. `https://gilbyy.com` now points at your map.
-
-## Phase 4 — First level MVP
-
-Pick one level. Bets is the most fleshed-out and the most fun demo; Meals is the simplest "prove the stack" candidate. Update the level doc with anything that's evolved since the design phase. Open a **fresh** Claude Code session scoped only to that level — narrow scope is what survives Pro token limits. Work through the MVP cut listed in the level's doc. Multiple sessions, each ending with `/checkpoint`.
-
-## Phase 5 — Database + auth
-
-Trigger: the first time Phase 4 needs to persist anything. Create a Supabase account (free, sign in with GitHub). Create one project named `gilbyy`. You'll get three credentials:
+Create a Supabase account (free, sign in with GitHub). Create one project named `gilbyy`. You'll get three credentials:
 
 - Project URL — public, goes in env.
 - `anon` key — public, safe in the browser, RLS enforces access.
 - `service_role` key — server-only, never in the repo, only in Vercel env vars.
 
-Put all three in Vercel env vars and in a local `.env.local` (gitignored). Run the level's first migration via the Supabase CLI. Wire up auth (anonymous-with-handle for Bets, magic-link for Meals/Karts). Generate TypeScript types from the schema. From here, each new level adds one schema and a migration.
+Put all three in a local `.env.local` (gitignored). Wire up Supabase Auth with magic-link email. Add a Next.js middleware that requires a session on every route except the public landing, and redirects to `/` when missing. Build the login screen at `/`. Behind the gate, build the actual interactive map (home spot in the middle, three roads, three placeholder level entry points). Returning to the home spot prompts a logout confirmation.
+
+By the end of Phase 2, an authenticated user lands on a login screen, signs in, sees the map, can drive between empty levels, and can log out by re-entering the home spot.
+
+## Phase 3 — First public deploy
+
+Create a Vercel account (free, sign in with GitHub, no credit card). Import the `gilbyy` repo. Add the Supabase env vars to the Vercel project. Vercel auto-detects Next.js; in ~90 seconds you have a live URL like `gilbyy-abc123.vercel.app` with the gated map working in production. Every PR from this point on gets its own preview URL automatically.
+
+## Phase 4 — Wire up gilbyy.com
+
+Buy the domain. **Cloudflare Registrar** is the cheapest place — at-cost pricing, ~$10/year for `.com` with no markup. In Vercel: Settings → Domains → Add `gilbyy.com`. Vercel shows you DNS records to set at your registrar (an A record and a CNAME for `www`). Propagation takes well under an hour. `https://gilbyy.com` now points at your gated map.
+
+Don't forget to add `https://gilbyy.com` to the Supabase Auth "Site URL" and redirect-allowlist so magic-link callbacks work.
+
+## Phase 5 — Meals MVP
+
+Meals is the first level (priority confirmed 2026-04-30 — short-term real-life need).
+
+Update `docs/levels/meals.md` with anything that's evolved since the design phase. Open a **fresh** Claude Code session scoped only to Meals. Run the level's first migration in `apps/web/app/(meals)/migrations/0001_init.sql`. Generate TS types. Build through the MVP cut: JSON upload, USDA macro lookup with `user_foods` fallback, per-meal/per-day macro report, interactive grocery list. Multiple sessions, each ending with `/checkpoint`.
 
 ## Phase 6 — Free monitoring and AI review
 
@@ -65,7 +73,8 @@ Same loop, faster the second time around: update the level doc → scaffold the 
 Casual pace, a few sessions per week:
 
 - Phase 1: ~1 week
-- Phases 2 + 3 combined: ~1 evening
-- Phases 4 + 5 (one full level shipped end-to-end): ~2–4 weeks
+- Phase 2 (Supabase + auth gate + interactive map): ~1 week
+- Phases 3 + 4 combined (deploy + domain): ~1 evening
+- Phase 5 (Meals MVP shipped end-to-end): ~2–4 weeks
 - Phase 6: ~1 evening
 - Each additional level: ~1–2 weeks (faster because the stack is proven)

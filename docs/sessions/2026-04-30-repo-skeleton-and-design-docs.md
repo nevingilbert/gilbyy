@@ -39,6 +39,17 @@ First working session. Set up the gilbyy monorepo skeleton and wrote design docs
 ## Resolved later in this session
 
 - **Public vs. private GitHub repo →** Public. Documented in `docs/decisions/0001-public-repo.md`.
+- **First level to ship →** Meals (was Bets). Real-life need for the macro validator. `docs/levels/meals.md` annotated, roadmap Phase 5 updated.
+- **Auth model →** Site is gated end-to-end via Supabase magic-link + Next.js middleware. The map's home spot is the auth gate semantically (login from outside, logout from inside). Updated `docs/vision.md`, `docs/architecture.md`, `docs/roadmap.md` (re-phased so auth lands in Phase 2, before deploy). Bets level now has an open question on whether to keep frictionless party joining via a middleware exception, or require all guests to have full gilbyy accounts.
+
+## Newly open questions (not blocking immediate next step)
+
+(none — all questions raised this session were resolved.)
+
+## Also resolved later in this session
+
+- **Bets party joining →** Full gilbyy accounts for everyone. No anonymous-with-handle, no middleware exception. Documented in `docs/decisions/0002-bets-full-accounts.md`. `levels/bets.md` updated.
+- **Auth providers →** Magic-link email + Google OAuth at minimum, both at the login screen. Discord OAuth queued for Karts. Documented in `docs/architecture.md`.
 
 ## Exact next step
 

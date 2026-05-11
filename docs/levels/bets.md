@@ -26,14 +26,21 @@ Side states: **Cancelled** (creator cancels before accept), **Expired** (timer r
 
 ## Auth approach
 
-Guest auth needs to be very low-friction (parties are short, friction kills adoption) but still uniquely identify each user so leaderboards and bet ownership work. Free options on the table:
+All party participants — host and guests alike — are full gilbyy accounts. No anonymous path. This was a deliberate decision; see `docs/decisions/0002-bets-full-accounts.md`.
 
-- **Anonymous-with-handle (Supabase anonymous sign-in)** — guest types a display name, gets a real auth row, can pick a side and own bets. *Recommended for MVP.* Zero email/SMS needed. Upgrade path to a real account exists if we want it later.
-- **Magic-link email** — more secure but slows down the join flow.
-- **OAuth (Google / Discord)** — fast for users who are already signed in to those, free at Supabase's tier.
-- **Self-hosted Android SMS gateway** — only worth the operational pain if we explicitly want phone-number identity. Not the default.
+The first-time UX is "Sign in with Google" → one click → arrive at the map → enter the party code. Returning users just log back in and their party state is restored from the server (parties they're members of, bets they created, bets they accepted, comments they posted).
 
-Decision for MVP: anonymous-with-handle. Hosts can configure stricter auth per-party in a future iteration.
+Persistence falls out for free: every row in the Bets schema is foreign-keyed to `auth.users`. Closing the tab loses nothing; reopening + logging in restores everything via `bets.party_members.user_id = auth.uid()`.
+
+### Joining a party
+
+1. Host creates the party. Gets a short code and a QR.
+2. Guest scans QR or visits `gilbyy.com/bets/join/[code]`.
+3. If not logged in: gated to the login screen, signs in (Google or magic-link), redirected back to the join URL.
+4. Server inserts a `bets.party_members` row for that user + party.
+5. Guest lands inside the party, ready to create or accept bets.
+
+The join URL is *not* exempt from the auth gate — the gate redirects through it cleanly. This is the standard pattern and avoids the security complexity of an exempted route.
 
 ## Big-screen dashboard
 
@@ -78,13 +85,14 @@ Trending score = recent comments + recent views + recency, computed in a server 
 The smallest version that's actually fun:
 
 1. Host creates party, gets a code + QR.
-2. Guests join with a display name (anonymous-with-handle).
+2. Guests sign in (Google or magic-link), join party via QR or `/bets/join/[code]`. Display name comes from their gilbyy profile.
 3. Create / accept / resolve / complete a bet.
 4. Live feed of bets, sorted recent-first.
 5. TV dashboard route.
-6. No comments, no trending, no expiration timers, no mixed odds, no open markets, no notifications.
+6. Returning users see their party state restored after re-login.
+7. No comments, no trending, no expiration timers, no mixed odds, no open markets, no notifications.
 
-Should fit into one weekend.
+Should fit into one weekend after Meals is shipped (Bets builds on the auth and patterns proven by Meals).
 
 ## Open questions
 
