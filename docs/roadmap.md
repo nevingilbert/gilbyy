@@ -2,7 +2,7 @@
 
 End-to-end path from "empty repo with design docs" to "gilbyy.com live with multiple levels." Update the **You are here** marker as you progress.
 
-> **You are here:** Phase 3 complete (2026-04-30, production smoke test passed). Live at https://gilbyy-web.vercel.app — auth-gated, magic-link sign-in, map renders, hub-click logout all working in production. Stable URL + a wildcard for preview deploys (`https://gilbyy-*-nevin-gilbert-s-projects.vercel.app/**`) are in Supabase's redirect allowlist. Next: **Phase 4 — wire gilbyy.com to this deployment** (requires buying the domain — recommend Cloudflare Registrar). Still outstanding: Google OAuth (Phase 2 deferral), CI workflow, Vitest setup — none block Phase 4 or 5.
+> **You are here:** Phase 5 in progress (2026-05-10). Meals schema migration applied to live Supabase (project ref `dcxqaooehisluvdjniyb`): 10 tables in `meals.*`, 40 RLS policies, 4 indexes, `meals.is_plan_member` helper function. Migration at `apps/web/src/app/(meals)/migrations/0001_init.sql` (512 lines). Phases 0–3 + CI/Vitest all shipped previously. Next Phase 5 step: generate TS types from the live schema, then build the AI prompt generator UI at `/meals/plans/new/generate`. Phase 4 (gilbyy.com domain) still queued. Still outstanding: Google OAuth.
 
 > **First-level priority:** Meals (changed from Bets, 2026-04-30).
 
