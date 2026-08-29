@@ -6,91 +6,99 @@ This document captures the technical decisions and the constraints that drove th
 
 - **Frontend & SSR:** Next.js (App Router) + TypeScript.
 - **Styling:** Tailwind CSS.
-- **Auth:** Supabase Auth (email magic links by default; anonymous-with-handle as a per-level override). All free.
-- **Database:** Supabase Postgres with Row Level Security on every table. One project, schema-per-level (`bets.*`, `meals.*`, `karts.*`).
-- **Realtime:** Supabase Realtime (WebSockets), used by Bets and possibly Karts.
-- **Object storage:** Supabase Storage (e.g., Karts screenshots, optional photo evidence in Bets).
-- **Hosting:** Vercel free tier (Hobby).
-- **Domain:** gilbyy.com — the only paid line item.
+- **Hosting:** Vercel free tier (Hobby), one project per app.
+- **Domain:** gilbyy.com — the only paid line item. The landing page is the apex;
+  each level gets a subdomain.
 - **CI:** GitHub Actions (free tier).
 
-This stack is chosen specifically because every piece has a free tier that covers a hobby project, and because the pieces compose into one mental model (Postgres + Next.js + RLS) instead of three.
+This repo builds **gilbyy.com itself** — the landing page. It has no database of its
+own and no levels in it. Each level is a separate repo with its own stack; go read that
+repo's docs, not this file.
 
-## Why monorepo, why one Next.js app
+This stack is chosen specifically because every piece has a free tier that covers a
+hobby project.
 
-Multi-repo and one-deployment-per-level adds operational cost (separate CI, separate envs, cross-origin auth, separate dashboards) that a solo dev does not need. A single Next.js app with route groups is the smallest setup that keeps levels isolated:
+## Why separate apps, not one app with route groups
 
-```
-apps/web/app/
-  (marketing)/page.tsx     — the Overcooked map (home)
-  (bets)/...
-  (meals)/...
-  (karts)/...
-  api/.../route.ts         — server endpoints, also grouped by level
-```
+This reverses the original decision. See `decisions/0003-levels-as-standalone-apps.md`
+for the full reasoning and the costs.
 
-If a level ever needs its own runtime (e.g., a long-lived listener process), promote it to `apps/<name>` then.
+Short version: all three levels were built as standalone repos with their own Vercel
+projects and their own backends, while the route groups in this repo never got past
+"coming soon" stubs. The docs were describing a plan that reality had already
+overtaken, so the docs changed rather than the reality.
+
+The trade we accepted: independent deploys and independent schemas, at the price of
+losing a single shared login. There is no one gilbyy account.
 
 ## Repository layout
 
 ```
 gilbyy/
 ├── apps/
-│   └── web/                  # the Next.js app
-├── packages/
-│   ├── auth/                 # supabase client + RLS helpers (when shared)
-│   ├── ui/                   # shared components / theme tokens
-│   ├── db/                   # supabase types, generated from schema
-│   └── config/               # eslint, tsconfig, tailwind preset
+│   └── web/                  # the landing page (Next.js)
+├── packages/                 # shared code, still empty
 ├── docs/                     # design docs (this folder)
 ├── .claude/                  # slash commands and project Claude setup
 └── pnpm-workspace.yaml
 ```
 
-Packages start empty. Don't create one until two places need the same thing.
+Packages start empty. Don't create one until two places need the same thing — and note
+that with levels in their own repos, "two places" now means two directories inside
+*this* repo, which is a high bar. A shared UI kit across levels would have to be a
+published package, and that is not worth it at this scale.
+
+Levels are **not** in this repo:
+
+| Level | Subdomain | Repo | Backend |
+| --- | --- | --- | --- |
+| Bets | `bets.gilbyy.com` | `nevingilbert/friendlybets` | Supabase `ickmpbuxgzxznalzjbdz` |
+| Meals | `meals.gilbyy.com` | `nevingilbert/wellness-planner` | Supabase `xtlmhsapegfmafbpzdoz` |
+| Karts | `karts.gilbyy.com` | `nevingilbert/beeriokart-dashboard` | plain Postgres |
 
 ## Auth
 
-The site is **gated end-to-end**. The landing at gilbyy.com is a login screen; the map and every level only render for authenticated users. The home spot at the center of the map is the auth gate semantically — see `vision.md`.
+**gilbyy.com is public.** The landing page is a driving game; there is nothing behind
+it to protect, because the levels live elsewhere. Anyone can load it.
 
-Implementation: Supabase Auth (magic-link email as the default flow) plus a Next.js middleware that checks the session on every route and redirects to `/` (login) when missing. Per-level "membership" or "role" data lives in the level's own schema (e.g., `bets.party_members` for who's the host of a given party) — that's relational, not authentication.
+Each level handles its own authentication, on its own terms, against its own backend.
+They do not share a session — see the known gap in `vision.md`.
 
-### Login methods enabled
+The magic-link login, the `/map` gate, the middleware and the Supabase client are all
+**gone** (removed 2026-08-28). There is no `@supabase/ssr` dependency, no middleware,
+and no server-rendered route — the landing page is a single static page at `/`.
 
-We enable two providers at the login screen, both free at Supabase's tier:
-
-- **Magic-link email** (Supabase Auth default) — fallback for users who prefer not to use OAuth.
-- **Google OAuth** — one-click sign-up, removes friction for first-time users. Requires a one-time setup in Google Cloud Console (create OAuth Client ID, add Supabase's callback URL, paste credentials into Supabase Auth → Providers → Google).
-
-Add **Discord OAuth** later when Karts is on the table — fits gaming friend groups. Same pattern, ~10 minutes to wire up.
-
-All providers feed into the same `auth.users` table, same session, same RLS. Multi-provider has no extra cost or complexity beyond the per-provider OAuth setup.
-
-### What we explicitly are not doing
-
-- **No anonymous-with-handle anywhere.** All gilbyy users are full accounts. This decision was reached after considering a narrow middleware exception for Bets party-joins; see `docs/decisions/0002-bets-full-accounts.md`. The simplification cascades into cleaner RLS, simpler persistence (close-and-return-later just works), and one less security boundary.
-- **No SMS auth.** The original SMS-OTP idea is shelved. OAuth covers the "I don't want to type my email" case.
-- **No middleware exemptions for product flows.** Every route past `/` requires a session. The login page is the only public route.
+Do not reintroduce auth here. If a level needs a login, it belongs in that level's repo.
 
 ## Database design
 
-One Supabase project. Inside it:
+This repo has no database. Each level owns its own outright.
 
-- `auth.*` — managed by Supabase, holds users.
-- `public.*` — only for cross-level metadata (e.g., a `users_profile` table joining `auth.users` with display name, avatar). Keep tiny.
-- `bets.*`, `meals.*`, `karts.*` — one schema per level, fully owned by that level.
-
-Every table has RLS on. Default policy is "deny," then add per-table policies that allow what each level actually needs. Schema-per-level lets us reason about each level's data in isolation and makes it harder to accidentally couple them.
-
-Migrations live next to the level: `apps/web/app/(bets)/migrations/0001_init.sql`. Run with the Supabase CLI.
+The original design called for one Supabase project with `bets.*`, `meals.*` and
+`karts.*` schemas sharing `auth.users`. That project (`dcxqaooehisluvdjniyb`) held only
+the retired Meals schema and is to be deleted from the Supabase dashboard.
 
 ## Hosting and deploys
 
-Vercel Hobby plan: 100 GB bandwidth, 100 GB-hr serverless function execution / month. Plenty for this.
+Vercel Hobby, **one project per app**:
 
-Production deploys from `main`. Preview deploys from every PR (free). Environment variables stored in Vercel project settings; nothing real in the repo.
+| Vercel project | Repo | Domain |
+| --- | --- | --- |
+| `gilbyy-web` | `gilbyy` | `gilbyy.com`, `www.gilbyy.com` |
+| `friendlybets` | `friendlybets` | `bets.gilbyy.com` |
+| `wellness-planner` | `wellness-planner` | `meals.gilbyy.com` |
+| `beeriokart-dashboard` | `beeriokart-dashboard` | `karts.gilbyy.com` |
+| `times-tables` | `times-tables` | `times.gilbyy.com` |
 
-If we outgrow Vercel free, Cloudflare Pages is the fallback (Workers free tier is 100k requests/day).
+Subdomains need no code changes — no `basePath`, no rewrites. Point gilbyy.com's
+nameservers at Vercel (or buy the domain through Vercel), then add the hostname in each
+project's Settings → Domains and the DNS is written automatically. If DNS stays
+elsewhere, each subdomain is a `CNAME` to `cname.vercel-dns.com`.
+
+Production deploys from `main`. Preview deploys from every PR (free). Environment
+variables live in Vercel project settings; nothing real in the repo.
+
+If we outgrow Vercel free, Cloudflare Pages is the fallback.
 
 ## CI
 
@@ -102,25 +110,29 @@ CodeRabbit free tier handles AI PR review (their quota, not ours). Sentry free f
 
 ## What requires API spend (deferred)
 
-- Anthropic API for autonomous agents (Telegram-controlled feature requests, AI generating code in CI, scheduled AI jobs). The codebase is designed so adding this later is config-only — every level exposes a clean server contract.
-- OpenAI / Anthropic vision APIs for OCR. Karts may try Cloudflare Workers AI free vision instead.
+- Anthropic API for autonomous agents (Telegram-controlled feature requests, AI
+  generating code in CI, scheduled AI jobs).
 - Twilio or any commercial SMS provider.
+
+Anything level-specific (vision APIs for Karts' OCR, USDA lookups for Meals) is now
+that repo's problem, not this one's.
 
 ## Free-tier limits to watch
 
-- **Supabase free:** 500 MB DB, 1 GB storage, 50k MAU. Project pauses after 1 week of inactivity (revivable in one click). Touch the project at least weekly.
+- **Supabase free:** 500 MB DB, 1 GB storage, 50k MAU per project, and **a cap on how
+  many free projects one org may have** — a reason not to spin up a Supabase project
+  per level without thinking. Projects pause after 1 week of inactivity (revivable in
+  one click). This repo has no Supabase project; the limits apply per level repo.
 - **Vercel Hobby:** 100 GB bandwidth/month, 100 GB-hr serverless. Realistic for hobby; watch images.
-- **Supabase Realtime:** 200 concurrent connections, 2M messages/month. Fine for parties under 50 guests.
 - **Sentry free:** 5k errors/month.
 - **GitHub Actions:** 2k minutes/month on private; unlimited on public.
 - **CodeRabbit:** unlimited reviews on public repos; limited on private.
-- **USDA FoodData Central:** 1k requests/hour per key — never an issue at hobby scale.
-- **Cloudflare Workers AI:** generous free request quota for vision models, subject to which models stay on the free plan over time.
 
 ## How to add a new level
 
-1. Write `docs/levels/<name>.md` first. Don't skip this.
-2. Create the route group: `apps/web/app/(<name>)/page.tsx` and friends.
-3. Create the schema: `apps/web/app/(<name>)/migrations/0001_init.sql` with RLS policies.
-4. Add a node to the map in `apps/web/app/(marketing)/page.tsx`.
-5. Add `apps/web/app/(<name>)/CLAUDE.md` only if there are quirks worth pinning.
+1. Create a **new repo** for it. It is its own app, not a folder in this one.
+2. Build it, with whatever stack suits it. It does not have to match this one.
+3. Deploy it as its own Vercel project.
+4. Add `<name>.gilbyy.com` in that project's Settings → Domains.
+5. Add it as a destination in the landing page's map/game.
+6. Add a row to the tables in this file and in `vision.md`.

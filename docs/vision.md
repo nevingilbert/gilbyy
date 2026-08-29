@@ -1,16 +1,25 @@
 # Vision
 
-Gilbyy is a website at gilbyy.com that hosts a growing collection of small apps under a single playful roof. Instead of a typical landing page, the home page is an Overcooked-inspired map: a hub in the center, paths branching off to individual "levels," each level being a fully working app of its own (a betting platform, a meal planner, a Mario Kart dashboard, etc.).
+Gilbyy is a website at gilbyy.com that gathers a growing collection of small apps under
+a single playful roof. Instead of a typical landing page, the home page is a game: a
+rudimentary cartoon open-world driving game where you drive around a small map and each
+destination takes you into a real, working app of its own (a betting platform, a meal
+planner, a Mario Kart dashboard).
 
 ## Why this shape
 
 Three reasons.
 
-First, it lets one person ship many small ideas without each idea needing its own brand, domain, and hosting. They all live at gilbyy.com, share auth, share visual identity, and benefit from each other's traffic.
+First, it lets one person ship many small ideas without each idea needing its own brand
+and its own front door. They all live under gilbyy.com and benefit from each other's
+traffic.
 
-Second, the Overcooked metaphor turns the home page into something worth looking at on its own. The "browse the map" interaction is a feature, not just a router. New levels showing up over time gives the site a sense of life.
+Second, the driving game turns the home page into something worth looking at on its
+own. "Drive around and find the apps" is a feature, not just a router. New destinations
+showing up over time gives the site a sense of life.
 
-Third, it's a forcing function for clean architecture. If every idea has to fit into the "level" abstraction, then I have to keep them isolated, which means I can iterate on any one without the others breaking.
+Third, it keeps the apps honest about being independent. Each one has to stand alone,
+because each one literally is a separate deployment.
 
 ## What counts as a level
 
@@ -18,31 +27,45 @@ A level is a small, independently usable app. It must:
 
 - Stand on its own (a stranger could use it without context from another level).
 - Have a single, clear purpose statable in one sentence.
-- Be reachable from a path off the map.
+- Be reachable as a destination in the driving game.
 
-Levels do not need to share data. They share auth (one gilbyy account works everywhere) and UI primitives, but their schemas, jobs, and product surfaces are theirs alone.
+Levels do not share data, schemas, or deployments. What they share is a domain and a
+visual identity.
 
-## Map shape
+## How levels are hosted
 
-The home page is a top-down map with a central hub. Each level is a node connected to the hub by a road. Sub-paths along a road can house related sub-features (`bets/screen`, `bets/leaderboard`) so the road metaphor extends past the entry point.
+Each level is **its own repo and its own Vercel project**, served from a subdomain:
 
-The map should be designed assuming new levels will be added. Adding a level means: write a level doc, scaffold a route group, add a node to the map.
+| Level | Subdomain | Repo |
+| --- | --- | --- |
+| Bets | `bets.gilbyy.com` | `nevingilbert/friendlybets` |
+| Meals | `meals.gilbyy.com` | `nevingilbert/wellness-planner` |
+| Karts | `karts.gilbyy.com` | `nevingilbert/beeriokart-dashboard` |
 
-## The home spot is the auth gate
+This repo builds gilbyy.com itself and nothing else. See
+`decisions/0003-levels-as-standalone-apps.md` for why this changed, and what it cost.
 
-The site is gated end-to-end. gilbyy.com itself loads a login screen; the map only renders for authenticated users. The home spot in the center of the map represents authentication semantically — it's the player's driveway. Entering it from inside the map prompts to log out. This makes the "home spot" double as the entrance and exit of the experience and gives the auth flow a place in the metaphor instead of being a generic modal.
+## The landing page is public
 
-Public website, gated content. SEO and link previews can describe the project; everything past the front door is private to logged-in users.
+gilbyy.com is a public front door. Anyone can land on it and drive around. Gating
+happens inside each level, on its own terms — wellness-planner has a private allowlist,
+friendlybets has full accounts, and they do not have to agree with each other.
 
-## Initial levels
+This is a reversal of the original design, in which gilbyy.com was a login screen and
+the map only rendered for authenticated users. A driving game nobody can see until they
+sign up is a worse front door than one they can play with immediately.
 
-- **Bets** (`/bets`) — party prop-bet platform with freeform stakes. See `levels/bets.md`.
-- **Meals** (`/meals`) — JSON meal-plan validator with macro lookup, grocery list, and leftover calculator. See `levels/meals.md`.
-- **Karts** (`/karts`) — Mario Kart score dashboard with image-import sessions across friend groups. See `levels/karts.md`.
+## Known gap: there is no single gilbyy account
+
+Each level authenticates separately against its own backend. Signing into Meals does
+not sign you into Bets. This is a real cost of the split and it is not solved; see the
+consequences section of `decisions/0003-levels-as-standalone-apps.md` for what
+unifying it would actually take.
 
 ## Out of scope (for now)
 
 - Mobile apps. Everything is mobile-web.
 - Cross-level features (combined leaderboard, single feed, etc.).
+- Single sign-on across levels.
 - Payment / monetization.
 - Anything that isn't free to run, with the gilbyy.com domain as the sole paid line item.
