@@ -85,11 +85,39 @@ when it is a Cloudflare toggle.
 
 ### Afterwards
 
-Certificates issue automatically within a few minutes of the records resolving.
+Certificates issue automatically within a few minutes of the records resolving. All six
+hostnames were live and serving the right app within ~10 minutes on 2026-08-28.
 
-Then, in **friendlybets'** and **wellness-planner's** own Supabase projects, add the new
-subdomain to Auth → URL Configuration (Site URL + redirect allowlist). Until that is
-done, magic links keep sending people back to the old `.vercel.app` addresses.
+**Each app's own auth has to be repointed — and how depends on which auth it uses.**
+This bit the migration, so it is worth stating plainly:
+
+| App | Auth | What the domain change breaks |
+| --- | --- | --- |
+| bets (friendlybets) | Supabase | Nothing at Google. Only the Supabase redirect allowlist. |
+| meals (wellness-planner) | Supabase | Same. |
+| karts (beeriokart-dashboard) | Auth.js / NextAuth | Google OAuth breaks. |
+| times (times-tables) | Auth.js / NextAuth | Google OAuth breaks. |
+
+**Supabase apps are unaffected at Google.** Google redirects back to
+`https://<ref>.supabase.co/auth/v1/callback` — the Supabase host, which does not change.
+Only the last hop (Supabase → your app) uses the new domain, and that is governed by
+Auth → URL Configuration. Set Site URL to the new subdomain and add
+`https://<sub>.gilbyy.com/**` to the redirect allowlist. Use `**`, not `*`: a single
+star does not match across path separators, so `/auth/callback` would be rejected.
+
+**Auth.js apps break at Google**, because their callback lives on their *own* domain:
+`https://<sub>.gilbyy.com/api/auth/callback/google`. Google rejects any `redirect_uri`
+not on its registered list, giving `Error 400: redirect_uri_mismatch`. Two things to fix:
+
+1. Google Cloud Console → APIs & Services → Credentials → the OAuth 2.0 Client ID →
+   **Authorized redirect URIs** → add the new callback. Keep the old `.vercel.app` one
+   so preview deployments still work.
+2. The **`AUTH_URL`** env var on the Vercel project, which still points at the old
+   `.vercel.app` host. Auth.js builds the callback it sends to Google from `AUTH_URL`,
+   so fixing Google alone is not enough. Both apps set `trustHost: true`, so the
+   cleanest fix is to **delete `AUTH_URL`** — Auth.js then infers the host from the
+   request, which works on the custom domain *and* on preview deployments. Setting it
+   to the new domain also works but pins it.
 
 Every project has Vercel SSO protection set to `all_except_custom_domains`, so all the
 `.vercel.app` URLs bounce strangers to a Vercel login. Custom domains are exempt, so each
