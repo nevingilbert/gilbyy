@@ -11,8 +11,12 @@ export type Level = {
 
 /**
  * Each level is its own app on its own Vercel project, not a route in this app.
- * Swap these to https://<name>.gilbyy.com once the domain is live and the
- * subdomains are attached in each project's Vercel settings.
+ *
+ * These .vercel.app URLs are a placeholder and are NOT publicly reachable: every
+ * project has Vercel SSO set to `all_except_custom_domains`, so a stranger clicking
+ * through hits a Vercel login wall. That setting exempts custom domains, so the fix
+ * is simply to attach the real ones — swap these to https://<name>.gilbyy.com once
+ * the domain is live and the subdomains are added in each project's Vercel settings.
  */
 export const LEVELS: Level[] = [
   { id: "bets", label: "Bets", emoji: "🎲", href: "https://friendlybets.vercel.app", x: 1560, y: 380, color: "#2563eb" },

@@ -61,6 +61,12 @@ Then, in each Vercel project, Settings → Domains:
 
 No code changes are needed for any of this.
 
+This is also what makes the levels publicly reachable at all. Every project has Vercel
+SSO protection set to `all_except_custom_domains`, so the `.vercel.app` URLs the game
+currently links to bounce strangers to a Vercel login. Attaching a custom domain is
+exempt from that protection, so the links start working for everyone the moment the
+subdomains are live — no setting needs changing.
+
 Afterwards, in each level's own Supabase project, add its new subdomain to the Auth
 **Site URL** and redirect allowlist, or magic-link callbacks will bounce to the old
 `.vercel.app` URL.
