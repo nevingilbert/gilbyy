@@ -14,7 +14,8 @@ subdomains." Update the **You are here** marker as you progress.
 > "DNS only", never proxied — then keep improving the game (Phase C).
 >
 > Phase A is complete: the Supabase project is deleted and the stale env vars are off
-> the Vercel project.
+> the Vercel project. Phase B is complete: all six hostnames are live on gilbyy.com and
+> Google sign-in works on all four apps.
 
 ## History (done)
 
@@ -105,7 +106,8 @@ Auth → URL Configuration. Set Site URL to the new subdomain and add
 `https://<sub>.gilbyy.com/**` to the redirect allowlist. Use `**`, not `*`: a single
 star does not match across path separators, so `/auth/callback` would be rejected.
 
-**Auth.js apps break at Google**, because their callback lives on their *own* domain:
+**Auth.js apps break at Google** (both were fixed on 2026-08-28), because their callback
+lives on their *own* domain:
 `https://<sub>.gilbyy.com/api/auth/callback/google`. Google rejects any `redirect_uri`
 not on its registered list, giving `Error 400: redirect_uri_mismatch`. Two things to fix:
 
@@ -118,6 +120,12 @@ not on its registered list, giving `Error 400: redirect_uri_mismatch`. Two thing
    cleanest fix is to **delete `AUTH_URL`** — Auth.js then infers the host from the
    request, which works on the custom domain *and* on preview deployments. Setting it
    to the new domain also works but pins it.
+
+To check the fix without clicking through a sign-in, `GET /api/auth/providers` on the
+app returns the callback URL Auth.js is actually generating — if that still says
+`.vercel.app`, the env change has not taken effect. Following the sign-in redirect one
+hop further shows the `redirect_uri` Google receives; Google answers a good one with a
+302 to `accounts.google.com/v3/signin/identifier` and a bad one with a 400 error page.
 
 Every project has Vercel SSO protection set to `all_except_custom_domains`, so all the
 `.vercel.app` URLs bounce strangers to a Vercel login. Custom domains are exempt, so each
