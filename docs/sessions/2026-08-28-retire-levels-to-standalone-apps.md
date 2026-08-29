@@ -116,8 +116,30 @@ Verified: `build`, `typecheck`, `lint`, `test` (6) all pass. Drove it in the bro
 speed climbed 10 → 44 km/h over successive frames, the car tracked along the road and
 the minimap dot followed.
 
+## Art direction pinned down
+
+Recorded the visual target so it stops being tacit: **a lightweight version of _Over the
+Hill_**, the indie driving game — its palette and calm, explicitly not its 3D terrain or
+scope. Written as `docs/art-direction.md`, and pointed at from `CLAUDE.md` (in the
+"what this project is" section a fresh session reads first), `vision.md` and
+`roadmap.md`.
+
+Backed it with a first palette pass, since a brief that the code ignores is worthless:
+
+- Added `src/app/palette.ts` — every colour in one place, so nobody scatters hex
+  literals through render code again.
+- Moved off saturated greens and primary colours: sage/olive grass, dirt tracks instead
+  of asphalt, weathered house tones, slate water, a warm-but-not-neon car.
+- Softened the grass mottling to translucent, near-value patches — the first attempt at
+  it read as camouflage.
+- Quietened the HUD to low-contrast bone-white, and added a soft vignette for depth.
+
+The doc is honest that this is closer, not close: lighting is still flat, there is no
+haze or depth falloff, silhouettes are still geometric, and nothing moves but the car.
+Those are listed as the named gaps.
+
 ## Next step
 
 Phase B in `docs/roadmap.md`: buy gilbyy.com and attach the subdomains. Or Phase C —
-collision is the biggest thing missing from the game; you currently drive straight
-through houses and trees.
+collision is the biggest functional gap (you drive straight through houses and trees),
+and lighting/haze is the biggest gap against the Over the Hill look.

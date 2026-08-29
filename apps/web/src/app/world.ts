@@ -1,3 +1,5 @@
+import { PALETTE } from "./palette";
+
 export const WORLD = { w: 3200, h: 2400 };
 export const START = { x: 600, y: 1250 };
 
@@ -16,7 +18,6 @@ export const ROADS: Road[] = [
   { x1: 2600, y1: 300, x2: 2600, y2: 2200, width: 96 },
 ];
 
-const HOUSE_COLORS = ["#b45309", "#0f766e", "#7c2d12", "#4338ca", "#9d174d", "#3f6212"];
 
 export function distToSegment(px: number, py: number, r: Road) {
   const dx = r.x2 - r.x1;
@@ -60,7 +61,7 @@ export function buildWorld() {
       (b) => x < b.x + b.w + 50 && x + w + 50 > b.x && y < b.y + b.h + 50 && y + h + 50 > b.y
     );
     if (overlaps) continue;
-    buildings.push({ x, y, w, h, color: HOUSE_COLORS[Math.floor(rand() * HOUSE_COLORS.length)] });
+    buildings.push({ x, y, w, h, color: PALETTE.houses[Math.floor(rand() * PALETTE.houses.length)] });
   }
 
   const trees: Tree[] = [];

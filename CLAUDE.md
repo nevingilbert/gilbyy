@@ -12,6 +12,12 @@ It is not a hub, a menu, or a launcher, and it **must not link to any other app*
 been misunderstood repeatedly, so treat it as a hard constraint rather than a
 preference.
 
+**The look and feel to aim for is a lightweight version of _Over the Hill_**, the indie
+driving game: muted naturalistic palette, calm and unhurried, a very quiet HUD,
+atmosphere over detail. Read `docs/art-direction.md` before changing anything visual —
+it covers what we borrow from it and what we deliberately don't (we are 2D, and staying
+2D).
+
 `friendlybets`, `wellness-planner` and `beeriokart-dashboard` are separate repos that
 happen to share the gilbyy.com domain via subdomains. If a request is about one of those
 apps, you are in the wrong repo.
@@ -19,11 +25,12 @@ apps, you are in the wrong repo.
 ## Layout
 
 - `apps/web/` — the Next.js app. The game is `src/app/world.ts` (data),
-  `src/app/physics.ts` (pure `step()`, unit-tested) and `src/app/Game.tsx` (canvas,
-  input, render loop).
+  `src/app/physics.ts` (pure `step()`, unit-tested), `src/app/palette.ts` (every colour,
+  in one place) and `src/app/Game.tsx` (canvas, input, render loop).
 - `packages/` — empty. Add a package only when two directories *in this repo* need the same thing, which is now a high bar.
 - `docs/` — design docs.
   - `vision.md` — the why
+  - `art-direction.md` — **the visual brief: a lightweight Over the Hill. Read before any visual change.**
   - `roadmap.md` — phased plan from skeleton to live site, with a "you are here" marker
   - `architecture.md` — the how (stack, hosting, subdomains, deploy, free-tier rules)
   - `decisions/` — short ADRs for non-obvious choices ("why X over Y")
@@ -62,7 +69,9 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't add a paid service without explicit confirmation.
 - Don't add links, menus, or navigation to the other apps. gilbyy.com is a game, not a launcher.
 - Don't add auth or a database. There is nothing here to protect and nothing to persist.
-- Don't reach for a game engine or a 3D library. It is plain 2D canvas, and staying dependency-free is part of the point.
+- Don't reach for a game engine or a 3D library. It is plain 2D canvas, and staying dependency-free is part of the point — "like Over the Hill" means its palette and mood, not its geometry.
+- Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
+- Don't add timers, scores or achievements. The game is meant to be calm; see `docs/art-direction.md`.
 - Don't run autonomous agents that hit the Anthropic API without confirming first — currently we're staying in interactive Claude Code sessions only.
 
 ## Sessions and the token budget

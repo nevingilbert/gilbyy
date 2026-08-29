@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { noInput, step, MAX_SPEED, type Car, type Input } from "./physics";
+import { PALETTE } from "./palette";
 import { buildWorld, ROADS, START, WORLD } from "./world";
 
 /** Paints the static town once, so each frame is just a blit plus the car. */
@@ -12,14 +13,14 @@ function paintWorld(): HTMLCanvasElement {
   c.height = WORLD.h;
   const g = c.getContext("2d")!;
 
-  g.fillStyle = "#2f6b34";
+  g.fillStyle = PALETTE.grass;
   g.fillRect(0, 0, WORLD.w, WORLD.h);
 
   // Grass mottling, deterministic and cheap — just breaks up the flat fill.
   let seed = 7;
   const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
-  g.fillStyle = "#35773a";
-  for (let i = 0; i < 700; i++) {
+  for (let i = 0; i < 900; i++) {
+    g.fillStyle = i % 2 ? PALETTE.grassPatchLight : PALETTE.grassPatchDark;
     const x = rand() * WORLD.w;
     const y = rand() * WORLD.h;
     g.beginPath();
@@ -28,18 +29,18 @@ function paintWorld(): HTMLCanvasElement {
   }
 
   for (const p of ponds) {
-    g.fillStyle = "#1d4ed8";
+    g.fillStyle = PALETTE.waterDeep;
     g.beginPath();
     g.ellipse(p.x, p.y, p.rx, p.ry, 0, 0, Math.PI * 2);
     g.fill();
-    g.fillStyle = "#3b82f6";
+    g.fillStyle = PALETTE.waterShallow;
     g.beginPath();
     g.ellipse(p.x, p.y - 6, p.rx * 0.82, p.ry * 0.78, 0, 0, Math.PI * 2);
     g.fill();
   }
 
   for (const r of ROADS) {
-    g.strokeStyle = "#3f3f46";
+    g.strokeStyle = PALETTE.roadEdge;
     g.lineWidth = r.width;
     g.lineCap = "round";
     g.beginPath();
@@ -47,19 +48,19 @@ function paintWorld(): HTMLCanvasElement {
     g.lineTo(r.x2, r.y2);
     g.stroke();
 
-    g.strokeStyle = "#52525b";
+    g.strokeStyle = PALETTE.roadFill;
     g.lineWidth = r.width - 14;
     g.stroke();
 
-    g.strokeStyle = "#fbbf24";
-    g.lineWidth = 5;
-    g.setLineDash([34, 28]);
+    g.strokeStyle = PALETTE.roadCentre;
+    g.lineWidth = 4;
+    g.setLineDash([30, 34]);
     g.stroke();
     g.setLineDash([]);
   }
 
   for (const b of buildings) {
-    g.fillStyle = "rgba(0,0,0,0.22)";
+    g.fillStyle = PALETTE.shadow;
     g.beginPath();
     g.roundRect(b.x + 10, b.y + 12, b.w, b.h, 8);
     g.fill();
@@ -69,23 +70,23 @@ function paintWorld(): HTMLCanvasElement {
     g.roundRect(b.x, b.y, b.w, b.h, 8);
     g.fill();
 
-    g.fillStyle = "rgba(255,255,255,0.14)";
+    g.fillStyle = PALETTE.houseRoofHighlight;
     g.beginPath();
     g.roundRect(b.x + 12, b.y + 12, b.w - 24, b.h - 24, 5);
     g.fill();
   }
 
   for (const t of trees) {
-    g.fillStyle = "rgba(0,0,0,0.25)";
+    g.fillStyle = PALETTE.shadow;
     g.beginPath();
     g.ellipse(t.x + 7, t.y + 9, t.r, t.r * 0.8, 0, 0, Math.PI * 2);
     g.fill();
 
-    g.fillStyle = "#166534";
+    g.fillStyle = PALETTE.treeBody;
     g.beginPath();
     g.arc(t.x, t.y, t.r, 0, Math.PI * 2);
     g.fill();
-    g.fillStyle = "#22803f";
+    g.fillStyle = PALETTE.treeHighlight;
     g.beginPath();
     g.arc(t.x - t.r * 0.25, t.y - t.r * 0.28, t.r * 0.62, 0, Math.PI * 2);
     g.fill();
@@ -99,31 +100,31 @@ function drawCar(g: CanvasRenderingContext2D, car: Car) {
   g.translate(car.x, car.y);
   g.rotate(car.angle);
 
-  g.fillStyle = "rgba(0,0,0,0.3)";
+  g.fillStyle = PALETTE.carShadow;
   g.beginPath();
   g.ellipse(3, 6, 26, 15, 0, 0, Math.PI * 2);
   g.fill();
 
-  g.fillStyle = "#18181b";
+  g.fillStyle = PALETTE.tyre;
   for (const [wx, wy] of [[-13, -15], [13, -15], [-13, 15], [13, 15]] as const) {
     g.beginPath();
     g.roundRect(wx - 7, wy - 4, 14, 8, 2);
     g.fill();
   }
 
-  g.fillStyle = "#facc15";
-  g.strokeStyle = "#1c1917";
+  g.fillStyle = PALETTE.carBody;
+  g.strokeStyle = PALETTE.carOutline;
   g.lineWidth = 2.5;
   g.beginPath();
   g.roundRect(-24, -14, 48, 28, 8);
   g.fill();
   g.stroke();
 
-  g.fillStyle = "#0c4a6e";
+  g.fillStyle = PALETTE.carWindow;
   g.beginPath();
   g.roundRect(2, -10, 12, 20, 3);
   g.fill();
-  g.fillStyle = "rgba(255,255,255,0.5)";
+  g.fillStyle = PALETTE.carTrim;
   g.beginPath();
   g.roundRect(-13, -9, 7, 18, 3);
   g.fill();
@@ -137,15 +138,15 @@ function drawHud(g: CanvasRenderingContext2D, car: Car, vw: number) {
   const mh = mw * (WORLD.h / WORLD.w);
   const mx = vw - mw - 18;
   const my = 18;
-  g.fillStyle = "rgba(9,26,14,0.72)";
-  g.strokeStyle = "rgba(251,191,36,0.55)";
+  g.fillStyle = PALETTE.hudPanel;
+  g.strokeStyle = PALETTE.hudBorder;
   g.lineWidth = 2;
   g.beginPath();
   g.roundRect(mx, my, mw, mh, 8);
   g.fill();
   g.stroke();
 
-  g.strokeStyle = "rgba(251,191,36,0.3)";
+  g.strokeStyle = PALETTE.hudLine;
   g.lineWidth = 2;
   for (const r of ROADS) {
     g.beginPath();
@@ -154,7 +155,7 @@ function drawHud(g: CanvasRenderingContext2D, car: Car, vw: number) {
     g.stroke();
   }
 
-  g.fillStyle = "#facc15";
+  g.fillStyle = PALETTE.hudMarker;
   g.beginPath();
   g.arc(mx + (car.x / WORLD.w) * mw, my + (car.y / WORLD.h) * mh, 3.5, 0, Math.PI * 2);
   g.fill();
@@ -164,11 +165,11 @@ function drawHud(g: CanvasRenderingContext2D, car: Car, vw: number) {
   const baseline = my + mh + 34;
   g.textAlign = "right";
   g.font = "600 13px ui-sans-serif, system-ui";
-  g.fillStyle = "rgba(167,243,208,0.75)";
+  g.fillStyle = PALETTE.hudDim;
   g.fillText("KM/H", vw - 18, baseline);
   const unitWidth = g.measureText("KM/H").width;
   g.font = "600 34px ui-sans-serif, system-ui";
-  g.fillStyle = "rgba(251,191,36,0.95)";
+  g.fillStyle = PALETTE.hudText;
   g.fillText(String(kph), vw - 22 - unitWidth, baseline);
 }
 
@@ -225,7 +226,7 @@ export function Game() {
       const camX = Math.max(0, Math.min(WORLD.w - vw, car.x - vw / 2));
       const camY = Math.max(0, Math.min(WORLD.h - vh, car.y - vh / 2));
 
-      ctx.fillStyle = "#2f6b34";
+      ctx.fillStyle = PALETTE.grass;
       ctx.fillRect(0, 0, vw, vh);
       ctx.drawImage(world, camX, camY, vw, vh, 0, 0, vw, vh);
 
@@ -233,6 +234,15 @@ export function Game() {
       ctx.translate(-camX, -camY);
       drawCar(ctx, car);
       ctx.restore();
+
+      const vignette = ctx.createRadialGradient(
+        vw / 2, vh / 2, Math.min(vw, vh) * 0.34,
+        vw / 2, vh / 2, Math.max(vw, vh) * 0.78
+      );
+      vignette.addColorStop(0, "rgba(0,0,0,0)");
+      vignette.addColorStop(1, "rgba(38,32,24,0.34)");
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, vw, vh);
 
       drawHud(ctx, car, vw);
       raf = requestAnimationFrame(frame);
@@ -257,15 +267,15 @@ export function Game() {
   });
 
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-[#2f6b34]">
+    <div className="relative h-[100dvh] w-full overflow-hidden bg-[#7a8b5c]">
       <canvas ref={canvasRef} className="block h-full w-full touch-none" />
 
-      <h1 className="pointer-events-none absolute left-5 top-4 text-2xl font-bold tracking-tight text-amber-300 drop-shadow-lg">
+      <h1 className="pointer-events-none absolute left-5 top-4 text-2xl font-semibold tracking-tight text-[#efe6d2]/80 drop-shadow">
         gilbyy
       </h1>
 
       <p
-        className={`pointer-events-none absolute inset-x-0 bottom-28 text-center text-sm text-amber-100/90 drop-shadow transition-opacity duration-700 ${
+        className={`pointer-events-none absolute inset-x-0 bottom-28 text-center text-sm text-[#efe6d2]/70 drop-shadow transition-opacity duration-700 ${
           showHint ? "opacity-100" : "opacity-0"
         }`}
       >
@@ -293,7 +303,7 @@ function TouchButton({ label, ...handlers }: { label: string } & React.Component
       {...handlers}
       aria-hidden
       tabIndex={-1}
-      className="h-16 w-16 touch-none rounded-full border border-emerald-300/30 bg-emerald-950/60 text-xl text-amber-300 backdrop-blur select-none"
+      className="h-16 w-16 touch-none rounded-full border border-[#e2d5b8]/25 bg-[#2e2c24]/55 text-xl text-[#e0bd6e] backdrop-blur select-none"
     >
       {label}
     </button>

@@ -81,7 +81,12 @@ trees and ponds, a car with arcade handling, a following camera, a minimap and a
 Touch controls under `sm`. The static world is painted once to an offscreen canvas, so
 each frame is a blit plus the car.
 
+The visual target is a lightweight take on _Over the Hill_ — see `art-direction.md`,
+which is the standing brief for anything visual. A first palette pass (2026-08-28) moved
+off the initial saturated greens and primaries to muted earth tones and added a vignette.
+
 - `src/world.ts` — world data and the deterministic generator.
+- `src/palette.ts` — every colour, in one place. Tune here, not in render code.
 - `src/physics.ts` — pure `step()`, unit-tested in `physics.test.ts`.
 - `src/Game.tsx` — canvas, input, render loop, HUD.
 
@@ -89,9 +94,13 @@ Not done, roughly in order of how much they'd add:
 
 - Collision with buildings and trees. Right now you drive through everything, which is
   the single biggest thing making the world feel fake.
+- Atmosphere, which is where the Over the Hill feel actually lives: directional light
+  instead of flat fills, haze/depth falloff, softer and less geometric silhouettes, and
+  some ambient motion. `art-direction.md` lists the specific gaps.
 - Tyre marks, dust, an engine note.
-- More to look at — a coastline, hills, level crossings, traffic.
-- Something to do — a delivery, a time trial, something to collect.
+- More to look at — a coastline, hills, level crossings.
+- Something to do, as long as it stays calm — a delivery, a scenic route. No timers or
+  scores; those are ruled out by the art direction.
 
 Note for whoever picks this up: `requestAnimationFrame` does not run while the tab is
 backgrounded, so the game looks frozen in a hidden preview pane and timed input does

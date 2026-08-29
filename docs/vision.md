@@ -8,6 +8,15 @@ document tried to make the landing page navigate somewhere — an Overcooked-sty
 "levels," then a game whose buildings you drove into to reach another app. That framing
 is gone; see `decisions/0004-gilbyy-is-just-a-driving-game.md`.
 
+## The feel we're after
+
+A lightweight version of **_Over the Hill_**, the indie driving game — its look and
+feel, not its scope. Muted earthy palette, unhurried pace, a HUD that stays out of the
+way, atmosphere doing more work than detail. We are not copying its 3D terrain or its
+offroad simulation; we are copying the calm.
+
+`docs/art-direction.md` is the standing brief and says what transfers and what doesn't.
+
 ## What it is
 
 - A top-down world with roads, houses, trees and water.
@@ -16,11 +25,21 @@ is gone; see `decisions/0004-gilbyy-is-just-a-driving-game.md`.
 - A camera that follows you, a minimap, a speedo.
 - Keyboard on desktop, touch controls on phones.
 
+## The feel we're after
+
+A lightweight version of **_Over the Hill_**, the indie driving game — its look and
+feel, not its scope. Muted earthy palette, unhurried pace, a HUD that stays out of the
+way, atmosphere doing more work than detail. We are not copying its 3D terrain or its
+offroad simulation; we are copying the calm.
+
+`docs/art-direction.md` is the standing brief and says what transfers and what doesn't.
+
 ## What it is not
 
 - Not a hub. It contains no links to any other app.
 - Not gated. It is public; there is no login and no database.
-- Not a real game engine. Everything is 2D canvas with no dependencies.
+- Not a real game engine. Everything is 2D canvas with no dependencies, and it stays
+  that way — the Over the Hill reference is about mood, not 3D.
 
 ## Where it goes
 
