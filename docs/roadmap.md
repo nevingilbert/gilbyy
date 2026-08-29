@@ -9,10 +9,9 @@ subdomains." Update the **You are here** marker as you progress.
 > single static page at `/` that links out to the standalone apps. Design docs
 > rewritten to match — see `decisions/0003-levels-as-standalone-apps.md`.
 >
-> A first pass at the driving game landed the same day (Phase C), then was rebuilt once
-> the intent got clearer: gilbyy.com is **just** a driving game, with no links to the
-> other apps at all (ADR 0004). **Next:** buy gilbyy.com and attach the subdomains
-> (Phase B), and keep improving the game.
+> gilbyy.com bought at Cloudflare and all six hostnames attached to their Vercel
+> projects (Phase B). **Next:** add the six CNAME records at Cloudflare — all set to
+> "DNS only", never proxied — then keep improving the game (Phase C).
 >
 > Phase A is complete: the Supabase project is deleted and the stale env vars are off
 > the Vercel project.
@@ -46,30 +45,57 @@ Nothing on Vercel was deleted — all five projects are apps we are keeping.
 
 ## Phase B — Wire up gilbyy.com
 
-Buy the domain. Buying it **through Vercel** is the least fiddly option, since DNS is
-then managed for you and each subdomain is one click; Cloudflare Registrar is cheaper
-(at-cost, ~$10/yr) if you would rather point nameservers at Vercel yourself.
+**Domain bought 2026-08-28 at Cloudflare Registrar** (~$10/yr, at cost, renews at cost).
+All six hostnames are attached to their Vercel projects. What remains is adding the DNS
+records at Cloudflare.
 
-Then, in each Vercel project, Settings → Domains:
+### Why DNS lives at Cloudflare, not Vercel
 
-| Project | Domain |
-| --- | --- |
-| `gilbyy-web` | `gilbyy.com` + `www.gilbyy.com` |
-| `friendlybets` | `bets.gilbyy.com` |
-| `wellness-planner` | `meals.gilbyy.com` |
-| `beeriokart-dashboard` | `karts.gilbyy.com` |
-| `times-tables` | `times.gilbyy.com` |
+Cloudflare Registrar only sells domains that stay on Cloudflare's own nameservers — that
+is a condition of the at-cost pricing. So delegating nameservers to Vercel is **not an
+option** while the registration lives there. DNS records are managed at Cloudflare and
+point at Vercel.
+
+### The records
+
+Vercel issues a **different CNAME target per project**, so these cannot be guessed or
+copied between rows. Regenerate them with
+`vercel domains verify <host> --scope nevin-gilbert-s-projects` if they ever need
+checking.
+
+| Type | Name | Target | Project |
+| --- | --- | --- | --- |
+| CNAME | `@` | `652261f006c82422.vercel-dns-017.com` | gilbyy-web |
+| CNAME | `www` | `652261f006c82422.vercel-dns-017.com` | gilbyy-web |
+| CNAME | `bets` | `413a6f3d733a65d3.vercel-dns-017.com` | friendlybets |
+| CNAME | `meals` | `d5d2bcaa5f11007e.vercel-dns-017.com` | wellness-planner |
+| CNAME | `karts` | `068667bdb5488786.vercel-dns-017.com` | beeriokart-dashboard |
+| CNAME | `times` | `3042d8a78fd13ff1.vercel-dns-017.com` | times-tables |
+
+A `CNAME` at the apex works because Cloudflare flattens it. If a provider ever refuses a
+root CNAME, the fallback for the apex is `A @ 76.76.21.21`.
+
+### The one thing that will break it
+
+**Every record must be "DNS only" — the grey cloud, not the orange one.** Vercel returns
+`disableProxy: true` on all six for a reason: if Cloudflare proxies the traffic, Vercel
+cannot issue its TLS certificate and you get certificate errors or redirect loops.
+This is the single most common way this setup fails, and it looks like a Vercel problem
+when it is a Cloudflare toggle.
+
+### Afterwards
+
+Certificates issue automatically within a few minutes of the records resolving.
+
+Then, in **friendlybets'** and **wellness-planner's** own Supabase projects, add the new
+subdomain to Auth → URL Configuration (Site URL + redirect allowlist). Until that is
+done, magic links keep sending people back to the old `.vercel.app` addresses.
+
+Every project has Vercel SSO protection set to `all_except_custom_domains`, so all the
+`.vercel.app` URLs bounce strangers to a Vercel login. Custom domains are exempt, so each
+app becomes publicly reachable the moment its record resolves — no setting to change.
 
 No code changes are needed for any of this.
-
-Worth knowing: every project has Vercel SSO protection set to
-`all_except_custom_domains`, so all the `.vercel.app` URLs bounce strangers to a Vercel
-login. Attaching a custom domain is exempt from that protection, so each app becomes
-publicly reachable the moment its subdomain is live — no setting needs changing.
-
-Afterwards, in each level's own Supabase project, add its new subdomain to the Auth
-**Site URL** and redirect allowlist, or magic-link callbacks will bounce to the old
-`.vercel.app` URL.
 
 ## Phase C — The driving game
 
