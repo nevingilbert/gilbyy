@@ -1,39 +1,181 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { HUB, LEVELS, WORLD, type Level } from "./levels";
-import { levelAt, noInput, step, type Car, type Input } from "./physics";
+import { useEffect, useRef, useState } from "react";
+import { noInput, step, MAX_SPEED, type Car, type Input } from "./physics";
+import { buildWorld, ROADS, START, WORLD } from "./world";
 
-/** Deterministic scatter so the scenery doesn't reshuffle on every render. */
-function scenery() {
-  let seed = 1337;
-  const rand = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
-  const trees: { x: number; y: number; r: number }[] = [];
-  while (trees.length < 90) {
+/** Paints the static town once, so each frame is just a blit plus the car. */
+function paintWorld(): HTMLCanvasElement {
+  const { ponds, buildings, trees } = buildWorld();
+  const c = document.createElement("canvas");
+  c.width = WORLD.w;
+  c.height = WORLD.h;
+  const g = c.getContext("2d")!;
+
+  g.fillStyle = "#2f6b34";
+  g.fillRect(0, 0, WORLD.w, WORLD.h);
+
+  // Grass mottling, deterministic and cheap — just breaks up the flat fill.
+  let seed = 7;
+  const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  g.fillStyle = "#35773a";
+  for (let i = 0; i < 700; i++) {
     const x = rand() * WORLD.w;
     const y = rand() * WORLD.h;
-    const nearRoad = LEVELS.some((l) => distToSegment(x, y, HUB.x, HUB.y, l.x, l.y) < 90);
-    if (!nearRoad) trees.push({ x, y, r: 12 + rand() * 14 });
+    g.beginPath();
+    g.ellipse(x, y, 40 + rand() * 90, 25 + rand() * 60, rand() * Math.PI, 0, Math.PI * 2);
+    g.fill();
   }
-  return trees;
+
+  for (const p of ponds) {
+    g.fillStyle = "#1d4ed8";
+    g.beginPath();
+    g.ellipse(p.x, p.y, p.rx, p.ry, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#3b82f6";
+    g.beginPath();
+    g.ellipse(p.x, p.y - 6, p.rx * 0.82, p.ry * 0.78, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  for (const r of ROADS) {
+    g.strokeStyle = "#3f3f46";
+    g.lineWidth = r.width;
+    g.lineCap = "round";
+    g.beginPath();
+    g.moveTo(r.x1, r.y1);
+    g.lineTo(r.x2, r.y2);
+    g.stroke();
+
+    g.strokeStyle = "#52525b";
+    g.lineWidth = r.width - 14;
+    g.stroke();
+
+    g.strokeStyle = "#fbbf24";
+    g.lineWidth = 5;
+    g.setLineDash([34, 28]);
+    g.stroke();
+    g.setLineDash([]);
+  }
+
+  for (const b of buildings) {
+    g.fillStyle = "rgba(0,0,0,0.22)";
+    g.beginPath();
+    g.roundRect(b.x + 10, b.y + 12, b.w, b.h, 8);
+    g.fill();
+
+    g.fillStyle = b.color;
+    g.beginPath();
+    g.roundRect(b.x, b.y, b.w, b.h, 8);
+    g.fill();
+
+    g.fillStyle = "rgba(255,255,255,0.14)";
+    g.beginPath();
+    g.roundRect(b.x + 12, b.y + 12, b.w - 24, b.h - 24, 5);
+    g.fill();
+  }
+
+  for (const t of trees) {
+    g.fillStyle = "rgba(0,0,0,0.25)";
+    g.beginPath();
+    g.ellipse(t.x + 7, t.y + 9, t.r, t.r * 0.8, 0, 0, Math.PI * 2);
+    g.fill();
+
+    g.fillStyle = "#166534";
+    g.beginPath();
+    g.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#22803f";
+    g.beginPath();
+    g.arc(t.x - t.r * 0.25, t.y - t.r * 0.28, t.r * 0.62, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  return c;
 }
 
-function distToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+function drawCar(g: CanvasRenderingContext2D, car: Car) {
+  g.save();
+  g.translate(car.x, car.y);
+  g.rotate(car.angle);
+
+  g.fillStyle = "rgba(0,0,0,0.3)";
+  g.beginPath();
+  g.ellipse(3, 6, 26, 15, 0, 0, Math.PI * 2);
+  g.fill();
+
+  g.fillStyle = "#18181b";
+  for (const [wx, wy] of [[-13, -15], [13, -15], [-13, 15], [13, 15]] as const) {
+    g.beginPath();
+    g.roundRect(wx - 7, wy - 4, 14, 8, 2);
+    g.fill();
+  }
+
+  g.fillStyle = "#facc15";
+  g.strokeStyle = "#1c1917";
+  g.lineWidth = 2.5;
+  g.beginPath();
+  g.roundRect(-24, -14, 48, 28, 8);
+  g.fill();
+  g.stroke();
+
+  g.fillStyle = "#0c4a6e";
+  g.beginPath();
+  g.roundRect(2, -10, 12, 20, 3);
+  g.fill();
+  g.fillStyle = "rgba(255,255,255,0.5)";
+  g.beginPath();
+  g.roundRect(-13, -9, 7, 18, 3);
+  g.fill();
+
+  g.restore();
+}
+
+function drawHud(g: CanvasRenderingContext2D, car: Car, vw: number) {
+  // Minimap.
+  const mw = 150;
+  const mh = mw * (WORLD.h / WORLD.w);
+  const mx = vw - mw - 18;
+  const my = 18;
+  g.fillStyle = "rgba(9,26,14,0.72)";
+  g.strokeStyle = "rgba(251,191,36,0.55)";
+  g.lineWidth = 2;
+  g.beginPath();
+  g.roundRect(mx, my, mw, mh, 8);
+  g.fill();
+  g.stroke();
+
+  g.strokeStyle = "rgba(251,191,36,0.3)";
+  g.lineWidth = 2;
+  for (const r of ROADS) {
+    g.beginPath();
+    g.moveTo(mx + (r.x1 / WORLD.w) * mw, my + (r.y1 / WORLD.h) * mh);
+    g.lineTo(mx + (r.x2 / WORLD.w) * mw, my + (r.y2 / WORLD.h) * mh);
+    g.stroke();
+  }
+
+  g.fillStyle = "#facc15";
+  g.beginPath();
+  g.arc(mx + (car.x / WORLD.w) * mw, my + (car.y / WORLD.h) * mh, 3.5, 0, Math.PI * 2);
+  g.fill();
+
+  // Speed, tucked under the minimap so it never fights the touch controls.
+  const kph = Math.round((Math.abs(car.speed) / MAX_SPEED) * 120);
+  const baseline = my + mh + 34;
+  g.textAlign = "right";
+  g.font = "600 13px ui-sans-serif, system-ui";
+  g.fillStyle = "rgba(167,243,208,0.75)";
+  g.fillText("KM/H", vw - 18, baseline);
+  const unitWidth = g.measureText("KM/H").width;
+  g.font = "600 34px ui-sans-serif, system-ui";
+  g.fillStyle = "rgba(251,191,36,0.95)";
+  g.fillText(String(kph), vw - 22 - unitWidth, baseline);
 }
 
 export function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [nearby, setNearby] = useState<Level | null>(null);
-  const nearbyRef = useRef<Level | null>(null);
   const inputRef = useRef<Input>(noInput());
-
-  const enter = useCallback(() => {
-    if (nearbyRef.current) window.location.href = nearbyRef.current.href;
-  }, []);
+  const [showHint, setShowHint] = useState(true);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -41,8 +183,8 @@ export function Game() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const car: Car = { x: HUB.x, y: HUB.y + 150, angle: -Math.PI / 2, speed: 0 };
-    const trees = scenery();
+    const world = paintWorld();
+    const car: Car = { x: START.x, y: START.y, angle: 0, speed: 0 };
     let raf = 0;
     let last = performance.now();
 
@@ -62,17 +204,11 @@ export function Game() {
       ArrowDown: "brake", s: "brake", S: "brake",
     };
     const onKey = (down: boolean) => (e: KeyboardEvent) => {
-      if (down && (e.key === "Enter" || e.key === " ")) {
-        if (nearbyRef.current) {
-          e.preventDefault();
-          window.location.href = nearbyRef.current.href;
-        }
-        return;
-      }
       const control = keyMap[e.key];
       if (!control) return;
       e.preventDefault();
       inputRef.current[control] = down;
+      if (down) setShowHint(false);
     };
     const onKeyDown = onKey(true);
     const onKeyUp = onKey(false);
@@ -82,96 +218,23 @@ export function Game() {
     const frame = (now: number) => {
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
-
       step(car, inputRef.current, dt);
-      const hit = levelAt(car);
-      if (hit?.id !== nearbyRef.current?.id) {
-        nearbyRef.current = hit;
-        setNearby(hit);
-      }
 
-      // --- render ---
       const vw = canvas.clientWidth;
       const vh = canvas.clientHeight;
       const camX = Math.max(0, Math.min(WORLD.w - vw, car.x - vw / 2));
       const camY = Math.max(0, Math.min(WORLD.h - vh, car.y - vh / 2));
 
-      ctx.fillStyle = "#14532d";
+      ctx.fillStyle = "#2f6b34";
       ctx.fillRect(0, 0, vw, vh);
+      ctx.drawImage(world, camX, camY, vw, vh, 0, 0, vw, vh);
+
       ctx.save();
       ctx.translate(-camX, -camY);
-
-      // Roads out from the hub.
-      for (const level of LEVELS) {
-        ctx.strokeStyle = "#57534e";
-        ctx.lineWidth = 64;
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.moveTo(HUB.x, HUB.y);
-        ctx.lineTo(level.x, level.y);
-        ctx.stroke();
-
-        ctx.strokeStyle = "#fbbf24";
-        ctx.lineWidth = 4;
-        ctx.setLineDash([22, 18]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-
-      for (const tree of trees) {
-        ctx.fillStyle = "#166534";
-        ctx.beginPath();
-        ctx.arc(tree.x, tree.y, tree.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Hub.
-      ctx.fillStyle = "#1e1b4b";
-      ctx.strokeStyle = "#fbbf24";
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.arc(HUB.x, HUB.y, 70, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.font = "34px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText("🏠", HUB.x, HUB.y + 12);
-
-      // Level buildings.
-      for (const level of LEVELS) {
-        const active = level.id === hit?.id;
-        ctx.fillStyle = level.color;
-        ctx.strokeStyle = active ? "#fde68a" : "#ffffff";
-        ctx.lineWidth = active ? 7 : 4;
-        ctx.beginPath();
-        ctx.roundRect(level.x - 70, level.y - 60, 140, 120, 16);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.font = "40px system-ui";
-        ctx.textAlign = "center";
-        ctx.fillText(level.emoji, level.x, level.y + 4);
-        ctx.font = "600 18px system-ui";
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(level.label, level.x, level.y + 40);
-      }
-
-      // Car.
-      ctx.save();
-      ctx.translate(car.x, car.y);
-      ctx.rotate(car.angle);
-      ctx.fillStyle = "#facc15";
-      ctx.strokeStyle = "#1c1917";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.roundRect(-22, -13, 44, 26, 7);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#1c1917";
-      ctx.fillRect(2, -10, 11, 20);
+      drawCar(ctx, car);
       ctx.restore();
 
-      ctx.restore();
+      drawHud(ctx, car, vw);
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
@@ -185,32 +248,31 @@ export function Game() {
   }, []);
 
   const hold = (control: keyof Input) => ({
-    onPointerDown: () => void (inputRef.current[control] = true),
+    onPointerDown: () => {
+      inputRef.current[control] = true;
+      setShowHint(false);
+    },
     onPointerUp: () => void (inputRef.current[control] = false),
     onPointerLeave: () => void (inputRef.current[control] = false),
   });
 
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-emerald-950">
+    <div className="relative h-[100dvh] w-full overflow-hidden bg-[#2f6b34]">
       <canvas ref={canvasRef} className="block h-full w-full touch-none" />
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 p-4 text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-amber-300 drop-shadow">gilbyy</h1>
-        <p className="mt-1 text-xs text-emerald-300/80">
-          drive with arrows or WASD — pull up to a building to enter
-        </p>
-      </div>
+      <h1 className="pointer-events-none absolute left-5 top-4 text-2xl font-bold tracking-tight text-amber-300 drop-shadow-lg">
+        gilbyy
+      </h1>
 
-      {nearby && (
-        <button
-          onClick={enter}
-          className="absolute bottom-28 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-6 py-3 text-sm font-semibold text-emerald-950 shadow-lg sm:bottom-10"
-        >
-          Enter {nearby.label} {nearby.emoji} — press Enter
-        </button>
-      )}
+      <p
+        className={`pointer-events-none absolute inset-x-0 bottom-28 text-center text-sm text-amber-100/90 drop-shadow transition-opacity duration-700 ${
+          showHint ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        arrows or WASD to drive
+      </p>
 
-      {/* Touch controls; hidden once a keyboard is likely present. */}
+      {/* Touch controls; a keyboard is assumed at sm and up. */}
       <div className="absolute inset-x-0 bottom-0 flex justify-between p-5 sm:hidden">
         <div className="flex gap-3">
           <TouchButton label="◀" {...hold("left")} />
@@ -231,7 +293,7 @@ function TouchButton({ label, ...handlers }: { label: string } & React.Component
       {...handlers}
       aria-hidden
       tabIndex={-1}
-      className="h-16 w-16 touch-none rounded-full border border-emerald-600/60 bg-emerald-900/70 text-xl text-amber-300 backdrop-blur select-none"
+      className="h-16 w-16 touch-none rounded-full border border-emerald-300/30 bg-emerald-950/60 text-xl text-amber-300 backdrop-blur select-none"
     >
       {label}
     </button>

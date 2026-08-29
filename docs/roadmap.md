@@ -9,9 +9,10 @@ subdomains." Update the **You are here** marker as you progress.
 > single static page at `/` that links out to the standalone apps. Design docs
 > rewritten to match — see `decisions/0003-levels-as-standalone-apps.md`.
 >
-> A first pass at the driving game landed the same day (Phase C) — you load the site
-> and drive a car around a small world to each level. **Next:** buy gilbyy.com and
-> attach the subdomains (Phase B).
+> A first pass at the driving game landed the same day (Phase C), then was rebuilt once
+> the intent got clearer: gilbyy.com is **just** a driving game, with no links to the
+> other apps at all (ADR 0004). **Next:** buy gilbyy.com and attach the subdomains
+> (Phase B), and keep improving the game.
 >
 > Phase A is complete: the Supabase project is deleted and the stale env vars are off
 > the Vercel project.
@@ -61,38 +62,42 @@ Then, in each Vercel project, Settings → Domains:
 
 No code changes are needed for any of this.
 
-This is also what makes the levels publicly reachable at all. Every project has Vercel
-SSO protection set to `all_except_custom_domains`, so the `.vercel.app` URLs the game
-currently links to bounce strangers to a Vercel login. Attaching a custom domain is
-exempt from that protection, so the links start working for everyone the moment the
-subdomains are live — no setting needs changing.
+Worth knowing: every project has Vercel SSO protection set to
+`all_except_custom_domains`, so all the `.vercel.app` URLs bounce strangers to a Vercel
+login. Attaching a custom domain is exempt from that protection, so each app becomes
+publicly reachable the moment its subdomain is live — no setting needs changing.
 
 Afterwards, in each level's own Supabase project, add its new subdomain to the Auth
 **Site URL** and redirect allowlist, or magic-link callbacks will bounce to the old
 `.vercel.app` URL.
 
-Finally, swap the `levels` array in `src/app/(authed)/map/page.tsx` from the
-`.vercel.app` URLs to the subdomains.
-
 ## Phase C — The driving game
 
-**First pass done (2026-08-28).** The SVG map is replaced by a canvas driving game: a
-2000×1600 world, roads out from a central hub, a car with arcade steering, a camera that
-follows it, and three level buildings. Pull up to one and a prompt appears; Enter (or
-tapping it) navigates to that level. Touch controls on small screens.
+**This is the product**, not a placeholder for one. See
+`decisions/0004-gilbyy-is-just-a-driving-game.md`.
 
-- `src/app/levels.ts` — level positions and outbound URLs, the one place to edit.
-- `src/app/physics.ts` — pure `step()` / `levelAt()`, unit-tested in `physics.test.ts`.
-- `src/app/Game.tsx` — canvas, input, render loop.
+First pass done (2026-08-28): a 3200×2400 town on a road grid, deterministic houses,
+trees and ponds, a car with arcade handling, a following camera, a minimap and a speedo.
+Touch controls under `sm`. The static world is painted once to an offscreen canvas, so
+each frame is a blit plus the car.
 
-Deliberately not done: no collision with scenery, no sound, flat-shaded 2D top-down
-rather than anything 3D, and the world is three roads off a hub rather than genuinely
-open. Good enough to communicate the idea; the fun is still to be added.
+- `src/world.ts` — world data and the deterministic generator.
+- `src/physics.ts` — pure `step()`, unit-tested in `physics.test.ts`.
+- `src/Game.tsx` — canvas, input, render loop, HUD.
+
+Not done, roughly in order of how much they'd add:
+
+- Collision with buildings and trees. Right now you drive through everything, which is
+  the single biggest thing making the world feel fake.
+- Tyre marks, dust, an engine note.
+- More to look at — a coastline, hills, level crossings, traffic.
+- Something to do — a delivery, a time trial, something to collect.
 
 Note for whoever picks this up: `requestAnimationFrame` does not run while the tab is
-backgrounded, so the game looks frozen in a hidden preview pane. That is the browser,
-not a bug. The physics is unit-tested precisely so it can be verified without a
-visible tab.
+backgrounded, so the game looks frozen in a hidden preview pane and timed input does
+nothing. That is the browser, not a bug. The physics is a pure function precisely so it
+can be tested without a visible tab; to eyeball motion, hold a key and take several
+screenshots, since each capture forces a frame.
 
 ## Phase D — Monitoring
 
@@ -100,7 +105,7 @@ visible tab.
 - **Sentry** for error tracking, DSN into Vercel env. 5k errors/month free.
 - **BetterStack** uptime monitor on gilbyy.com and each subdomain.
 
-## Phase E — Add the next level
+## Phase E — Add another app under the domain
 
-See "How to add a new level" in `architecture.md`. It is now a new repo, a new Vercel
-project, a new subdomain, and a new destination in the game.
+See "How to add a new app under gilbyy.com" in `architecture.md`: a new repo, a new
+Vercel project, a new subdomain. It does **not** get added to the game.

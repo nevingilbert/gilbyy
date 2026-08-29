@@ -88,6 +88,36 @@ readers, and no-JS visitors can still reach the apps.
 Scope kept deliberately small: no collisions, no sound, 2D top-down, three roads off a
 hub rather than a genuinely open world.
 
+## Then the intent got clearer: it is *only* a driving game
+
+The first pass still treated the game as a hub — buildings you drove into to enter Bets,
+Meals or Karts, plus a fallback list of links. That was wrong. gilbyy.com is a driving
+game and nothing else; it does not link to the other apps and does not know they exist.
+Written up as `docs/decisions/0004-gilbyy-is-just-a-driving-game.md`.
+
+Rebuilt accordingly:
+
+| Path | Change |
+| --- | --- |
+| `src/app/levels.ts` | **Deleted** — replaced by `world.ts`, which describes terrain, not destinations |
+| `src/app/world.ts` | **Created** — 3200×2400 world, a six-segment road grid, and a deterministic generator for 34 houses, 3 ponds and 220 trees that rejects anything overlapping a road, a pond or another building |
+| `src/app/physics.ts` | Dropped `levelAt()`; `step()` unchanged |
+| `src/app/Game.tsx` | Rewritten — no level buildings, no enter prompts. Static world painted once to an offscreen canvas, then each frame is a blit plus the car. Added a minimap, a speedo, a proper car (shadow, wheels, windscreen), grass mottling, and shadows on houses and trees |
+| `src/app/page.tsx` | Now just `<Game />` — the fallback link list is gone |
+| `src/app/page.test.tsx` | **Deleted** — it asserted the level links existed |
+| `src/app/layout.tsx` | Description no longer mentions levels |
+
+Docs rewritten again: `vision.md` is now about a game, and `architecture.md`,
+`roadmap.md`, `CLAUDE.md` and `README.md` all state the no-links rule. CLAUDE.md calls
+it a hard constraint, because this is the third time the "it's a hub" reading has crept
+back in.
+
+Verified: `build`, `typecheck`, `lint`, `test` (6) all pass. Drove it in the browser —
+speed climbed 10 → 44 km/h over successive frames, the car tracked along the road and
+the minimap dot followed.
+
 ## Next step
 
-Phase B in `docs/roadmap.md`: buy gilbyy.com and attach the subdomains.
+Phase B in `docs/roadmap.md`: buy gilbyy.com and attach the subdomains. Or Phase C —
+collision is the biggest thing missing from the game; you currently drive straight
+through houses and trees.

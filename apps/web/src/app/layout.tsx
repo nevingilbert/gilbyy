@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Gilbyy",
-  description: "A growing collection of small apps — pick a level.",
+  description: "A little driving game. Load it up and drive around.",
 };
 
 export default function RootLayout({

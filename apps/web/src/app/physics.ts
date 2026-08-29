@@ -1,4 +1,4 @@
-import { ENTER_RADIUS, LEVELS, WORLD, type Level } from "./levels";
+import { WORLD } from "./world";
 
 // Arcade values, tuned by feel. Units are px and seconds.
 export const ACCEL = 520;
@@ -30,9 +30,4 @@ export function step(car: Car, input: Input, dt: number): Car {
   car.x = Math.max(20, Math.min(WORLD.w - 20, car.x + Math.cos(car.angle) * car.speed * dt));
   car.y = Math.max(20, Math.min(WORLD.h - 20, car.y + Math.sin(car.angle) * car.speed * dt));
   return car;
-}
-
-/** The level the car is close enough to enter, if any. */
-export function levelAt(car: Car): Level | null {
-  return LEVELS.find((l) => Math.hypot(l.x - car.x, l.y - car.y) < ENTER_RADIUS) ?? null;
 }

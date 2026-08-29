@@ -1,13 +1,14 @@
 # gilbyy
 
-The landing page for a collection of small apps, navigated by driving around a map.
+A driving game at gilbyy.com. You load the site and drive a car around a small cartoon
+world. That's it — it isn't a menu or a launcher, and it doesn't link anywhere.
 
-The apps themselves live in their own repos and are served from subdomains:
-[bets](https://github.com/nevingilbert/friendlybets) · [meals](https://github.com/nevingilbert/wellness-planner) · [karts](https://github.com/nevingilbert/beeriokart-dashboard)
+Plain 2D canvas, no game engine, no backend, no auth.
 
 - Pitch: [docs/vision.md](./docs/vision.md)
 - Roadmap: [docs/roadmap.md](./docs/roadmap.md)
 - Technical design: [docs/architecture.md](./docs/architecture.md)
 - Claude Code orientation: [CLAUDE.md](./CLAUDE.md)
 
-Status: the levels were retired from this repo on 2026-08-28 (see [ADR 0003](./docs/decisions/0003-levels-as-standalone-apps.md)). Next step is wiring up gilbyy.com and its subdomains, then replacing the placeholder SVG map with the driving game.
+Status: drivable as of 2026-08-28. Nothing collides yet, so you pass straight through
+houses and trees — that's the next thing worth fixing.

@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { step, levelAt, noInput, MAX_SPEED, MAX_REVERSE, type Car } from "./physics";
-import { HUB, LEVELS, WORLD } from "./levels";
+import { step, noInput, MAX_SPEED, MAX_REVERSE, type Car } from "./physics";
+import { START, WORLD } from "./world";
 
-const car = (over: Partial<Car> = {}): Car => ({ x: HUB.x, y: HUB.y, angle: 0, speed: 0, ...over });
+const car = (over: Partial<Car> = {}): Car => ({ x: START.x, y: START.y, angle: 0, speed: 0, ...over });
 const run = (c: Car, input: Partial<ReturnType<typeof noInput>>, seconds: number) => {
   for (let t = 0; t < seconds; t += 1 / 60) step(c, { ...noInput(), ...input }, 1 / 60);
   return c;
@@ -12,8 +12,8 @@ describe("step", () => {
   it("accelerates forward along its heading", () => {
     const c = run(car({ angle: 0 }), { gas: true }, 1);
     expect(c.speed).toBeGreaterThan(0);
-    expect(c.x).toBeGreaterThan(HUB.x);
-    expect(c.y).toBeCloseTo(HUB.y, 5);
+    expect(c.x).toBeGreaterThan(START.x);
+    expect(c.y).toBeCloseTo(START.y, 5);
   });
 
   it("coasts to a near stop when nothing is pressed", () => {
@@ -39,17 +39,5 @@ describe("step", () => {
     const c = run(car({ x: WORLD.w - 100, angle: 0 }), { gas: true }, 20);
     expect(c.x).toBeLessThanOrEqual(WORLD.w - 20);
     expect(c.x).toBeGreaterThan(0);
-  });
-});
-
-describe("levelAt", () => {
-  it("finds nothing at the hub", () => {
-    expect(levelAt(car())).toBeNull();
-  });
-
-  it("finds a level once the car pulls up to it", () => {
-    for (const level of LEVELS) {
-      expect(levelAt(car({ x: level.x, y: level.y }))?.id).toBe(level.id);
-    }
   });
 });

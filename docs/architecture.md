@@ -11,9 +11,9 @@ This document captures the technical decisions and the constraints that drove th
   each level gets a subdomain.
 - **CI:** GitHub Actions (free tier).
 
-This repo builds **gilbyy.com itself** — the landing page. It has no database of its
-own and no levels in it. Each level is a separate repo with its own stack; go read that
-repo's docs, not this file.
+This repo builds **gilbyy.com**, which is a driving game and nothing else — no
+database, no auth, no backend, no links to any other app. See
+`decisions/0004-gilbyy-is-just-a-driving-game.md`.
 
 This stack is chosen specifically because every piece has a free tier that covers a
 hobby project.
@@ -48,35 +48,31 @@ that with levels in their own repos, "two places" now means two directories insi
 *this* repo, which is a high bar. A shared UI kit across levels would have to be a
 published package, and that is not worth it at this scale.
 
-Levels are **not** in this repo:
+The game itself is three files under `apps/web/src/app/`:
 
-| Level | Subdomain | Repo | Backend |
-| --- | --- | --- | --- |
-| Bets | `bets.gilbyy.com` | `nevingilbert/friendlybets` | Supabase `ickmpbuxgzxznalzjbdz` |
-| Meals | `meals.gilbyy.com` | `nevingilbert/wellness-planner` | Supabase `xtlmhsapegfmafbpzdoz` |
-| Karts | `karts.gilbyy.com` | `nevingilbert/beeriokart-dashboard` | plain Postgres |
+- `world.ts` — world size, road segments, and a deterministic generator for houses,
+  trees and ponds. Pure data; no rendering.
+- `physics.ts` — a pure `step(car, input, dt)`. Unit-tested, because
+  `requestAnimationFrame` is throttled to nothing in a background tab and the game
+  therefore cannot be verified by screenshot alone.
+- `Game.tsx` — paints the static world to an offscreen canvas once, then each frame
+  blits the camera rectangle, draws the car, and draws the HUD.
+
+The other apps (`friendlybets`, `wellness-planner`, `beeriokart-dashboard`) share the
+domain via subdomains and share nothing else. This repo does not reference them.
 
 ## Auth
 
-**gilbyy.com is public.** The landing page is a driving game; there is nothing behind
-it to protect, because the levels live elsewhere. Anyone can load it.
+There is none, and there should never be one. gilbyy.com is a public page with nothing
+behind it to protect. No `@supabase/*` dependency, no middleware, no server-rendered
+route — one static page at `/`.
 
-Each level handles its own authentication, on its own terms, against its own backend.
-They do not share a session — see the known gap in `vision.md`.
-
-The magic-link login, the `/map` gate, the middleware and the Supabase client are all
-**gone** (removed 2026-08-28). There is no `@supabase/ssr` dependency, no middleware,
-and no server-rendered route — the landing page is a single static page at `/`.
-
-Do not reintroduce auth here. If a level needs a login, it belongs in that level's repo.
+The other apps each handle their own login in their own repo. That is their business.
 
 ## Database design
 
-This repo has no database. Each level owns its own outright.
-
-The original design called for one Supabase project with `bets.*`, `meals.*` and
-`karts.*` schemas sharing `auth.users`. That project (`dcxqaooehisluvdjniyb`) held only
-the retired Meals schema and is to be deleted from the Supabase dashboard.
+There is no database, and the game needs no server state. The old shared Supabase
+project (`dcxqaooehisluvdjniyb`) has been deleted.
 
 ## Hosting and deploys
 
@@ -128,11 +124,13 @@ that repo's problem, not this one's.
 - **GitHub Actions:** 2k minutes/month on private; unlimited on public.
 - **CodeRabbit:** unlimited reviews on public repos; limited on private.
 
-## How to add a new level
+## How to add a new app under gilbyy.com
 
 1. Create a **new repo** for it. It is its own app, not a folder in this one.
 2. Build it, with whatever stack suits it. It does not have to match this one.
 3. Deploy it as its own Vercel project.
 4. Add `<name>.gilbyy.com` in that project's Settings → Domains.
-5. Add it as a destination in the landing page's map/game.
-6. Add a row to the tables in this file and in `vision.md`.
+5. Add a row to the hosting table above.
+
+Do **not** add it to the game. gilbyy.com is not a menu — see
+`decisions/0004-gilbyy-is-just-a-driving-game.md`.

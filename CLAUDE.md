@@ -4,21 +4,23 @@ This file orients Claude Code (and Cowork) when working in this repo. Read this 
 
 ## What this project is
 
-Gilbyy is the **landing page** at gilbyy.com for a collection of small apps ("levels"). The landing page is becoming a rudimentary cartoon open-world driving game; each destination in it navigates to a level.
+Gilbyy is a **driving game** at gilbyy.com. You load the site and drive a car around a
+small cartoon world. That is the entire product.
 
-**The levels are not in this repo.** Each is its own repo, its own Vercel project, and its own subdomain:
+It is not a hub, a menu, or a launcher, and it **must not link to any other app**. See
+`docs/vision.md` and `docs/decisions/0004-gilbyy-is-just-a-driving-game.md` — this has
+been misunderstood repeatedly, so treat it as a hard constraint rather than a
+preference.
 
-| Level | Subdomain | Repo |
-| --- | --- | --- |
-| Bets | `bets.gilbyy.com` | `nevingilbert/friendlybets` |
-| Meals | `meals.gilbyy.com` | `nevingilbert/wellness-planner` |
-| Karts | `karts.gilbyy.com` | `nevingilbert/beeriokart-dashboard` |
-
-If a request is about one of those apps, you are in the wrong repo. See `docs/vision.md` for the pitch and `docs/decisions/0003-levels-as-standalone-apps.md` for why this changed.
+`friendlybets`, `wellness-planner` and `beeriokart-dashboard` are separate repos that
+happen to share the gilbyy.com domain via subdomains. If a request is about one of those
+apps, you are in the wrong repo.
 
 ## Layout
 
-- `apps/web/` — the Next.js app that is the landing page. Nothing else lives here.
+- `apps/web/` — the Next.js app. The game is `src/app/world.ts` (data),
+  `src/app/physics.ts` (pure `step()`, unit-tested) and `src/app/Game.tsx` (canvas,
+  input, render loop).
 - `packages/` — empty. Add a package only when two directories *in this repo* need the same thing, which is now a high bar.
 - `docs/` — design docs.
   - `vision.md` — the why
@@ -30,7 +32,7 @@ If a request is about one of those apps, you are in the wrong repo. See `docs/vi
 
 ## Stack
 
-Next.js (App Router) + TypeScript + Tailwind, on Vercel free tier. **No database, no auth, no middleware.** The whole app is one static page at `src/app/page.tsx`. Each level owns its own backend in its own repo. See `docs/architecture.md`.
+Next.js (App Router) + TypeScript + Tailwind, on Vercel free tier. **No database, no auth, no middleware, no runtime dependencies beyond React.** The whole app is one static page rendering a 2D canvas. See `docs/architecture.md`.
 
 ## Commands
 
@@ -42,8 +44,8 @@ Next.js (App Router) + TypeScript + Tailwind, on Vercel free tier. **No database
 
 ## Conventions
 
-- Commits: conventional commits (`feat(map): add destination markers`, `fix(game): correct collision`).
-- Branch names: `feat/game-physics`, `chore/drop-supabase`.
+- Commits: conventional commits (`feat(game): add building collision`, `fix(world): stop trees spawning on roads`).
+- Branch names: `feat/game-collision`, `fix/world-gen`.
 - Add new dependencies to the package that needs them, not to root.
 
 ## Free-tier rule
@@ -58,15 +60,16 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 
 - Don't commit `.env` or any secret. Use `.env.local` (gitignored).
 - Don't add a paid service without explicit confirmation.
-- Don't add a level to this repo. Levels are separate repos — see `docs/architecture.md`, "How to add a new level."
-- Don't add auth or a database to this repo. gilbyy.com is a public front door; logins belong to the individual levels.
+- Don't add links, menus, or navigation to the other apps. gilbyy.com is a game, not a launcher.
+- Don't add auth or a database. There is nothing here to protect and nothing to persist.
+- Don't reach for a game engine or a 3D library. It is plain 2D canvas, and staying dependency-free is part of the point.
 - Don't run autonomous agents that hit the Anthropic API without confirming first — currently we're staying in interactive Claude Code sessions only.
 
 ## Sessions and the token budget
 
 The user is on Claude Pro and is intentionally avoiding API costs. To survive token limits across days:
 
-1. **Scope each session narrowly.** "Today we get the car driving and colliding" is good. "Today we work on the whole repo" is bad.
+1. **Scope each session narrowly.** "Today we add collision with buildings" is good. "Today we work on the whole repo" is bad.
 2. **Run `/checkpoint` before context gets heavy** or at the end of any working session. It writes `docs/sessions/YYYY-MM-DD-{topic}.md` capturing decisions made, files changed, open questions, and the exact next step.
 3. **The first thing a new session does** is read the latest file in `docs/sessions/`.
 
@@ -80,4 +83,4 @@ The user is on Claude Pro and is intentionally avoiding API costs. To survive to
 
 ## Status
 
-The app is scaffolded and deployed; the levels have been retired from it (2026-08-28). Auth, middleware and the Supabase client are gone; the app is one static page. A first pass at the driving game is in (`src/app/Game.tsx`, physics in `src/app/physics.ts`). Next up: buy gilbyy.com and attach the subdomains. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.
+The app is scaffolded and deployed; the levels have been retired from it (2026-08-28). Auth, middleware and the Supabase client are gone; the app is one static page. The game is in and drivable. Biggest gap: nothing collides, so you drive through houses and trees. Next up: buy gilbyy.com and attach the subdomains, and keep improving the game. See `docs/roadmap.md`. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.
