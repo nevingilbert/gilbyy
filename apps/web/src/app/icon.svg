@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Gilbyy">
+  <!-- Palette mirrors apps/web/src/app/palette.ts — grass, dirt track, and the ochre car.
+       Kept to three shapes that survive 16px: grass, track, car. -->
+  <rect width="64" height="64" rx="13" fill="#7a8b5c"/>
+  <ellipse cx="13" cy="15" rx="14" ry="10" fill="rgba(140,156,110,0.30)"/>
+  <ellipse cx="53" cy="50" rx="15" ry="11" fill="rgba(104,120,82,0.26)"/>
+
+  <!-- Dirt track, low contrast so the car stays the subject. -->
+  <rect x="16" y="0" width="32" height="64" fill="#8d7d63"/>
+  <rect x="19" y="0" width="26" height="64" fill="#9c8c70"/>
+
+  <ellipse cx="32" cy="35" rx="16" ry="20" fill="rgba(58,48,38,0.30)"/>
+
+  <!-- Car, top-down, pointing up. Big enough to read as a car in a tab. -->
+  <rect x="16" y="10" width="32" height="44" rx="10" fill="#d9a441" stroke="#3d3428" stroke-width="3"/>
+  <rect x="21" y="17" width="22" height="11" rx="4" fill="#54707a"/>
+  <rect x="21" y="38" width="22" height="8" rx="3.2" fill="#54707a"/>
+</svg>
