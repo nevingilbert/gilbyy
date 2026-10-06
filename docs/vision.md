@@ -10,49 +10,43 @@ is gone; see `decisions/0004-gilbyy-is-just-a-driving-game.md`.
 
 ## The feel we're after
 
-A lightweight version of **_Over the Hill_**, the indie driving game — its look and
-feel, not its scope. Muted earthy palette, unhurried pace, a HUD that stays out of the
-way, atmosphere doing more work than detail. We are not copying its 3D terrain or its
-offroad simulation; we are copying the calm.
+A lightweight version of **_Over the Hill_**, the indie driving game: its look and
+feel, not its scope. Open-world driving with no multiplayer and no objectives, "not
+even a game really". A few saturated colours held together by warm haze, a low sun,
+an unhurried pace, a HUD that is nearly absent.
 
 `docs/art-direction.md` is the standing brief and says what transfers and what doesn't.
 
 ## What it is
 
-- A top-down world with roads, houses, trees and water.
-- A car with arcade handling — accelerate, brake, reverse, steering that scales with
-  speed.
-- A camera that follows you, a minimap, a speedo.
+- One 3D valley of rolling hills, pine forest, boulders and two lakes, ringed by
+  mountains that are both the horizon and the edge of the world.
+- A boxy 4x4 on springy suspension: hills slow you and roll you back, the body leans
+  in corners, crests can put you briefly in the air, trees stop you, shallow water can
+  be forded.
+- A high chase camera, a compass strip, nothing else on screen.
 - Keyboard on desktop, touch controls on phones.
-
-## The feel we're after
-
-A lightweight version of **_Over the Hill_**, the indie driving game — its look and
-feel, not its scope. Muted earthy palette, unhurried pace, a HUD that stays out of the
-way, atmosphere doing more work than detail. We are not copying its 3D terrain or its
-offroad simulation; we are copying the calm.
-
-`docs/art-direction.md` is the standing brief and says what transfers and what doesn't.
 
 ## What it is not
 
 - Not a hub. It contains no links to any other app.
 - Not gated. It is public; there is no login and no database.
-- Not a real game engine. Everything is 2D canvas with no dependencies, and it stays
-  that way — the Over the Hill reference is about mood, not 3D.
+- Not built on a game engine. It is three.js for rendering plus a few hundred lines of
+  our own physics, and that is the whole stack. See
+  `decisions/0005-go-3d-with-threejs.md`.
 
 ## Where it goes
 
-It gets better as a game, incrementally, whenever there's an appetite for it. Rough
-order of appeal:
+It gets better as a place to drive, incrementally, whenever there's an appetite for it.
+Rough order of appeal:
 
-- Collision with buildings and trees, so the world feels solid.
-- Tyre marks, dust, an engine note.
-- More to look at: a coastline, hills, level crossings, traffic.
-- Something to do: a delivery, a time trial, a thing to collect.
+- Time of day: dusk, night with headlights, maybe weather.
+- Dust, tyre tracks, an engine note.
+- Water that looks like water: shoreline foam, ripples.
+- More ground variety: streams, wildflowers, dirt trails.
 
-None of that is committed. The only rule is that it stays free to run and stays fun to
-drive.
+None of that is committed. The only rule is that it stays free to run and stays
+pleasant to drive.
 
 ## The other apps
 

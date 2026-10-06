@@ -4,8 +4,8 @@ This file orients Claude Code (and Cowork) when working in this repo. Read this 
 
 ## What this project is
 
-Gilbyy is a **driving game** at gilbyy.com. You load the site and drive a car around a
-small cartoon world. That is the entire product.
+Gilbyy is a **driving game** at gilbyy.com. You load the site and drive a 4x4 around a
+low-poly 3D valley. That is the entire product.
 
 It is not a hub, a menu, or a launcher, and it **must not link to any other app**. See
 `docs/vision.md` and `docs/decisions/0004-gilbyy-is-just-a-driving-game.md` — this has
@@ -13,10 +13,11 @@ been misunderstood repeatedly, so treat it as a hard constraint rather than a
 preference.
 
 **The look and feel to aim for is a lightweight version of _Over the Hill_**, the indie
-driving game: muted naturalistic palette, calm and unhurried, a very quiet HUD,
-atmosphere over detail. Read `docs/art-direction.md` before changing anything visual —
-it covers what we borrow from it and what we deliberately don't (we are 2D, and staying
-2D).
+driving game: a few saturated colours held together by warm haze, a low sun, calm and
+unhurried, a nearly absent HUD. Read `docs/art-direction.md` before changing anything
+visual. It was written from the actual footage and covers what we borrow and what we
+deliberately don't. The game went 3D on 2026-10-06; see
+`docs/decisions/0005-go-3d-with-threejs.md`.
 
 `friendlybets`, `wellness-planner` and `beeriokart-dashboard` are separate repos that
 happen to share the gilbyy.com domain via subdomains. If a request is about one of those
@@ -24,9 +25,15 @@ apps, you are in the wrong repo.
 
 ## Layout
 
-- `apps/web/` — the Next.js app. The game is `src/app/world.ts` (data),
-  `src/app/physics.ts` (pure `step()`, unit-tested), `src/app/palette.ts` (every colour,
-  in one place) and `src/app/Game.tsx` (canvas, input, render loop).
+- `apps/web/` — the Next.js app. The game lives in `src/app/`:
+  - `world.ts`: the valley's heightfield, trees, rocks and bushes. Pure data,
+    deterministic, no three.js. Unit-tested.
+  - `physics.ts`: a pure `step(car, input, dt, ground)`. Unit-tested.
+  - `noise.ts`: seeded simplex noise and RNG.
+  - `palette.ts`: every colour, in one place.
+  - `scene.ts` and `car-model.ts`: everything three.js (terrain mesh, instanced trees,
+    grass, sky, lights, camera, the truck).
+  - `Game.tsx`: React shell (input, fixed-step loop, HUD).
 - `packages/` — empty. Add a package only when two directories *in this repo* need the same thing, which is now a high bar.
 - `docs/` — design docs.
   - `vision.md` — the why
@@ -39,7 +46,7 @@ apps, you are in the wrong repo.
 
 ## Stack
 
-Next.js (App Router) + TypeScript + Tailwind, on Vercel free tier. **No database, no auth, no middleware, no runtime dependencies beyond React.** The whole app is one static page rendering a 2D canvas. See `docs/architecture.md`.
+Next.js (App Router) + TypeScript + Tailwind, on Vercel free tier. **No database, no auth, no middleware, no runtime dependencies beyond React and three.js.** The whole app is one static page rendering a WebGL canvas. See `docs/architecture.md`.
 
 ## Commands
 
@@ -69,9 +76,10 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't add a paid service without explicit confirmation.
 - Don't add links, menus, or navigation to the other apps. gilbyy.com is a game, not a launcher.
 - Don't add auth or a database. There is nothing here to protect and nothing to persist.
-- Don't reach for a game engine or a 3D library. It is plain 2D canvas, and staying dependency-free is part of the point — "like Over the Hill" means its palette and mood, not its geometry.
+- Don't reach for a game engine, a physics engine, react-three-fiber or a post-processing stack. three.js is the one rendering dependency (ADR 0005); the physics is ours and stays a pure, tested function. Anything more needs its own ADR.
 - Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
 - Don't add timers, scores or achievements. The game is meant to be calm; see `docs/art-direction.md`.
+- Don't judge frame rate from headless screenshots. Headless Chromium renders WebGL in software at ~3 fps; screenshots are fine for looks, nothing else.
 - Don't run autonomous agents that hit the Anthropic API without confirming first — currently we're staying in interactive Claude Code sessions only.
 
 ## Sessions and the token budget
@@ -92,4 +100,4 @@ The user is on Claude Pro and is intentionally avoiding API costs. To survive to
 
 ## Status
 
-The app is scaffolded and deployed; the levels have been retired from it (2026-08-28). Auth, middleware and the Supabase client are gone; the app is one static page. The game is in and drivable. Biggest gap: nothing collides, so you drive through houses and trees. Next up: buy gilbyy.com and attach the subdomains, and keep improving the game. See `docs/roadmap.md`. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.
+The app is one static page with no auth or database. On 2026-10-06 the game was rebuilt in 3D on three.js: a valley with hills, lakes, forest, grass and collisions, driven by a springy 4x4 under a high chase camera. Biggest gaps against the Over the Hill look: one fixed time of day, flat water, no dust, tracks or sound. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.

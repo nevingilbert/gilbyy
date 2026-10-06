@@ -3,19 +3,15 @@
 Path from where we are to "gilbyy.com live, with the apps hanging off it as
 subdomains." Update the **You are here** marker as you progress.
 
-> **You are here:** Levels retired and auth removed (2026-08-28). The `(bets)`,
-> `(karts)` and `(meals)` route groups, `lib/meals`, `docs/levels/`, the magic-link
-> login, the middleware and the Supabase client are all deleted. The app is now a
-> single static page at `/` that links out to the standalone apps. Design docs
-> rewritten to match — see `decisions/0003-levels-as-standalone-apps.md`.
+> **You are here:** Phase C, the game. On 2026-10-06 it was rebuilt in 3D on three.js
+> to chase the Over the Hill look (`decisions/0005-go-3d-with-threejs.md`): one valley
+> with hills, lakes, forest and grass, and a springy 4x4 under a high chase camera.
+> **Next:** drive it on a real phone and a laptop to check the frame rate, then add
+> time of day (dusk, night with headlights).
 >
-> gilbyy.com bought at Cloudflare and all six hostnames attached to their Vercel
-> projects (Phase B). **Next:** add the six CNAME records at Cloudflare — all set to
-> "DNS only", never proxied — then keep improving the game (Phase C).
->
-> Phase A is complete: the Supabase project is deleted and the stale env vars are off
-> the Vercel project. Phase B is complete: all six hostnames are live on gilbyy.com and
-> Google sign-in works on all four apps.
+> Phases A and B are complete: levels retired and auth removed (2026-08-28), the
+> Supabase project deleted, and all six hostnames live on gilbyy.com with Google
+> sign-in working on all four apps.
 
 ## History (done)
 
@@ -138,31 +134,31 @@ No code changes are needed for any of this.
 **This is the product**, not a placeholder for one. See
 `decisions/0004-gilbyy-is-just-a-driving-game.md`.
 
-First pass done (2026-08-28): a 3200×2400 town on a road grid, deterministic houses,
-trees and ponds, a car with arcade handling, a following camera, a minimap and a speedo.
-Touch controls under `sm`. The static world is painted once to an offscreen canvas, so
-each frame is a blit plus the car.
+First pass (2026-08-28): a top-down 2D canvas town. Replaced on 2026-10-06 by a 3D
+rebuild on three.js after the 2D approach was judged unable to reach the Over the Hill
+look (see `decisions/0005-go-3d-with-threejs.md`).
 
-The visual target is a lightweight take on _Over the Hill_ — see `art-direction.md`,
-which is the standing brief for anything visual. A first palette pass (2026-08-28) moved
-off the initial saturated greens and primaries to muted earth tones and added a vignette.
+Now (2026-10-06): one valley of rolling hills, rocky outcrops, two lakes and a mountain
+rim; ~6,400 trees, ~2,800 bushes, ~1,700 boulders; swaying grass near the car; a boxy
+4x4 with spring suspension, slope gravity, brief airtime, tree and boulder collisions,
+fording; a high chase camera; a compass strip. Touch controls under `sm`.
 
-- `src/world.ts` — world data and the deterministic generator.
-- `src/palette.ts` — every colour, in one place. Tune here, not in render code.
-- `src/physics.ts` — pure `step()`, unit-tested in `physics.test.ts`.
-- `src/Game.tsx` — canvas, input, render loop, HUD.
+- `src/app/world.ts`: heightfield and scatter, deterministic. Tested in `world.test.ts`.
+- `src/app/physics.ts`: pure `step()`. Tested in `physics.test.ts`.
+- `src/app/scene.ts`, `src/app/car-model.ts`: rendering.
+- `src/app/palette.ts`: every colour, in one place.
+- `src/app/Game.tsx`: input, loop, HUD.
 
 Not done, roughly in order of how much they'd add:
 
-- Collision with buildings and trees. Right now you drive through everything, which is
-  the single biggest thing making the world feel fake.
-- Atmosphere, which is where the Over the Hill feel actually lives: directional light
-  instead of flat fills, haze/depth falloff, softer and less geometric silhouettes, and
-  some ambient motion. `art-direction.md` lists the specific gaps.
-- Tyre marks, dust, an engine note.
-- More to look at — a coastline, hills, level crossings.
-- Something to do, as long as it stays calm — a delivery, a scenic route. No timers or
-  scores; those are ruled out by the art direction.
+- **Measure on real devices**, a phone especially. Nothing has been timed on real
+  hardware yet. Levers if slow: grass radius, tree count, pixel ratio, shadow map size.
+- **Time of day**: dusk, night with headlights. Most of the trailers' best shots are
+  here.
+- Dust, tyre tracks, an engine note.
+- Water that reads as water: shoreline foam, ripples, glints.
+- More ground variety: streams, wildflowers, dirt trails.
+- Taller, denser grass further out.
 
 Note for whoever picks this up: `requestAnimationFrame` does not run while the tab is
 backgrounded, so the game looks frozen in a hidden preview pane and timed input does

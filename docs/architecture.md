@@ -48,15 +48,26 @@ that with levels in their own repos, "two places" now means two directories insi
 *this* repo, which is a high bar. A shared UI kit across levels would have to be a
 published package, and that is not worth it at this scale.
 
-The game itself is three files under `apps/web/src/app/`:
+The game lives under `apps/web/src/app/` (3D since 2026-10-06, see
+`decisions/0005-go-3d-with-threejs.md`):
 
-- `world.ts` — world size, road segments, and a deterministic generator for houses,
-  trees and ponds. Pure data; no rendering.
-- `physics.ts` — a pure `step(car, input, dt)`. Unit-tested, because
-  `requestAnimationFrame` is throttled to nothing in a background tab and the game
-  therefore cannot be verified by screenshot alone.
-- `Game.tsx` — paints the static world to an offscreen canvas once, then each frame
-  blits the camera rectangle, draws the car, and draws the HUD.
+- `world.ts`: the valley as a 300×300 heightfield over 2.4 km, plus trees, bushes,
+  rocks and a bucketed obstacle lookup. Pure data, deterministic from a seed, no
+  three.js. `sampleGrid()` interpolates heights with the same triangulation the mesh
+  uses, so wheels sit exactly on the visible faces.
+- `physics.ts`: a pure `step(car, input, dt, ground)`. The body moves along its heading,
+  with springs for height, pitch and roll chasing what the four wheels feel. It takes a
+  `Ground` interface, so tests can hand it a flat plane or a ramp.
+- `noise.ts`: seeded simplex noise and RNG, hand-rolled to avoid a dependency.
+- `scene.ts`: everything three.js. Terrain mesh, instanced trees, rocks and bushes in
+  400 m tiles (so off-screen tiles cull), grass tufts around the car only, gradient sky,
+  fog, sun and shadow, chase camera.
+- `car-model.ts`: the truck, built from primitives, with wheels posed per frame from
+  the ground under them.
+- `Game.tsx`: React shell. Input, a fixed 120 Hz physics loop, the compass HUD.
+
+three.js is the only runtime dependency beyond React (MIT, ~144 KB gzipped). There are
+no asset files: the whole world is generated at load (~200 ms).
 
 The other apps (`friendlybets`, `wellness-planner`, `beeriokart-dashboard`) share the
 domain via subdomains and share nothing else. This repo does not reference them.
