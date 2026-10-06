@@ -38,29 +38,30 @@ unhurried exploration in a classic 4x4.
 - The high chase camera.
 - Swaying grass near the car, bushes breaking up the open ground, pine forests with a
   few golden larches and autumn broadleaves.
-- A compass strip as the only real HUD element.
+- A nearly absent HUD: a compass strip, a small round topo minimap and an odometer.
 - Calm: no timers, scores, objectives or nagging.
 
 ## What we don't (yet)
 
 - Co-op, winching, planks, deformable mud and snow, the photo compendium.
-- Day/night and weather. These are the strongest candidates to add later, since so many
-  of the best shots in the trailers are dusk, night-with-headlights, rain and fog.
-- Multiple maps and vehicles. There is one valley and one truck.
+- Weather. Rain, lightning and fog banks are the strongest candidates to add next.
+- Multiple maps and vehicles. There is one valley and one truck, which you upgrade.
 - Scope in general. It is a shipped commercial game; this is a hobby page.
 
 ## Where the current build sits
 
-As of 2026-10-06 it is recognisably in the family: orange grass carpet, pines, haze,
-lakes, the red overlander under a high camera. Honest gaps:
+As of 2026-10-06 (second pass) it is recognisably in the family: orange grass carpet,
+pines, haze, lakes and rivers, a train in the distance, the red overlander under a high
+camera. A day passes in about fifteen minutes, so dusk, night with headlights and dawn
+all come round. Honest gaps:
 
-- **One time of day.** Fixed golden hour. No dusk, night or weather.
-- **Water is flat colour.** No shoreline foam, ripples or reflections.
-- **No dust, tyre tracks or engine sound.** The car feels quieter than it should.
+- **No weather.**
+- **Water is a flat colour with a gentle ripple.** No foam, no flow on the rivers.
+- **No dust, tyre tracks or engine sound.** The truck feels quieter than it should.
 - **The grass reads more as texture than as tall grass.** It is short, and it only
   exists within ~60 m of the car.
-- **Ground variety is thin.** Mostly orange, with rock on the slopes. The game also has
-  streams, wildflowers, dirt trails and paths.
+- **Night lighting is untuned on real hardware.** Headlight power was set from headless
+  screenshots.
 
 ## Rules of thumb
 
@@ -70,6 +71,7 @@ lakes, the red overlander under a high camera. Honest gaps:
 3. **Keep the HUD nearly absent.** If a new element competes with the world for
    attention, it is wrong. Low contrast, small, cornered.
 4. **Light and haze before detail.** Shadow, fog and sun buy more than more objects do.
-5. **No pressure mechanics.** No timers, no scores, no achievements. If a feature makes
-   the player feel behind, it does not belong.
+5. **No pressure mechanics.** No timers, no scores, no objectives. If a feature makes
+   the player feel behind, it does not belong. The one progression is miles quietly
+   unlocking garage parts (ADR 0006); nothing is ever lost or spent.
 6. **Colours go in `palette.ts`.** No hex literals in render code.

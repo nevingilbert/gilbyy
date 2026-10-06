@@ -1,19 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { makeCar, noInput, step, MAX_SPEED, MAX_REVERSE, RIDE, type Car, type Input } from "./physics";
+import { makeCar, noInput, step, MAX_SPEED, MAX_REVERSE, RIDE, STOCK, type Car, type CarSpec, type Input } from "./physics";
 import type { Ground, Obstacle } from "./world";
 
 /** Test grounds: flat by default, or any height function, with optional obstacles. */
 const ground = (height: (x: number, z: number) => number = () => 0, obstacles: Obstacle[] = [], water = -100): Ground => ({
   height,
+  waterAt: () => water,
   obstaclesNear: () => obstacles,
-  water,
   limit: 1000,
 });
 
 const flat = ground();
 const DT = 1 / 120;
-const run = (c: Car, g: Ground, input: Partial<Input>, seconds: number) => {
-  for (let t = 0; t < seconds; t += DT) step(c, { ...noInput(), ...input }, DT, g);
+const run = (c: Car, g: Ground, input: Partial<Input>, seconds: number, spec: CarSpec = STOCK) => {
+  for (let t = 0; t < seconds; t += DT) step(c, { ...noInput(), ...input }, DT, g, spec);
   return c;
 };
 
@@ -105,9 +105,44 @@ describe("step on slopes", () => {
   });
 });
 
+describe("tyres", () => {
+  const rock = (h: number) => ground(() => 0, [{ x: 0, z: 10, r: 1.4, h }]);
+
+  it("rolls over a rock lower than its clearance, rising as it does", () => {
+    const g = rock(0.4);
+    const c = makeCar(g, 0, 0, 0);
+    let peak = 0;
+    for (let t = 0; t < 5; t += DT) {
+      step(c, { ...noInput(), gas: true }, DT, g);
+      peak = Math.max(peak, c.y);
+    }
+    expect(c.z).toBeGreaterThan(14);
+    expect(peak).toBeGreaterThan(RIDE + 0.08);
+  });
+
+  it("is stopped by a taller rock, unless the tyres can clear it", () => {
+    const g = rock(1.0);
+    expect(run(makeCar(g, 0, 0, 0), g, { gas: true }, 5).z).toBeLessThan(9);
+    expect(run(makeCar(g, 0, 0, 0), g, { gas: true }, 5, { ...STOCK, clearance: 1.2 }).z).toBeGreaterThan(12);
+  });
+
+  it("climbs steeper with more grip", () => {
+    // About 36 degrees: just past what stock tyres can manage.
+    const steep = ground((_, z) => Math.max(0, z - 3) * 0.73);
+    const stock = run(makeCar(steep, 0, 0, 0), steep, { gas: true }, 8);
+    const grippy = run(makeCar(steep, 0, 0, 0), steep, { gas: true }, 8, { ...STOCK, grip: 1.3 });
+    expect(grippy.z).toBeGreaterThan(stock.z + 5);
+  });
+});
+
 describe("step against the world", () => {
+  it("counts the distance it drives", () => {
+    const c = run(makeCar(flat, 0, 0, 0), flat, { gas: true }, 4);
+    expect(c.distance).toBeCloseTo(Math.hypot(c.x, c.z), 1);
+  });
+
   it("stops at a tree instead of driving through it", () => {
-    const tree = ground(() => 0, [{ x: 0, z: 10, r: 0.5 }]);
+    const tree = ground(() => 0, [{ x: 0, z: 10, r: 0.5, h: Infinity }]);
     const c = run(makeCar(tree, 0, 0, 0), tree, { gas: true }, 4);
     expect(c.z).toBeLessThan(10 - 1);
     expect(Math.abs(c.speed)).toBeLessThan(2);
@@ -118,7 +153,14 @@ describe("step against the world", () => {
     const lake = ground((_, z) => (z < 10 ? 1 : 1 - (z - 10) * 0.2), [], 0);
     const c = run(makeCar(lake, 0, 0, 0), lake, { gas: true }, 12);
     expect(c.z).toBeGreaterThan(10);
-    expect(lake.water - lake.height(c.x, c.z)).toBeLessThan(1.4);
+    expect(lake.waterAt(c.x, c.z) - lake.height(c.x, c.z)).toBeLessThan(STOCK.wade + 0.1);
+  });
+
+  it("wades deeper with a snorkel", () => {
+    const lake = ground((_, z) => (z < 10 ? 1 : 1 - (z - 10) * 0.2), [], 0);
+    const stock = run(makeCar(lake, 0, 0, 0), lake, { gas: true }, 15);
+    const snorkel = run(makeCar(lake, 0, 0, 0), lake, { gas: true }, 15, { ...STOCK, wade: 2.6 });
+    expect(snorkel.z).toBeGreaterThan(stock.z + 4);
   });
 
   it("cannot leave the world", () => {

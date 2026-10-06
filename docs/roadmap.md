@@ -3,11 +3,12 @@
 Path from where we are to "gilbyy.com live, with the apps hanging off it as
 subdomains." Update the **You are here** marker as you progress.
 
-> **You are here:** Phase C, the game. On 2026-10-06 it was rebuilt in 3D on three.js
-> to chase the Over the Hill look (`decisions/0005-go-3d-with-threejs.md`): one valley
-> with hills, lakes, forest and grass, and a springy 4x4 under a high chase camera.
-> **Next:** drive it on a real phone and a laptop to check the frame rate, then add
-> time of day (dusk, night with headlights).
+> **You are here:** Phase C, the game. 3D on three.js since 2026-10-06
+> (`decisions/0005`), and later that day a much bigger second pass (`decisions/0006`):
+> a 4 km valley with rivers, a railway and train, day and night, six garages with
+> mile-gated upgrades, and a map with fog of war.
+> **Next:** drive it on a real phone and laptop to check the frame rate (it got
+> heavier), then tune night lighting on real hardware.
 >
 > Phases A and B are complete: levels retired and auth removed (2026-08-28), the
 > Supabase project deleted, and all six hostnames live on gilbyy.com with Google
@@ -138,27 +139,23 @@ First pass (2026-08-28): a top-down 2D canvas town. Replaced on 2026-10-06 by a 
 rebuild on three.js after the 2D approach was judged unable to reach the Over the Hill
 look (see `decisions/0005-go-3d-with-threejs.md`).
 
-Now (2026-10-06): one valley of rolling hills, rocky outcrops, two lakes and a mountain
-rim; ~6,400 trees, ~2,800 bushes, ~1,700 boulders; swaying grass near the car; a boxy
-4x4 with spring suspension, slope gravity, brief airtime, tree and boulder collisions,
-fording; a high chase camera; a compass strip. Touch controls under `sm`.
-
-- `src/app/world.ts`: heightfield and scatter, deterministic. Tested in `world.test.ts`.
-- `src/app/physics.ts`: pure `step()`. Tested in `physics.test.ts`.
-- `src/app/scene.ts`, `src/app/car-model.ts`: rendering.
-- `src/app/palette.ts`: every colour, in one place.
-- `src/app/Game.tsx`: input, loop, HUD.
+Now (2026-10-06, second pass): a 4 km valley with two lakes, two rivers that cut off the
+east side until you fit a snorkel, a railway loop (trestle bridges, four level crossings
+with barriers) with a train on it, day and night on a fifteen-minute clock, six garages
+in different styles with tiered upgrades (paint, tyres, lights, snorkel) unlocked by
+miles driven, and a map that starts greyed out and fills in as you drive. See
+`architecture.md` for the file-by-file layout.
 
 Not done, roughly in order of how much they'd add:
 
-- **Measure on real devices**, a phone especially. Nothing has been timed on real
-  hardware yet. Levers if slow: grass radius, tree count, pixel ratio, shadow map size.
-- **Time of day**: dusk, night with headlights. Most of the trailers' best shots are
-  here.
+- **Measure on real devices**, a phone especially. Levers if slow: grass radius, tree
+  count, pixel ratio, shadow map size, the number of spotlights.
+- Weather: rain, fog banks, a storm at night.
 - Dust, tyre tracks, an engine note.
-- Water that reads as water: shoreline foam, ripples, glints.
-- More ground variety: streams, wildflowers, dirt trails.
-- Taller, denser grass further out.
+- Water that reads as water: shoreline foam, rivers that visibly flow.
+- Dirt trails between the garages.
+- Buildings that link to other gilbyy.com pages: floated by the owner, needs an ADR
+  superseding `0004` first.
 
 Note for whoever picks this up: `requestAnimationFrame` does not run while the tab is
 backgrounded, so the game looks frozen in a hidden preview pane and timed input does
