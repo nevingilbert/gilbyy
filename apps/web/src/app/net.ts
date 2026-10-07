@@ -128,6 +128,8 @@ const unpackPose = (a: number[]): Pose => ({ x: a[0], y: a[1], z: a[2], heading:
 export const chatTopic = (a: string, b: string) => (a < b ? `chat:${a}:${b}` : `chat:${b}:${a}`);
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** How many times to try joining the valley before driving alone. */
+const OPEN_TRIES = 3;
 
 /** The base both transports share: joining, settling a tent, and the event names. */
 abstract class Base implements Net {
@@ -222,6 +224,19 @@ export class SupabaseNet extends Base {
 
   protected async open() {
     await this.sb.realtime.setAuth();
+    // The first join after the project has sat idle can be refused while Realtime sets
+    // itself up (seen as "MissingPartition" on a brand-new project), so ask a few times.
+    let error: string | null = null;
+    for (let attempt = 0; attempt < OPEN_TRIES; attempt++) {
+      if (attempt) await wait(1500 * attempt);
+      error = await this.subscribe();
+      if (!error) return null;
+    }
+    return error;
+  }
+
+  /** One attempt at joining the valley's channel. Leaves no channel behind if it fails. */
+  private async subscribe() {
     const channel = this.sb.channel("world", {
       config: { private: true, presence: { key: this.myId }, broadcast: { self: false, ack: false } },
     });
@@ -231,12 +246,17 @@ export class SupabaseNet extends Base {
       .on("broadcast", { event: "ask" }, ({ payload }) => this.heard("ask", payload))
       .on("broadcast", { event: "friended" }, ({ payload }) => this.heard("friended", payload));
     this.world = channel;
-    return new Promise<string | null>((resolve) => {
+    const error = await new Promise<string | null>((resolve) => {
       channel.subscribe((status, err) => {
         if (status === "SUBSCRIBED") resolve(null);
-        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") resolve(err?.message ?? "Couldn't reach the valley.");
+        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") resolve(err?.message ?? "Couldn't reach the valley.");
       });
     });
+    if (error) {
+      this.world = null;
+      await this.sb.removeChannel(channel);
+    }
+    return error;
   }
 
   protected async announce(me: Peer) {
