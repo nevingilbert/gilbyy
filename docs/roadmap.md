@@ -13,7 +13,8 @@ subdomains." Update the **You are here** marker as you progress.
 > (`sessions/2026-10-07-connect-supabase.md`).
 > Found garages and cafés now stay on the map and are counted there and on the
 > leaderboard (`decisions/0008`).
-> **Next:** merge `feat/multiplayer` to `main` when the owner says so. Still open:
+> It is all on `main` and live at gilbyy.com since 2026-10-07.
+> **Next:** play it signed in on the live site. Still open:
 > an idle timeout so a forgotten tab gives up its tent, and the frame rate on a real
 > phone and laptop. Sign-in is Google only (the email link was removed).
 >

@@ -124,9 +124,11 @@ rejoined in 2 s and re-announced 30 s later.
   `HOVER_DRIFT` and `GLIDE_TIME` in `scene.ts`.
 - **The `where` fix is only half observed:** a newcomer was seen sending it. The reply
   was not watched arriving in a second client.
-- **`feat/multiplayer` is not merged**, so gilbyy.com is still single player. The owner
-  asked not to merge or open a PR without being asked. Sign-in on a Vercel preview URL
-  is untested.
+- **Merged and live.** The owner asked for the merge at the end of the day; `main` was
+  fast-forwarded to `feat/multiplayer` and the production deploy is up. The live bundle
+  was checked: it points at the `gilbyy` project and carries only the publishable key.
+  Nobody has signed in on gilbyy.com itself yet. If Google's consent screen is still in
+  "Testing", only listed test users can.
 - **Sign-in is Google only.** The email-link option was removed from `SignInPanel`
   and `supabase.ts` at the owner's request, because Supabase's built-in mailer only
   reaches members of the Supabase org. The Email provider is still switched on in the
@@ -140,7 +142,8 @@ rejoined in 2 s and re-announced 30 s later.
 
 ## Exact next step
 
-First ask the owner to look at the opening and say whether to merge `feat/multiplayer`.
+First ask the owner how the live site played signed in: the opening, and whether a
+found garage and the café survive a reload and show on the leaderboard.
 
 The four requests below were built later the same day (see *Added after the first
 checkpoint*), so what is left of them is one check: sign in, drive to the café and a
@@ -168,5 +171,4 @@ against the linked project as `supabase/tests/README.md` describes.
 ## Tokens advisory
 
 A long session with many round trips to the owner for dashboard clicks and sign-ins.
-It stopped at a natural break: everything asked for is done and pushed, with the new
-feature requests left for a fresh session.
+It stopped at a natural break: everything asked for is done, merged and live.
