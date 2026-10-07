@@ -129,4 +129,10 @@ select pg_temp.fails($$ insert into realtime.messages (topic, extension, payload
 reset role;
 select pg_temp.check(not public.is_chat_member('chat:not-a-uuid:also-not'), 'garbled chat topics are refused');
 
+-- Only the game's own functions can be called, and only when signed in.
+select pg_temp.check(not has_function_privilege('anon', 'public.me()', 'execute'), 'signed-out visitors cannot call the game''s functions');
+select pg_temp.check(not has_function_privilege('anon', 'public.is_chat_member(text)', 'execute'), 'signed-out visitors cannot probe chat membership');
+select pg_temp.check(has_function_privilege('authenticated', 'public.is_chat_member(text)', 'execute'), 'the chat policies can still check membership');
+select pg_temp.check(not has_function_privilege('authenticated', 'public.handle_new_user()', 'execute'), 'the new-account trigger cannot be called directly');
+
 select 'all checks passed' as result;

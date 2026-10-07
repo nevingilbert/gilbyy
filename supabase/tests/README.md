@@ -11,8 +11,19 @@ Supabase it needs (`auth.users`, `auth.uid()`, `realtime.messages`, `realtime.to
 ```sh
 createdb gilbyy_test
 psql -d gilbyy_test -f supabase/tests/local-stubs.sql
-psql -d gilbyy_test -f supabase/migrations/20261007000000_gilbyy_game.sql
+for f in supabase/migrations/*.sql; do psql -d gilbyy_test -v ON_ERROR_STOP=1 -f "$f"; done
 psql -d gilbyy_test -f supabase/tests/game.test.sql   # ends with "all checks passed"
+```
+
+The same checks also run against the real project without leaving anything behind, as
+one transaction that always rolls back (the last line raises on purpose, so success
+reads `ALL CHECKS PASSED` in the error):
+
+```sh
+{ grep -v '^\\set\|all checks passed' supabase/tests/game.test.sql
+  echo "do \$\$ begin raise exception 'ALL CHECKS PASSED, rolling back'; end \$\$;"
+} > /tmp/gilbyy-checks.sql
+supabase db query --linked -f /tmp/gilbyy-checks.sql
 ```
 
 The stubs are for testing only and are never applied to a real project. The price and
