@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { CONVOY_MAX } from "./convoy";
 import type { Mission } from "./missions";
 import { countFound } from "./places";
 import { STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, type Loadout, type Progress } from "./shop";
@@ -34,7 +35,8 @@ export interface Store {
   flush(): Promise<void>;
   buy(key: string): Promise<string | null>;
   equip(vehicle: VehicleId, loadout: Loadout): Promise<string | null>;
-  completeMission(m: Mission, seconds: number): Promise<{ paid: number } | { error: string }>;
+  /** A finished run. A convoy (`m.crew` > 1) names who else set off, and one of them must be a friend. */
+  completeMission(m: Mission, seconds: number, crew?: string[]): Promise<{ paid: number } | { error: string }>;
   markGoal(goal: string): void;
   /** The truck has come up to a garage or a café for the first time. */
   discover(key: string): void;
@@ -92,7 +94,12 @@ export class LocalStore implements Store {
     return null;
   }
 
-  async completeMission(m: Mission, seconds: number) {
+  async completeMission(m: Mission, seconds: number, crew: string[] = []) {
+    if (m.crew > 1) {
+      const others = new Set(crew.filter((id) => id !== this.p.id));
+      if (others.size < m.crew - 1 || others.size > CONVOY_MAX - 1) return { error: "A convoy needs friends." };
+      if (![...others].some((id) => this.friendIds.has(id))) return { error: "A convoy needs friends." };
+    }
     if (seconds < m.minSeconds) return { error: "That was too quick to count." };
     const last = this.runs.get(m.id);
     const now = Date.now() / 1000;
@@ -215,10 +222,13 @@ export class SupabaseStore implements Store {
   buy = (key: string) => this.call("buy", { p_key: key });
   equip = (vehicle: VehicleId, loadout: Loadout) => this.call("equip", { p_vehicle: vehicle, p_loadout: loadout });
 
-  async completeMission(m: Mission, seconds: number) {
+  async completeMission(m: Mission, seconds: number, crew: string[] = []) {
     await this.flush();
     const before = this.p.balance;
-    const error = await this.call("complete_mission", { p_mission: m.id, p_seconds: Math.round(seconds * 100) / 100 });
+    const p_seconds = Math.round(seconds * 100) / 100;
+    const error = m.crew > 1
+      ? await this.call("complete_convoy", { p_mission: m.id, p_seconds, p_crew: crew })
+      : await this.call("complete_mission", { p_mission: m.id, p_seconds });
     return error ? { error } : { paid: this.p.balance - before };
   }
 

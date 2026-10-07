@@ -1,4 +1,4 @@
-import { FROZEN, LAKES, ROW, START, WORLD, nearest, sampleGrid, type Path, type Terrain } from "./terrain";
+import { CAFE, FROZEN, LAKES, ROW, START, WORLD, nearest, sampleGrid, type Path, type Terrain } from "./terrain";
 
 /**
  * Optional driving challenges, laid out on the real terrain at load. Drive to a start
@@ -19,6 +19,8 @@ export type Mission = {
   cooldown: number;
   /** Faster than this is not believable; the server refuses the claim. */
   minSeconds: number;
+  /** How many drivers it takes: 1 for a course you drive alone, more for a convoy of friends. */
+  crew: number;
 };
 
 type Pt = { x: number; z: number };
@@ -98,7 +100,7 @@ function forestSlalom(t: Terrain): Mission | null {
   return {
     id: "forest-slalom", name: "Forest Slalom", blurb: "Ten flags through the pines. Mind the trunks.",
     start: { ...best.start, heading: best.heading }, gates: gatesAlong(best.start, best.pts, 9),
-    reward: 1.5, repeatReward: 0.5, cooldown: 600, minSeconds: Math.floor(length(best.start, best.pts) / 23),
+    reward: 1.5, repeatReward: 0.5, cooldown: 600, minSeconds: Math.floor(length(best.start, best.pts) / 23), crew: 1,
   };
 }
 
@@ -132,7 +134,7 @@ function ridgeRun(t: Terrain): Mission | null {
   return {
     id: "ridge-run", name: "Ridge Run", blurb: `Seven flags, ${Math.round(best.climb)} metres of climb. Keep it steady.`,
     start: { ...best.start, heading: best.heading }, gates: gatesAlong(best.start, best.pts, 9),
-    reward: 2, repeatReward: 0.6, cooldown: 600, minSeconds: Math.floor(length(best.start, best.pts) / 23),
+    reward: 2, repeatReward: 0.6, cooldown: 600, minSeconds: Math.floor(length(best.start, best.pts) / 23), crew: 1,
   };
 }
 
@@ -160,7 +162,7 @@ function lakeshoreLoop(t: Terrain): Mission | null {
   return {
     id: "lakeshore-loop", name: "Lakeshore Loop", blurb: "Once round the west lake. Wet feet optional.",
     start: { ...start, heading: tangent }, gates: gatesAlong(start, loop, 10),
-    reward: 2.5, repeatReward: 0.8, cooldown: 600, minSeconds: Math.floor(length(start, loop) / 23),
+    reward: 2.5, repeatReward: 0.8, cooldown: 600, minSeconds: Math.floor(length(start, loop) / 23), crew: 1,
   };
 }
 
@@ -176,18 +178,104 @@ function iceDrift(t: Terrain): Mission | null {
   return {
     id: "ice-drift", name: "Ice Drift", blurb: "Flags across the frozen lake. Snow tyres help. A lot.",
     start: { ...start, heading: Math.PI / 2 }, gates: gatesAlong(start, pts, 12),
-    reward: 3, repeatReward: 1, cooldown: 600, minSeconds: Math.floor(length(start, pts) / 23),
+    reward: 3, repeatReward: 1, cooldown: 600, minSeconds: Math.floor(length(start, pts) / 23), crew: 1,
   };
 }
 
-export function planMissions(t: Terrain) {
-  const missions = [forestSlalom(t), ridgeRun(t), lakeshoreLoop(t), iceDrift(t)].filter((m): m is Mission => !!m);
-  // Keep every course clear of trees and rocks along its driving line.
-  const courseDist = new Float32Array(ROW * ROW).fill(1000);
-  for (const m of missions) {
-    const path: Path = { xs: [m.start.x, ...m.gates.map((g) => g.x)], zs: [m.start.z, ...m.gates.map((g) => g.z)] };
-    const d = nearest(path, false, 20).dist;
-    for (let k = 0; k < d.length; k++) courseDist[k] = Math.min(courseDist[k], d[k]);
+/**
+ * For friends: a long loop out from the café and back, with flags wide enough for two
+ * abreast. It starts a short drive from the café, where friends are made, and keeps well
+ * clear of the other courses.
+ */
+function convoy(t: Terrain, others: Float32Array): Mission | null {
+  const { h, f, slope, clearAt, lineOk } = helpers(t);
+  const clear = (x: number, z: number) => clearAt(x, z, 0.4) && f(others, x, z) > 50;
+  /**
+   * The valley is bumpy everywhere, and a loop this long can't miss every steep patch.
+   * How much of it is steep, or null if any stretch is a wall.
+   */
+  const steepness = (pts: Pt[]) => {
+    let steep = 0, samples = 0, run = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 4);
+      for (let k = 0; k < n; k++) {
+        const s = slope(a.x + ((b.x - a.x) * k) / n, a.z + ((b.z - a.z) * k) / n);
+        samples++;
+        if (s > 0.45) steep++;
+        run = s > 0.7 ? run + 1 : 0;
+        if (run > 2) return null;
+      }
+    }
+    return steep / samples;
+  };
+  const n = 14;
+  let best: { pts: Pt[]; score: number } | null = null;
+  for (let cz = CAFE.z - 700; cz <= CAFE.z + 700; cz += 50) {
+    for (let cx = CAFE.x - 700; cx <= CAFE.x + 700; cx += 50) {
+      for (const r of [240, 300, 360]) {
+        // The loop has to come past the café.
+        if (Math.abs(Math.hypot(cx - CAFE.x, cz - CAFE.z) - r) > 200) continue;
+        const pts: Pt[] = [];
+        for (let k = 0; k < n; k++) {
+          const a = (k / n) * Math.PI * 2;
+          const p = [0, -25, 25, -50, 50].map((push) => ({ x: cx + Math.cos(a) * (r + push), z: cz + Math.sin(a) * (r + push) })).find((q) => clear(q.x, q.z));
+          if (!p) break;
+          pts.push(p);
+        }
+        if (pts.length < n) continue;
+        // Begin at the flag nearest the café, with the start arch and the line-up behind it.
+        const first = pts.reduce((b, p, i) => (Math.hypot(p.x - CAFE.x, p.z - CAFE.z) < Math.hypot(pts[b].x - CAFE.x, pts[b].z - CAFE.z) ? i : b), 0);
+        const loop = [...pts.slice(first), ...pts.slice(0, first), pts[first]];
+        const fromCafe = Math.hypot(loop[0].x - CAFE.x, loop[0].z - CAFE.z);
+        if (fromCafe > 260) continue;
+        const heading = Math.atan2(loop[1].x - loop[0].x, loop[1].z - loop[0].z);
+        const back = (d: number) => ({ x: loop[0].x - Math.sin(heading) * d, z: loop[0].z - Math.cos(heading) * d });
+        if (!clearAt(back(40).x, back(40).z, 0.3) || !lineOk([back(75), loop[0]], 0.5)) continue;
+        if (!lineOk(loop, Infinity)) continue;
+        const steep = steepness(loop);
+        if (steep === null) continue;
+        let lo = Infinity, hi = -Infinity, forest = 0;
+        for (const p of pts) {
+          lo = Math.min(lo, h(p.x, p.z));
+          hi = Math.max(hi, h(p.x, p.z));
+          forest += f(t.forest, p.x, p.z) / n;
+        }
+        // Some climbing, some trees, not much that's steep, and not far from the café.
+        const score = Math.min(hi - lo, 40) / 40 + Math.min(forest, 0.5) - steep * 4 - fromCafe / 400;
+        if (!best || score > best.score) best = { pts: loop, score };
+      }
+    }
   }
-  return { missions, courseDist };
+  if (!best) return null;
+  const loop = best.pts;
+  const heading = Math.atan2(loop[1].x - loop[0].x, loop[1].z - loop[0].z);
+  const start = { x: loop[0].x - Math.sin(heading) * 40, z: loop[0].z - Math.cos(heading) * 40 };
+  return {
+    id: "convoy", name: "Convoy", blurb: "For two to four friends: once round and back to the café.",
+    start: { ...start, heading }, gates: gatesAlong(start, loop, 14),
+    reward: 4, repeatReward: 1.2, cooldown: 600, minSeconds: Math.floor(length(start, loop) / 23), crew: 2,
+  };
+}
+
+/** Distance to the nearest course's driving line, out to `reach` metres. */
+const courseDistOf = (missions: Mission[], reach: number) => {
+  const dist = new Float32Array(ROW * ROW).fill(1000);
+  for (const m of missions) {
+    // From a little behind the start arch, where trucks line up.
+    const back = { x: m.start.x - Math.sin(m.start.heading) * 25, z: m.start.z - Math.cos(m.start.heading) * 25 };
+    const path: Path = { xs: [back.x, m.start.x, ...m.gates.map((g) => g.x)], zs: [back.z, m.start.z, ...m.gates.map((g) => g.z)] };
+    const d = nearest(path, false, reach).dist;
+    for (let k = 0; k < d.length; k++) dist[k] = Math.min(dist[k], d[k]);
+  }
+  return dist;
+};
+
+export function planMissions(t: Terrain) {
+  const solo = [forestSlalom(t), ridgeRun(t), lakeshoreLoop(t), iceDrift(t)].filter((m): m is Mission => !!m);
+  const together = convoy(t, courseDistOf(solo, 60));
+  const missions = together ? [...solo, together] : solo;
+  // Keep every course clear of trees and rocks along its driving line.
+  return { missions, courseDist: courseDistOf(missions, 20) };
 }

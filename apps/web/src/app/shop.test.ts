@@ -1,19 +1,27 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import { PARTS, STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, specFor, type PartCategory } from "./shop";
 import { STARTERS, VEHICLES } from "./vehicles";
 import { buildWorld } from "./world";
 
-const migration = readFileSync(resolve(__dirname, "../../../../supabase/migrations/20261007000000_gilbyy_game.sql"), "utf8");
-const rows = (table: string) => {
-  const block = migration.match(new RegExp(`insert into public\\.${table} \\([^)]*\\) values([\\s\\S]*?);`))?.[1] ?? "";
-  return [...block.matchAll(/\(([^()]*)\)/g)].map((m) => m[1].split(",").map((v) => v.trim().replace(/^'|'$/g, "")));
-};
+const dir = resolve(__dirname, "../../../../supabase/migrations");
+const migrations = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort().map((f) => readFileSync(resolve(dir, f), "utf8"));
+/** Every row inserted into `table` across the migrations, in order, as column → value. */
+const rows = (table: string) =>
+  migrations.flatMap((sql) =>
+    [...sql.matchAll(new RegExp(`insert into public\\.${table} \\(([^)]*)\\) values([\\s\\S]*?);`, "g"))].flatMap(([, cols, block]) => {
+      const names = cols.split(",").map((c) => c.trim());
+      return [...block.matchAll(/\(([^()]*)\)/g)].map((m) => {
+        const values = m[1].split(",").map((v) => v.trim().replace(/^'|'$/g, ""));
+        return Object.fromEntries(names.map((n, i) => [n, values[i]]));
+      });
+    }),
+  );
 
 describe("the shop and the server agree", () => {
   it("on every price", () => {
-    const server = new Map(rows("shop_items").map(([key, price]) => [key, Number(price)]));
+    const server = new Map(rows("shop_items").map((r) => [r.key, Number(r.price)]));
     const client = new Map<string, number>();
     for (const v of VEHICLES) client.set(itemKey("vehicle", v.id), v.price);
     for (const cat of Object.keys(PARTS) as PartCategory[]) for (const p of PARTS[cat]) client.set(itemKey(cat, p.id), p.price);
@@ -21,8 +29,10 @@ describe("the shop and the server agree", () => {
   });
 
   it("on every mission's rewards and limits", () => {
-    const server = rows("missions").map(([id, reward, repeat, cooldown, min]) => ({ id, reward: +reward, repeat: +repeat, cooldown: +cooldown, min: +min }));
-    const client = buildWorld().missions.map((m) => ({ id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds }));
+    const server = rows("missions").map((r) => ({
+      id: r.id, reward: +r.reward, repeat: +r.repeat_reward, cooldown: +r.cooldown_seconds, min: +r.min_seconds, crew: +(r.crew ?? 1),
+    }));
+    const client = buildWorld().missions.map((m) => ({ id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds, crew: m.crew }));
     expect(server).toEqual(client);
   });
 });

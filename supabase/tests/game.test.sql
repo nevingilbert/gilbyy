@@ -105,6 +105,28 @@ select pg_temp.check((select count(*) from public.leaderboard()) = 1, 'a strange
 select pg_temp.check((select count(*) from public.friendships) = 0, 'strangers cannot see others'' friendships');
 reset role;
 
+-- Convoys: driven with friends, and each driver claims their own, naming the others.
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.fails($$ select public.complete_mission('convoy', 120) $$, 'a convoy cannot be claimed as a solo run');
+select pg_temp.fails($$ select public.complete_convoy('forest-slalom', 120, '{00000000-0000-0000-0000-00000000000b}') $$, 'a solo course is not a convoy');
+select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{}') $$, 'a convoy needs someone else in it');
+select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000a}') $$, 'you are not your own convoy');
+select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000c}') $$, 'a convoy of strangers pays nothing');
+select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c,00000000-0000-0000-0000-00000000000d,00000000-0000-0000-0000-00000000000e}') $$, 'a convoy is four drivers at most');
+select pg_temp.fails($$ select public.complete_convoy('convoy', 10, '{00000000-0000-0000-0000-00000000000b}') $$, 'impossibly fast convoys pay nothing');
+select pg_temp.check((select balance from public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c}')) = 16, 'a convoy with a friend in it pays the full reward');
+select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b}') $$, 'convoys wait for the cooldown too');
+reset role;
+select pg_temp.as_player('b');
+set role authenticated;
+select pg_temp.check((select balance from public.complete_convoy('convoy', 125, '{00000000-0000-0000-0000-00000000000a}')) = 4, 'the friend claims their own');
+reset role;
+select pg_temp.as_player('c');
+set role authenticated;
+select pg_temp.fails($$ select public.complete_convoy('convoy', 125, '{00000000-0000-0000-0000-00000000000a,00000000-0000-0000-0000-00000000000b}') $$, 'riding along with strangers pays nothing');
+reset role;
+
 -- Places: found once, real ones only, and counted beside your miles.
 select pg_temp.as_player('a');
 set role authenticated;
@@ -146,7 +168,8 @@ select pg_temp.check(not public.is_chat_member('chat:not-a-uuid:also-not'), 'gar
 
 -- Only the game's own functions can be called, and only when signed in.
 select pg_temp.check(not has_function_privilege('anon', 'public.me()', 'execute'), 'signed-out visitors cannot call the game''s functions');
-select pg_temp.check(not has_function_privilege('anon', 'public.discover(text)', 'execute') and not has_function_privilege('anon', 'public.leaderboard()', 'execute'), 'nor the ones added since');
+select pg_temp.check(not has_function_privilege('anon', 'public.discover(text)', 'execute') and not has_function_privilege('anon', 'public.leaderboard()', 'execute')
+  and not has_function_privilege('anon', 'public.complete_convoy(text, numeric, uuid[])', 'execute'), 'nor the ones added since');
 select pg_temp.check(not has_function_privilege('anon', 'public.is_chat_member(text)', 'execute'), 'signed-out visitors cannot probe chat membership');
 select pg_temp.check(has_function_privilege('authenticated', 'public.is_chat_member(text)', 'execute'), 'the chat policies can still check membership');
 select pg_temp.check(not has_function_privilege('authenticated', 'public.handle_new_user()', 'execute'), 'the new-account trigger cannot be called directly');

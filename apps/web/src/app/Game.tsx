@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CONVOY_MAX, Convoys, GATHER_REACH, lineUp, type ConvoyEvent } from "./convoy";
 import { secondsUntil } from "./daylight";
 import { GarageMenu, fmtMiles } from "./GarageMenu";
 import { currentGoal } from "./goals";
@@ -47,8 +48,11 @@ type Prompt =
   | { kind: "garage"; style: SiteStyle }
   | { kind: "mission"; mission: Mission }
   | { kind: "friend"; id: string; name: string; asked: boolean }
+  /** At the convoy's arch, or gathering one: `lead` in bold, then `rest`. `act` if E does something. */
+  | { kind: "convoy"; lead: string; rest: string; act: boolean }
   | null;
-type RunHud = { name: string; clock: number; gate: number; of: number } | null;
+/** `crew` is the rest of a convoy: their names and how many flags each has passed. */
+type RunHud = { name: string; clock: number; gate: number; of: number; through: boolean; crew: { name: string; passed: number }[] } | null;
 type ChatShown = { key: number; from: string; text: string };
 
 type Actions = {
@@ -66,7 +70,8 @@ type Actions = {
   chatOpen(): boolean;
 };
 const noop = () => {};
-const HELD: Input = { left: false, right: false, gas: false, brake: true };
+/** At a start line before "go". Not the brake: held at a standstill, that reverses. */
+const HELD: Input = { left: false, right: false, gas: false, brake: false };
 /** Forces the on-screen prompt to be worked out again next frame. */
 const STALE = "?";
 
@@ -136,6 +141,8 @@ export function Game() {
     const localNet = params.get("net") === "local";
 
     const world = buildWorld();
+    const courses = world.missions.filter((m) => m.crew === 1);
+    const convoyCourse = world.missions.find((m) => m.crew > 1) ?? null;
     let store: Store = new LocalStore();
     let net: Net | null = null;
     const rigParam = VEHICLES.find((v) => v.id === params.get("rig"))?.id ?? null;
@@ -224,6 +231,10 @@ export function Game() {
     const tags = new Map<string, HTMLDivElement>();
     let friendHere: { id: string; name: string } | null = null;
     let chatKey = 0;
+    // A convoy: what E does at its arch, and my time through its finish while the others come in.
+    const convoys = new Convoys(() => store.get().id, (msg) => net?.convoy(msg), world.missions);
+    let convoyAct: (() => void) | null = null;
+    let throughIn: number | null = null;
     // Presence as the loop sees it, alongside the copy React renders.
     let presenceNow: Presence = "solo";
     const present = (p: Presence) => {
@@ -356,6 +367,7 @@ export function Game() {
         store.noteAsked(from);
         void refreshFriends().then(() => say(`You and ${nameOf(from)} are friends now. Press T near them to chat.`, 7));
       },
+      convoy: (msg) => onConvoy(convoys.hear(msg, performance.now() / 1000, (id) => friends.has(id))),
       chat(line) {
         if (!friends.has(line.from)) return;
         const them = view.remotes.positions().find((p) => p.id === line.from);
@@ -405,6 +417,7 @@ export function Game() {
     let leftAt = 0;
     const goAway = () => {
       if (!net || tent < 0) return;
+      if (convoys.state) giveUp("You were away, so you've left the convoy.");
       net.leave();
       leftAt = Date.now();
       tent = -1;
@@ -539,6 +552,7 @@ export function Game() {
     /** E (or the on-screen button): whatever is on offer here. */
     actions.current.act = () => {
       if (modeRef.current !== "drive") return;
+      if (convoyAct) return convoyAct();
       if (nearGarage >= 0 && !running) {
         inputRef.current = noInput();
         cut = { garage: nearGarage, t: 0, from: { x: car.x, z: car.z, heading: car.heading } };
@@ -548,7 +562,7 @@ export function Game() {
         setModeBoth("entering");
         return;
       }
-      const m = !running && missionAt(world.missions, car.x, car.z);
+      const m = !running && !convoys.state && missionAt(courses, car.x, car.z);
       if (m) {
         // Line up just behind the start arch, facing the first gate.
         placeOnGround(m.start.x - Math.sin(m.start.heading) * 7, m.start.z - Math.cos(m.start.heading) * 7, m.start.heading, 0);
@@ -595,11 +609,105 @@ export function Game() {
     const giveUp = (why: string) => {
       running = null;
       runIndex = -1;
+      throughIn = null;
+      convoys.leave();
       setRun(null);
       setCount(null);
       shownRun = "";
+      shownPrompt = STALE;
       view.showRun(-1, 0, time);
       say(why);
+    };
+
+    // ——— Convoys ———
+
+    const names = (ids: string[]) => {
+      const n = ids.map(nameOf);
+      return n.length < 2 ? n.join("") : `${n.slice(0, -1).join(", ")} and ${n[n.length - 1]}`;
+    };
+
+    /** Lines up behind the arch, with the others in their places, and counts down. */
+    const setOff = (m: Mission, slot: number, crew: string[]) => {
+      if (modeRef.current === "map") setModeBoth("drive");
+      inputRef.current = noInput();
+      const at = lineUp(m, slot);
+      placeOnGround(at.x, at.z, at.heading, 0);
+      crew.forEach((id, i) => {
+        const spot = lineUp(m, i);
+        if (i !== slot) view.remotes.jump(id, spot.x, spot.z, spot.heading, performance.now() / 1000);
+      });
+      view.cut();
+      running = startRun(m);
+      runIndex = world.missions.indexOf(m);
+      throughIn = null;
+      lastPose = { x: car.x, z: car.z };
+      shownPrompt = STALE;
+      // The others need to see us in line now, not when the truck next moves.
+      gate.forget();
+      sharePose(performance.now() / 1000, true);
+    };
+
+    /** What the convoy's agreement has to say, as it happens. */
+    const onConvoy = (events: ConvoyEvent[]) => {
+      const me = store.get().id;
+      for (const e of events) {
+        if (e.kind === "called" && !convoys.state) say(`${nameOf(e.leader)} is gathering a convoy by the café. Follow the compass to join.`, 7);
+        else if (e.kind === "joined") say(e.who === me ? `You're in ${nameOf(convoys.state?.leader ?? "")}'s convoy. Wait here to set off together.` : `${nameOf(e.who)} joined the convoy.`);
+        else if (e.kind === "go") setOff(e.mission, e.slot, e.crew);
+        else if (e.kind === "left") say(`${nameOf(e.who)} left the convoy.`);
+        else if (e.kind === "off") say(`${nameOf(e.leader)} called off the convoy.`);
+        else if (e.kind === "home") {
+          const m = e.mission;
+          const seconds = throughIn ?? 0;
+          throughIn = null;
+          setRun(null);
+          shownRun = "";
+          void store.completeMission(m, seconds, e.with).then((res) => {
+            goal("mission");
+            if ("paid" in res) say(`Convoy home together in ${fmtTime(seconds)}. +${fmtMiles(res.paid)} mi`, 7);
+            else say(`Convoy home in ${fmtTime(seconds)}. ${res.error}`, 7);
+          });
+        }
+        shownPrompt = STALE;
+      }
+    };
+
+    /** At the convoy's arch, or gathering one: what's on offer. Sets `convoyAct`. */
+    const convoyPrompt = (): Prompt => {
+      convoyAct = null;
+      const m = convoyCourse;
+      const s = convoys.state;
+      if (!m || running || s?.phase === "running") return null;
+      const near = Math.hypot(car.x - m.start.x, car.z - m.start.z);
+      if (s) {
+        // Drive off from the arch and you've left.
+        if (near > GATHER_REACH * 2) {
+          giveUp(s.leader === store.get().id ? "You drove off, so the convoy's off." : "You drove off, so you've left the convoy.");
+          return null;
+        }
+        const others = convoys.others().map((d) => d.id);
+        if (s.leader !== store.get().id) {
+          const lead = nameOf(s.leader);
+          return convoys.mine()
+            ? { kind: "convoy", lead: `In ${lead}'s convoy`, rest: ` · waiting for ${lead} to set off · Esc to leave`, act: false }
+            : { kind: "convoy", lead: `Asking to join ${lead}'s convoy`, rest: "…", act: false };
+        }
+        if (!others.length) return { kind: "convoy", lead: "Gathering a convoy", rest: " · waiting for friends to drive up · Esc to stop", act: false };
+        convoyAct = () => onConvoy(convoys.go(performance.now() / 1000));
+        return { kind: "convoy", lead: `Set off with ${names(others)}`, rest: others.length < CONVOY_MAX - 1 ? " · or wait for more" : "", act: true };
+      }
+      if (near > GATHER_REACH || Math.abs(car.speed) > 5) return null;
+      const call = convoys.callFor(m.id);
+      if (call) {
+        if (call.crew.length >= CONVOY_MAX) return { kind: "convoy", lead: `${nameOf(call.leader)}'s convoy is full`, rest: "", act: false };
+        convoyAct = () => convoys.join(call.id, performance.now() / 1000);
+        return { kind: "convoy", lead: `Join ${nameOf(call.leader)}'s convoy`, rest: ` · ${m.blurb}`, act: true };
+      }
+      const rest = ` · ${m.blurb}`;
+      if (!net || tent < 0) return { kind: "convoy", lead: m.name, rest: `${rest} · sign in to drive it together`, act: false };
+      if (![...peers.keys()].some((id) => friends.has(id))) return { kind: "convoy", lead: m.name, rest: `${rest} · none of your friends are here yet`, act: false };
+      convoyAct = () => convoys.gather(m, performance.now() / 1000);
+      return { kind: "convoy", lead: "Gather a convoy here", rest: ` · your friends will hear · up to ${fmtMiles(m.reward)} mi each`, act: true };
     };
 
     // ——— Keys ———
@@ -630,7 +738,10 @@ export function Game() {
           e.preventDefault();
           return;
         }
-        if (k === "Escape" && running) return giveUp("Run abandoned.");
+        if (k === "Escape" && (running || convoys.state)) {
+          const s = convoys.state;
+          return giveUp(!s ? "Run abandoned." : s.phase === "gathering" && s.leader === store.get().id ? "Convoy called off." : "You've left the convoy.");
+        }
         if ((k === "l" || k === "L") && !e.repeat) {
           setBoard(true);
           return;
@@ -763,10 +874,14 @@ export function Game() {
         const g = currentGoal(store.get().goals, store.online || localNet);
         const nearest = (list: { x: number; z: number }[]) =>
           list.reduce<{ x: number; z: number } | null>((best, p) => (!best || Math.hypot(p.x - car.x, p.z - car.z) < Math.hypot(best.x - car.x, best.z - car.z) ? p : best), null);
+        // A friend gathering a convoy comes before the guidance; once in one, the course leads.
+        const called = convoyCourse && !convoys.state && convoys.callsOut().length ? convoyCourse.start : null;
         target =
-          !g || running ? null
+          running || convoys.state ? null
+          : called ? called
+          : !g ? null
           : g.target === "garage" ? nearest(view.garages.map((x) => x.approach))
-          : g.target === "mission" ? nearest(world.missions.map((m) => m.start))
+          : g.target === "mission" ? nearest(courses.map((m) => m.start))
           : g.target === "cafe" ? view.cafe
           : null;
         if (g?.id === "cafe" && Math.hypot(view.cafe.x - car.x, view.cafe.z - car.z) < view.cafe.r + CAFE_SLACK) goal("cafe");
@@ -792,12 +907,14 @@ export function Game() {
       view.garages.forEach((g, i) => {
         if (Math.hypot(car.x - g.approach.x, car.z - g.approach.z) < 7 && Math.abs(car.speed) < 5) found = i;
       });
-      nearGarage = running ? -1 : found;
-      const m = !running && found < 0 && Math.abs(car.speed) < 5 ? missionAt(world.missions, car.x, car.z) : null;
+      nearGarage = running || convoys.state ? -1 : found;
+      const m = !running && !convoys.state && found < 0 && Math.abs(car.speed) < 5 ? missionAt(courses, car.x, car.z) : null;
+      convoyAct = null;
+      const together = found < 0 && !m ? convoyPrompt() : null;
 
       friendHere = null;
       const cafe = view.cafe;
-      if (!running && found < 0 && !m && net && Math.hypot(car.x - cafe.x, car.z - cafe.z) < cafe.r + CAFE_SLACK) {
+      if (!running && found < 0 && !m && !together && net && Math.hypot(car.x - cafe.x, car.z - cafe.z) < cafe.r + CAFE_SLACK) {
         let best = FRIEND_REACH;
         for (const p of view.remotes.positions()) {
           const d = Math.hypot(p.x - car.x, p.z - car.z);
@@ -811,9 +928,14 @@ export function Game() {
       const next: Prompt =
         found >= 0 ? { kind: "garage", style: view.garages[found].style }
         : m ? { kind: "mission", mission: m }
+        : together ? together
         : friendHere ? { kind: "friend", id: friendHere.id, name: friendHere.name, asked: askedBy.has(friendHere.id) }
         : null;
-      const key = next ? `${next.kind}:${"style" in next ? next.style : "mission" in next ? next.mission.id : `${next.id}${next.asked}`}` : "";
+      const key = !next ? ""
+        : next.kind === "garage" ? `garage:${next.style}`
+        : next.kind === "mission" ? `mission:${next.mission.id}`
+        : next.kind === "convoy" ? `convoy:${next.lead}${next.rest}${next.act}`
+        : `friend:${next.id}${next.asked}`;
       if (key !== shownPrompt) {
         shownPrompt = key;
         setPrompt(next);
@@ -829,7 +951,8 @@ export function Game() {
       if (ev?.kind === "go") {
         setCount(0);
         window.setTimeout(() => setCount(null), 700);
-      } else if (ev?.kind === "lost") return giveUp("Too far off the course. Run abandoned.");
+      } else if (ev?.kind === "lost") return giveUp(convoys.state ? "Too far off the course, so you've left the convoy." : "Too far off the course. Run abandoned.");
+      else if (ev?.kind === "gate") onConvoy(convoys.passed(r.next, performance.now() / 1000));
       else if (ev?.kind === "finish") {
         const m = r.mission;
         const seconds = ev.seconds;
@@ -838,6 +961,13 @@ export function Game() {
         setRun(null);
         shownRun = "";
         view.showRun(-1, 0, time);
+        if (convoys.state) {
+          // Through, and the convoy is home when the others are. Paid then (`onConvoy`).
+          throughIn = seconds;
+          onConvoy(convoys.passed(r.next, performance.now() / 1000));
+          if (convoys.state) say("Through the finish. Wait for the others; the convoy's home when they're through.", 6);
+          return;
+        }
         void store.completeMission(m, seconds).then((res) => {
           goal("mission");
           if ("paid" in res) say(`${m.name} in ${fmtTime(seconds)}. +${fmtMiles(res.paid)} mi`, 7);
@@ -846,11 +976,16 @@ export function Game() {
         return;
       }
       view.showRun(runIndex, r.next, time);
-      const hud = `${r.next}|${Math.floor(Math.max(0, r.clock))}`;
-      if (hud !== shownRun) {
-        shownRun = hud;
-        setRun({ name: r.mission.name, clock: Math.max(0, r.clock), gate: r.next, of: r.mission.gates.length });
-      }
+      showRun(r.mission, Math.max(0, r.clock), r.next, false);
+    };
+
+    /** The line at the top during a run: the course, the clock, the next flag, and in a convoy where the others are. */
+    const showRun = (m: Mission, clock: number, gate: number, through: boolean) => {
+      const crew = convoys.others().map((d) => ({ name: nameOf(d.id), passed: d.passed }));
+      const hud = `${m.id}|${gate}|${Math.floor(clock)}|${through}|${crew.map((c) => `${c.name}:${c.passed}`).join(",")}`;
+      if (hud === shownRun) return;
+      shownRun = hud;
+      setRun({ name: m.name, clock, gate, of: m.gates.length, through, crew });
     };
 
     const frame = (nowMs: number) => {
@@ -861,6 +996,10 @@ export function Game() {
       const m = modeRef.current;
       const garage = view.garages[cut.garage];
       time = shared ? Date.now() / 1000 - SHARED_EPOCH : time + (m === "garage" || m === "map" ? 0 : dt);
+
+      onConvoy(convoys.tick(now));
+      // Through the finish, waiting for the rest of the convoy.
+      if (!running && throughIn !== null && convoys.state) showRun(convoys.state.mission, throughIn, convoys.state.mission.gates.length, true);
 
       if (rising >= 0) {
         rising += dt;
@@ -888,9 +1027,11 @@ export function Game() {
           moving = [...trainObstacles(view.trainCars()), ...view.remotes.obstacles()];
           lastPose = { x: car.x, z: car.z };
           acc += dt;
-          // Held on the brakes at a start line until "go".
-          const input = running && running.clock < 0 ? HELD : inputRef.current;
+          // Held at a start line until "go": the suspension settles, the truck doesn't roll.
+          const held = running !== null && running.clock < 0;
+          const input = held ? HELD : inputRef.current;
           while (acc >= STEP) {
+            if (held) car.speed = car.side = 0;
             step(car, input, STEP, ground, spec);
             acc -= STEP;
           }
@@ -960,6 +1101,7 @@ export function Game() {
       store.addMiles(unbanked);
       unbanked = 0;
       void store.flush();
+      convoys.leave();
       net?.leave();
     };
     window.addEventListener("pagehide", onUnload);
@@ -1090,9 +1232,14 @@ export function Game() {
       {driving && solo && !run && <SoloBanner canSignIn={onlineConfigured} onSignIn={() => setSigningIn(true)} />}
 
       {run && driving && (
-        <div className="pointer-events-none absolute inset-x-0 top-11 text-center text-sm text-[rgba(255,246,232,0.9)] drop-shadow">
-          <span className="font-semibold">{run.name}</span> · {fmtTime(run.clock)} · {Math.min(run.gate + 1, run.of)}/{run.of}
-          <span className="ml-2 hidden text-xs text-[rgba(255,246,232,0.5)] sm:inline">Esc to give up</span>
+        <div className="pointer-events-none absolute inset-x-4 top-11 text-center text-sm text-[rgba(255,246,232,0.9)] drop-shadow">
+          <span className="font-semibold">{run.name}</span> · {fmtTime(run.clock)} · {run.through ? "through" : `${Math.min(run.gate + 1, run.of)}/${run.of}`}
+          {run.crew.map((c, i) => (
+            <span key={i} className="text-[rgba(255,246,232,0.7)]">
+              {" "}· {c.name} {c.passed >= run.of ? "through" : `${Math.min(c.passed + 1, run.of)}/${run.of}`}
+            </span>
+          ))}
+          <span className="ml-2 hidden text-xs text-[rgba(255,246,232,0.5)] sm:inline">{run.crew.length || run.through ? "Esc to leave" : "Esc to give up"}</span>
         </div>
       )}
       {count !== null && driving && (
@@ -1154,9 +1301,12 @@ export function Game() {
         <div className="absolute inset-x-0 bottom-28 flex justify-center px-4 sm:bottom-10">
           <button
             onClick={() => actions.current.act()}
+            disabled={prompt.kind === "convoy" && !prompt.act}
             className="max-w-md rounded-full border border-white/25 bg-black/30 px-4 py-2 text-sm text-[rgba(255,246,232,0.9)] backdrop-blur"
           >
-            <span className="mr-2 hidden rounded border border-white/30 px-1.5 text-xs sm:inline">{prompt.kind === "friend" ? "F" : "E"}</span>
+            {(prompt.kind !== "convoy" || prompt.act) && (
+              <span className="mr-2 hidden rounded border border-white/30 px-1.5 text-xs sm:inline">{prompt.kind === "friend" ? "F" : "E"}</span>
+            )}
             {prompt.kind === "garage" && <>Enter {GARAGE_NAMES[prompt.style].replace(/^The /, "the ")}</>}
             {prompt.kind === "mission" && (
               <>
@@ -1165,6 +1315,12 @@ export function Game() {
               </>
             )}
             {prompt.kind === "friend" && (prompt.asked ? <>Accept {prompt.name}&apos;s friend request</> : <>Ask {prompt.name} to be friends</>)}
+            {prompt.kind === "convoy" && (
+              <>
+                <b className="font-semibold">{prompt.lead}</b>
+                <span className="text-[rgba(255,246,232,0.6)]">{prompt.rest}</span>
+              </>
+            )}
           </button>
         </div>
       )}
