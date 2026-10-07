@@ -129,7 +129,7 @@ export function NamePanel({ onSave }: { onSave: (name: string) => Promise<string
           autoFocus
           className={`${field} mt-4`}
           maxLength={20}
-          placeholder="3 to 20 letters or numbers"
+          placeholder="2 to 20 letters or numbers"
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.stopPropagation()}

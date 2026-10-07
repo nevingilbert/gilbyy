@@ -18,6 +18,10 @@ export type Profile = Progress & {
   found: string[];
 };
 export type Friend = { id: string; name: string };
+
+/** What a name may be. Must match the check on `profiles.name` in the migrations. */
+export const NAME_PATTERN = /^[A-Za-z0-9 _-]{2,20}$/;
+const NAME_RULE = "2–20 letters, numbers, spaces, - or _.";
 export type Standing = { id: string; name: string; lifetime: number; me: boolean; garages: number; cafes: number };
 
 export interface Store {
@@ -108,7 +112,7 @@ export class LocalStore implements Store {
   }
 
   async setName(name: string) {
-    if (!/^[A-Za-z0-9 _-]{3,20}$/.test(name.trim())) return "3–20 letters, numbers, spaces, - or _.";
+    if (!NAME_PATTERN.test(name.trim())) return NAME_RULE;
     this.set({ name: name.trim() });
     return null;
   }
@@ -231,7 +235,13 @@ export class SupabaseStore implements Store {
     void this.call("discover", { p_key: key });
   }
 
-  setName = (name: string) => this.call("set_name", { p_name: name });
+  async setName(name: string) {
+    const error = await this.call("set_name", { p_name: name });
+    // The database names the rule it refused on, which is no use to a player.
+    if (error?.includes("profiles_name_key")) return "Someone already has that name.";
+    if (error?.includes("profiles_name_check")) return NAME_RULE;
+    return error;
+  }
 
   async requestFriend(id: string) {
     const { data, error } = await this.sb.rpc("request_friend", { p_other: id });

@@ -78,13 +78,14 @@ select pg_temp.check((select balance from public.complete_mission('forest-slalom
 
 -- Names and goals.
 select pg_temp.check((select name from public.set_name('  Nevin  ')) = 'Nevin', 'names are trimmed and saved');
-select pg_temp.fails($$ select public.set_name('x') $$, 'names must be 3 to 20 characters');
+select pg_temp.fails($$ select public.set_name('x') $$, 'names must be 2 to 20 characters');
 select pg_temp.check((select cardinality(goals) from public.mark_goal('found-garage')) = 1, 'goals are recorded');
 select pg_temp.check((select cardinality(goals) from public.mark_goal('found-garage')) = 1, 'goals are recorded once');
 reset role;
 select pg_temp.as_player('b');
 set role authenticated;
 select pg_temp.fails($$ select public.set_name('Nevin') $$, 'names are unique');
+select pg_temp.check((select name from public.set_name('Z_')) = 'Z_', 'two characters are enough for a name');
 
 -- Friends: both have to ask.
 select pg_temp.check(public.request_friend('00000000-0000-0000-0000-00000000000a') = 'pending', 'asking once is pending');
