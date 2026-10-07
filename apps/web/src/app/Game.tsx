@@ -783,7 +783,9 @@ export function Game() {
       const off = wrapHalf(bearingOf(Math.atan2(to.x - car.x, to.z - car.z)) - bearingOf(car.heading)) * COMPASS.length * COMPASS_ITEM;
       const edge = COMPASS_VIEW / 2 + 10;
       mark.style.opacity = "1";
-      mark.style.transform = `translateX(${Math.max(-edge, Math.min(edge, off))}px)`;
+      // `translate`, not `transform`: the diamond's `rotate-45` is the `rotate` property, and a
+      // transform would slide it along the rotated axis, diagonally off the compass.
+      mark.style.translate = `${Math.max(-edge, Math.min(edge, off))}px 0`;
     };
 
     /** What's on offer where the truck is: a garage door, a start arch, a friend to make. */
