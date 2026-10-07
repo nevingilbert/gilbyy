@@ -14,9 +14,8 @@ subdomains." Update the **You are here** marker as you progress.
 > Found garages and cafés now stay on the map and are counted there and on the
 > leaderboard (`decisions/0008`).
 > **Next:** merge `feat/multiplayer` to `main` when the owner says so. Still open:
-> whether to keep the email sign-in option (it only reaches members of the Supabase
-> org without a custom SMTP sender), an idle timeout so a forgotten tab gives up its
-> tent, and the frame rate on a real phone and laptop.
+> an idle timeout so a forgotten tab gives up its tent, and the frame rate on a real
+> phone and laptop. Sign-in is Google only (the email link was removed).
 >
 > Phases A and B are complete: levels retired and auth removed (2026-08-28), the
 > Supabase project deleted, and all six hostnames live on gilbyy.com with Google

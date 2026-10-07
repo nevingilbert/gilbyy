@@ -127,9 +127,10 @@ rejoined in 2 s and re-announced 30 s later.
 - **`feat/multiplayer` is not merged**, so gilbyy.com is still single player. The owner
   asked not to merge or open a PR without being asked. Sign-in on a Vercel preview URL
   is untested.
-- **Magic links only reach members of the Supabase org** (built-in mailer). Google is
-  the only sign-in that works for the public. A custom SMTP sender is a new service:
-  ask first.
+- **Sign-in is Google only.** The email-link option was removed from `SignInPanel`
+  and `supabase.ts` at the owner's request, because Supabase's built-in mailer only
+  reaches members of the Supabase org. The Email provider is still switched on in the
+  Supabase dashboard; turning it off there is the owner's click.
 - **An inactive tab keeps its tent.** It stays connected and present; only closing the
   tab or losing the connection frees the tent. There is no idle timeout.
 - **One account in two tabs** sends poses from both under one id, so others see that

@@ -14,7 +14,7 @@ import { createView, type Garage } from "./scene";
 import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "./shop";
 import { GARAGE_NAMES } from "./showroom";
 import { LocalStore, SupabaseStore, type Profile, type Store } from "./store";
-import { currentSession, onSessionChange, onlineConfigured, signInWithEmail, signInWithGoogle, signOut, supabase } from "./supabase";
+import { currentSession, onSessionChange, onlineConfigured, signInWithGoogle, signOut, supabase } from "./supabase";
 import { trainObstacles } from "./track";
 import { VEHICLES, type VehicleId } from "./vehicles";
 import { buildWorld, campPitches, START, type Ground, type Mission, type Obstacle, type SiteStyle } from "./world";
@@ -1136,7 +1136,7 @@ export function Game() {
 
       {mode === "pick" && !naming && <StarterPicker onLook={look} onPick={pick} />}
       {naming && <NamePanel onSave={(name) => actions.current.setName(name)} />}
-      {signingIn && <SignInPanel onGoogle={signInWithGoogle} onEmail={signInWithEmail} onClose={() => setSigningIn(false)} />}
+      {signingIn && <SignInPanel onGoogle={signInWithGoogle} onClose={() => setSigningIn(false)} />}
       {board && (
         <Leaderboard
           online={online || presence === "local"}

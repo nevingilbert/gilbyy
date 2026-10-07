@@ -87,15 +87,7 @@ export function SoloBanner({ canSignIn, onSignIn }: { canSignIn: boolean; onSign
   );
 }
 
-export function SignInPanel({
-  onGoogle, onEmail, onClose,
-}: {
-  onGoogle: () => Promise<string | null>;
-  onEmail: (email: string) => Promise<string | null>;
-  onClose: () => void;
-}) {
-  const [email, setEmail] = useState("");
-  const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+export function SignInPanel({ onGoogle, onClose }: { onGoogle: () => Promise<string | null>; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   return (
@@ -109,28 +101,6 @@ export function SignInPanel({
         <button className={`${button} mt-4 w-full bg-white/10 py-2`} onClick={async () => setError(await onGoogle())}>
           Continue with Google
         </button>
-        <div className="my-4 flex items-center gap-3 text-[11px] text-[rgba(255,246,232,0.35)]">
-          <span className="h-px flex-1 bg-white/10" /> or <span className="h-px flex-1 bg-white/10" />
-        </div>
-        {state === "sent" ? (
-          <p className="text-sm text-[rgba(255,246,232,0.8)]">Check your email for a sign-in link. Open it in this browser.</p>
-        ) : (
-          <form
-            className="flex gap-2"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setState("sending");
-              const err = await onEmail(email.trim());
-              setError(err);
-              setState(err ? "idle" : "sent");
-            }}
-          >
-            <input className={field} type="email" required placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <button className={button} disabled={state === "sending"}>
-              Send link
-            </button>
-          </form>
-        )}
         {error && <p className="mt-3 text-xs text-[rgba(255,210,170,0.9)]">{error}</p>}
         <button className="mt-4 text-xs text-[rgba(255,246,232,0.45)] hover:text-[rgba(255,246,232,0.8)]" onClick={onClose}>
           Keep driving solo

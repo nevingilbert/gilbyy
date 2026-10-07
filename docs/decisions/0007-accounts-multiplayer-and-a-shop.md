@@ -27,7 +27,7 @@ asked for each explicitly, so this records the change instead of working around 
 ## Decision
 
 - **Supabase for accounts, progress and realtime.** One free project, on the owner's
-  account; one was retired to make room. Sign-in is Google OAuth or an email magic
+  account; one was retired to make room. Sign-in was Google OAuth or an email magic
   link. The client uses only the publishable key. Every write goes through
   `security definer` functions in `supabase/migrations/20261007000000_gilbyy_game.sql`,
   and players can't update their own rows directly:
@@ -66,6 +66,14 @@ asked for each explicitly, so this records the change instead of working around 
 - **Rigs are inspired by real vehicles but named for themselves.** The real names
   are trademarks.
 - **Links to other gilbyy.com apps are still not built.** `0004` stands.
+
+## Amended
+
+- **2026-10-07: sign-in is Google only.** The email link was taken out of the sign-in
+  panel the day the project was connected. Supabase's built-in mailer only delivers to
+  members of the Supabase org, so the option failed for everyone else, and a mail
+  service of our own would be a new dependency. See `architecture.md`, *Free-tier
+  limits*.
 
 ## Consequences
 

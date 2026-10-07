@@ -119,7 +119,7 @@ domain via subdomains and share nothing else. This repo does not reference them.
 ## Auth and the database
 
 One Supabase project, used only by this repo: Postgres for profiles and the shop, Auth
-for sign-in (Google, or an email magic link), and Realtime for the shared valley. See
+for sign-in (Google only), and Realtime for the shared valley. See
 `decisions/0007-accounts-multiplayer-and-a-shop.md`.
 
 - The schema, policies and functions are in
@@ -164,8 +164,8 @@ To do it again from nothing:
 5. Authentication → Sign In / Providers → Google, with a Google Cloud OAuth client
    (type *Web application*; the one in use is "gilbyy world" in the `gilbyy-projects`
    Google Cloud project) whose only redirect URI is
-   `https://<ref>.supabase.co/auth/v1/callback`. Email magic links are on by default,
-   but see the mailer note under *Free-tier limits*.
+   `https://<ref>.supabase.co/auth/v1/callback`. The game offers no other way in, so
+   the Email provider on that same page can be turned off.
 6. In the Vercel project `gilbyy-web`, add `NEXT_PUBLIC_SUPABASE_URL` and
    `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (the `sb_publishable_…` key, never the secret
    one) for Production and Preview. Locally, put the same two in `apps/web/.env.local`.
@@ -249,10 +249,11 @@ that repo's problem, not this one's.
     hit the per-second cap; the tent limit is 30, but the comfortable number is under
     ten.
 - **Supabase Auth email:** the built-in mailer sends only a few emails an hour, and
-  **only to addresses that are members of the Supabase org**; anyone else gets "Email
-  address not authorized". So Google is the only sign-in that works for the public
-  today. Magic links for everyone need a custom SMTP sender, which is a new service
-  and so a decision for the owner under the free-tier rule.
+  only to addresses that are members of the Supabase org; anyone else gets "Email
+  address not authorized". That is why sign-in is Google only: the email-link option
+  was removed on 2026-10-07 because it could not work for the public. Bringing it back
+  means a custom SMTP sender, which is a new service and so a decision for the owner
+  under the free-tier rule.
 - **Vercel Hobby:** 100 GB bandwidth/month, 100 GB-hr serverless. Realistic for hobby; watch images.
 - **Sentry free:** 5k errors/month.
 - **GitHub Actions:** 2k minutes/month on private; unlimited on public.

@@ -40,12 +40,6 @@ export async function signInWithGoogle() {
   return error?.message ?? null;
 }
 
-/** Sends a one-time sign-in link to `email`. */
-export async function signInWithEmail(email: string) {
-  const { error } = await supabase()!.auth.signInWithOtp({ email, options: { emailRedirectTo: back() } });
-  return error?.message ?? null;
-}
-
 export async function signOut() {
   await supabase()?.auth.signOut();
 }
