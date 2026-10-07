@@ -38,7 +38,8 @@ unhurried exploration in a classic 4x4.
 - The high chase camera.
 - Swaying grass near the car, bushes breaking up the open ground, pine forests with a
   few golden larches and autumn broadleaves.
-- A nearly absent HUD: a compass strip, a small round topo minimap and an odometer.
+- A nearly absent HUD: a compass strip, a small round topo minimap, a speedometer in mph
+  and an odometer.
   First-time guidance is one small line under the title and a mark on the compass.
 - Calm. Missions are optional, start only when you drive up and press E, and have no
   failure beyond giving up. Their timer shows only while you're on one.

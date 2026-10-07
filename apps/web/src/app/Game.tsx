@@ -40,6 +40,8 @@ const RETRY_JOIN = 60;
 const COMPASS = ["N", "·", "NE", "·", "E", "·", "SE", "·", "S", "·", "SW", "·", "W", "·", "NW", "·"];
 const COMPASS_ITEM = 28;
 const COMPASS_VIEW = COMPASS_ITEM * 8;
+/** Metres a second to miles an hour, for the speedometer. */
+const MPH = 3600 / METRES_PER_MILE;
 
 type Mode = "boot" | "pick" | "drive" | "entering" | "garage" | "leaving" | "map";
 type Presence = "solo" | "local" | "joining" | "online" | "full" | "away";
@@ -84,6 +86,7 @@ export function Game() {
   const miniRef = useRef<HTMLCanvasElement>(null);
   const fullRef = useRef<HTMLCanvasElement>(null);
   const compassRef = useRef<HTMLDivElement>(null);
+  const speedRef = useRef<HTMLSpanElement>(null);
   const markRef = useRef<HTMLDivElement>(null);
   const fadeRef = useRef<HTMLDivElement>(null);
   const tagsRef = useRef<HTMLDivElement>(null);
@@ -203,6 +206,8 @@ export function Game() {
     let lastDistance = 0;
     let unbanked = 0;
     let bankClock = 0;
+    /** The speedometer's reading, eased so bumps don't make it flicker. */
+    let gauge = 0;
     let flushClock = 0;
     let nearGarage = -1;
     let cut = { garage: -1, t: 0, from: { x: 0, z: 0, heading: 0 } };
@@ -950,6 +955,10 @@ export function Game() {
         const at = (COMPASS.length * (1 + bearingOf(car.heading)) + 0.5) * COMPASS_ITEM;
         compassRef.current.style.transform = `translateX(${COMPASS_VIEW / 2 - at}px)`;
       }
+      // Speedometer: whole miles an hour, written only when the number changes.
+      gauge += (Math.abs(car.speed) - gauge) * (1 - Math.exp(-dt * 8));
+      const mph = String(Math.round(gauge * MPH));
+      if (speedRef.current && speedRef.current.textContent !== mph) speedRef.current.textContent = mph;
       if (first) {
         first = false;
         setReady(true);
@@ -1074,9 +1083,13 @@ export function Game() {
             </button>
           )}
 
-          {/* Minimap and odometer: top-right on phones (clear of the thumbs), bottom-left otherwise. */}
+          {/* Minimap, speedometer and odometer: top-right on phones (clear of the thumbs), bottom-left otherwise. */}
           <div className="absolute right-4 top-12 flex flex-col items-center gap-1 sm:bottom-5 sm:left-5 sm:right-auto sm:top-auto">
             <canvas ref={miniRef} className="pointer-events-none h-[104px] w-[104px] rounded-full drop-shadow-md sm:h-[150px] sm:w-[150px]" />
+            <p className="pointer-events-none -mb-1 text-[rgba(255,246,232,0.82)] drop-shadow-sm">
+              <span ref={speedRef} className="text-base font-semibold tabular-nums">0</span>
+              <span className="ml-1 text-[10px] font-semibold tracking-wide text-[rgba(255,246,232,0.6)]">mph</span>
+            </p>
             <button
               onClick={() => setBoard(true)}
               className="text-[11px] font-semibold tracking-wide text-[rgba(255,246,232,0.7)] drop-shadow-sm"
