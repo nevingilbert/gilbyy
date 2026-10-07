@@ -14,6 +14,8 @@ subdomains." Update the **You are here** marker as you progress.
 > Found garages and cafés now stay on the map and are counted there and on the
 > leaderboard (`decisions/0008`).
 > It is all on `main` and live at gilbyy.com since 2026-10-07.
+> A convoy course for two to four friends is built on `feat/convoy-mission`
+> (`decisions/0009`); its migration is not on the live project yet.
 > **Next:** play it signed in on the live site. Still open:
 > the frame rate on a real phone and laptop. Sign-in is Google only (the email link was
 > removed), and an idle tab now gives its tent back.

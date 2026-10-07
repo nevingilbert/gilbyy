@@ -35,7 +35,9 @@ HUD that is nearly absent.
   there, on rigs, paint, tyres, lights, a snorkel and snow chains. Bigger tyres climb
   rocks, the snorkel crosses the rivers, and studded tyres or chains grip the snow.
 - Four challenge courses (a forest slalom, a ridge climb, a lake loop and an ice drift)
-  that pay out miles. They're never required.
+  that pay out miles, and a convoy by the café for two to four friends, who drive it
+  together and are paid when everyone is home. None of them is required, and nobody
+  races anybody.
 - A first-time guide line, one thing at a time, pointing at the compass.
 - A map that starts grey and fills in as you explore, fresh on every visit.
 - A high chase camera, a compass, a minimap and an odometer. Little else on screen.
