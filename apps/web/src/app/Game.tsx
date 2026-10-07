@@ -9,6 +9,7 @@ import { fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, type Net, type NetHandlers, type Peer } from "./net";
 import { Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
 import { makeCar, noInput, step, type Input } from "./physics";
+import { countFound, foundLine } from "./places";
 import { createView, type Garage } from "./scene";
 import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "./shop";
 import { GARAGE_NAMES } from "./showroom";
@@ -149,7 +150,7 @@ export function Game() {
       if (fadeRef.current) fadeRef.current.style.opacity = "0";
       return; // No WebGL. The fog-coloured backdrop is all there is to see.
     }
-    const map = createMap(world);
+    const map = createMap(world, (key) => store.discover(key));
     const pitches = campPitches();
 
     // The opening. Signed in, the truck belongs at a tent, and which one isn't known for a
@@ -284,9 +285,11 @@ export function Game() {
     const attach = (s: Store) => {
       unsubscribe();
       store = s;
+      map.setFound(s.get().found, true);
       const sync = () => {
         const p = store.get();
-        const look = `${p.vehicle}|${JSON.stringify(p.loadout)}|${p.owned.length}|${p.goals.length}|${p.name}`;
+        map.setFound(p.found);
+        const look = `${p.vehicle}|${JSON.stringify(p.loadout)}|${p.owned.length}|${p.goals.length}|${p.found.length}|${p.name}`;
         if (Math.floor(p.balance * 10) !== shownMiles || look !== shownLook) {
           shownMiles = Math.floor(p.balance * 10);
           shownLook = look;
@@ -1112,7 +1115,10 @@ export function Game() {
       {mode === "map" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={() => actions.current.toggleMap()}>
           <canvas ref={fullRef} className="aspect-square w-[min(88vw,82dvh)] rounded-2xl shadow-2xl" />
-          <p className="absolute bottom-4 text-xs text-[rgba(255,246,232,0.6)]">M or Esc to close</p>
+          <p className="absolute bottom-4 text-center text-xs text-[rgba(255,246,232,0.6)]">
+            {profile && <span className="block tabular-nums text-[rgba(255,246,232,0.85)]">{foundLine(countFound(profile.found))} found</span>}
+            M or Esc to close
+          </p>
         </div>
       )}
 

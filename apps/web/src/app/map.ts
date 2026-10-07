@@ -1,11 +1,14 @@
 import { PALETTE } from "./palette";
-import { CAFE, CAMP, HALF, WORLD, sampleGrid, type Mission, type Site, type World } from "./world";
+import { CAFE_KEY, garageKey, placesOf } from "./places";
+import { CAFE, CAMP, HALF, WORLD, sampleGrid, type Mission, type World } from "./world";
 
 /**
  * The map: a parchment topo sheet of the valley, drawn once, under a grey fog that
  * clears wherever you've driven. The fog lives only in memory, so every visit starts
- * unexplored. Garages and mission starts appear on it once you've seen them; the camp
- * and the café are marked from the start.
+ * unexplored. The camp is marked from the start. Garages and the café appear once the
+ * truck has been near them, and then stay for good, fog or no fog: `onFound` is told
+ * when one is found and `setFound` puts back the ones saved from earlier visits.
+ * Mission starts appear the same way but are forgotten with the fog.
  */
 const SIZE = 512;
 const PX = SIZE / WORLD.size;
@@ -189,14 +192,15 @@ export type Spot = { x: number; z: number; heading: number };
 /** Other things on the map this frame: the train (if seen), other players, and where the guidance is pointing. */
 export type Extras = { train?: Spot; players?: (Spot & { friend: boolean })[] };
 
-export function createMap(world: World) {
+export function createMap(world: World, onFound: (key: string) => void = () => {}) {
   const base = paintBase(world);
   const fog = document.createElement("canvas");
   fog.width = fog.height = SIZE;
   const f = fog.getContext("2d", { willReadFrequently: true })!;
   f.fillStyle = PALETTE.map.fog;
   f.fillRect(0, 0, SIZE, SIZE);
-  const seen = new Set<Site>();
+  const places = placesOf(world.sites);
+  const found = new Set<string>();
   const seenMissions = new Set<Mission>();
   let lastX = Infinity;
   let lastZ = Infinity;
@@ -214,14 +218,18 @@ export function createMap(world: World) {
     f.fillStyle = grad;
     f.fillRect(toPx(x) - r, toPx(z) - r, r * 2, r * 2);
     f.globalCompositeOperation = "source-over";
-    for (const s of world.sites) if (Math.hypot(s.x - x, s.z - z) < SIGHT * 0.8) seen.add(s);
+    for (const p of places) {
+      if (found.has(p.key) || Math.hypot(p.x - x, p.z - z) >= SIGHT * 0.8) continue;
+      found.add(p.key);
+      onFound(p.key);
+    }
     for (const m of world.missions) if (Math.hypot(m.start.x - x, m.start.z - z) < SIGHT * 0.8) seenMissions.add(m);
   }
 
   const markers = (g: CanvasRenderingContext2D, place: (x: number, z: number) => [number, number], icon: number, extras: Extras) => {
     drawCamp(g, ...place(CAMP.x, CAMP.z), icon * 1.1);
-    drawCafe(g, ...place(CAFE.x, CAFE.z), icon * 0.9);
-    for (const s of seen) drawGarage(g, ...place(s.x, s.z), icon);
+    if (found.has(CAFE_KEY)) drawCafe(g, ...place(CAFE.x, CAFE.z), icon * 0.9);
+    for (const s of world.sites) if (found.has(garageKey(s.style))) drawGarage(g, ...place(s.x, s.z), icon);
     for (const m of seenMissions) drawFlag(g, ...place(m.start.x, m.start.z), icon);
     if (extras.train) drawDot(g, ...place(extras.train.x, extras.train.z), icon * 0.55, PALETTE.map.train);
     for (const p of extras.players ?? []) drawDot(g, ...place(p.x, p.z), icon * 0.5, p.friend ? PALETTE.map.friend : PALETTE.map.player);
@@ -275,7 +283,20 @@ export function createMap(world: World) {
     return f.getImageData(Math.floor(toPx(x)), Math.floor(toPx(z)), 1, 1).data[3] < 128;
   }
 
-  return { reveal, drawMini, drawFull, explored, discovered: () => seen.size };
+  /**
+   * The places already found. `fresh` starts over from these (a different player's
+   * progress has loaded) and looks again at what's near the truck; otherwise they're
+   * added to what the map has.
+   */
+  function setFound(keys: string[], fresh = false) {
+    if (fresh) {
+      found.clear();
+      lastX = lastZ = Infinity;
+    }
+    for (const k of keys) found.add(k);
+  }
+
+  return { reveal, drawMini, drawFull, explored, setFound };
 }
 
 export type GameMap = ReturnType<typeof createMap>;

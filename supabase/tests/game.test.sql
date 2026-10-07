@@ -35,7 +35,8 @@ begin
 end;
 $$;
 
-select pg_temp.check((select count(*) from public.profiles) = 3, 'every new account gets a profile');
+-- Counting only these three, so the file also runs against a project that has real players.
+select pg_temp.check((select count(*) from public.profiles where id::text like '00000000-0000-0000-0000-00000000000_') = 3, 'every new account gets a profile');
 
 -- Miles: banked no faster than a truck could have driven them.
 update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%a';
@@ -103,6 +104,19 @@ select pg_temp.check((select count(*) from public.leaderboard()) = 1, 'a strange
 select pg_temp.check((select count(*) from public.friendships) = 0, 'strangers cannot see others'' friendships');
 reset role;
 
+-- Places: found once, real ones only, and counted beside your miles.
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select cardinality(discovered) from public.discover('garage:barn')) = 1, 'finding a garage is recorded');
+select pg_temp.check((select cardinality(discovered) from public.discover('garage:barn')) = 1, 'finding it again changes nothing');
+select pg_temp.check((select cardinality(discovered) from public.discover('cafe:camp')) = 2, 'the café counts too');
+select pg_temp.fails($$ select public.discover('garage:castle') $$, 'made-up places are refused');
+select pg_temp.check((select garages = 1 and cafes = 1 from public.leaderboard() where is_me), 'the leaderboard counts what you have found');
+select pg_temp.check((select garages = 0 and cafes = 0 from public.leaderboard() where not is_me), 'and what your friend has not');
+update public.profiles set discovered = '{garage:workshop,garage:barn,garage:quonset}';
+reset role;
+select pg_temp.check((select cardinality(discovered) from public.profiles where id::text like '%a') = 2, 'players cannot write what they have found');
+
 -- Realtime channels.
 insert into realtime.messages (topic, extension, payload) values
   ('world', 'broadcast', '{}'),
@@ -131,6 +145,7 @@ select pg_temp.check(not public.is_chat_member('chat:not-a-uuid:also-not'), 'gar
 
 -- Only the game's own functions can be called, and only when signed in.
 select pg_temp.check(not has_function_privilege('anon', 'public.me()', 'execute'), 'signed-out visitors cannot call the game''s functions');
+select pg_temp.check(not has_function_privilege('anon', 'public.discover(text)', 'execute') and not has_function_privilege('anon', 'public.leaderboard()', 'execute'), 'nor the ones added since');
 select pg_temp.check(not has_function_privilege('anon', 'public.is_chat_member(text)', 'execute'), 'signed-out visitors cannot probe chat membership');
 select pg_temp.check(has_function_privilege('authenticated', 'public.is_chat_member(text)', 'execute'), 'the chat policies can still check membership');
 select pg_temp.check(not has_function_privilege('authenticated', 'public.handle_new_user()', 'execute'), 'the new-account trigger cannot be called directly');

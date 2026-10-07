@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Mission } from "./missions";
+import { countFound } from "./places";
 import { STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, type Loadout, type Progress } from "./shop";
 import type { VehicleId } from "./vehicles";
 
@@ -9,9 +10,15 @@ import type { VehicleId } from "./vehicles";
  * database's checked functions (supabase/migrations), so the server decides prices,
  * mission payouts and how fast miles can grow.
  */
-export type Profile = Progress & { id: string; name: string | null; goals: string[] };
+export type Profile = Progress & {
+  id: string;
+  name: string | null;
+  goals: string[];
+  /** Keys of the garages and cafés found so far (places.ts). */
+  found: string[];
+};
 export type Friend = { id: string; name: string };
-export type Standing = { id: string; name: string; lifetime: number; me: boolean };
+export type Standing = { id: string; name: string; lifetime: number; me: boolean; garages: number; cafes: number };
 
 export interface Store {
   readonly online: boolean;
@@ -25,6 +32,8 @@ export interface Store {
   equip(vehicle: VehicleId, loadout: Loadout): Promise<string | null>;
   completeMission(m: Mission, seconds: number): Promise<{ paid: number } | { error: string }>;
   markGoal(goal: string): void;
+  /** The truck has come up to a garage or a café for the first time. */
+  discover(key: string): void;
   setName(name: string): Promise<string | null>;
   /** Asks to be friends; "friends" if they'd already asked you. */
   requestFriend(id: string): Promise<"pending" | "friends" | { error: string }>;
@@ -45,7 +54,7 @@ export class LocalStore implements Store {
   private friendIds = new Map<string, string>();
 
   constructor(id = "local", name: string | null = null) {
-    this.p = { ...freshProgress(), id, name, goals: [] };
+    this.p = { ...freshProgress(), id, name, goals: [], found: [] };
   }
 
   get = () => this.p;
@@ -94,6 +103,10 @@ export class LocalStore implements Store {
     if (!this.p.goals.includes(goal)) this.set({ goals: [...this.p.goals, goal] });
   }
 
+  discover(key: string) {
+    if (!this.p.found.includes(key)) this.set({ found: [...this.p.found, key] });
+  }
+
   async setName(name: string) {
     if (!/^[A-Za-z0-9 _-]{3,20}$/.test(name.trim())) return "3–20 letters, numbers, spaces, - or _.";
     this.set({ name: name.trim() });
@@ -130,18 +143,20 @@ export class LocalStore implements Store {
   }
 
   async leaderboard() {
-    return [{ id: this.p.id, name: this.p.name ?? "You", lifetime: this.p.lifetime, me: true }];
+    const found = countFound(this.p.found);
+    return [{ id: this.p.id, name: this.p.name ?? "You", lifetime: this.p.lifetime, me: true, garages: found.garage, cafes: found.cafe }];
   }
 }
 
 type Row = {
   id: string; name: string | null; lifetime: number; balance: number; owned: string[];
-  vehicle: VehicleId | null; loadout: Loadout; goals: string[];
+  vehicle: VehicleId | null; loadout: Loadout; goals: string[]; discovered: string[];
 };
 
+// The column is `discovered` because `found` means something else inside a database function.
 const toProfile = (r: Row): Profile => ({
   id: r.id, name: r.name, lifetime: Number(r.lifetime), balance: Number(r.balance), owned: r.owned ?? [],
-  vehicle: r.vehicle, loadout: { ...STOCK_LOADOUT, ...(r.loadout ?? {}) }, goals: r.goals ?? [],
+  vehicle: r.vehicle, loadout: { ...STOCK_LOADOUT, ...(r.loadout ?? {}) }, goals: r.goals ?? [], found: r.discovered ?? [],
 });
 
 /** Progress on the server. Miles are batched and banked every few seconds. */
@@ -209,6 +224,13 @@ export class SupabaseStore implements Store {
     void this.call("mark_goal", { p_goal: goal });
   }
 
+  discover(key: string) {
+    if (this.p.found.includes(key)) return;
+    this.p = { ...this.p, found: [...this.p.found, key] };
+    this.notify();
+    void this.call("discover", { p_key: key });
+  }
+
   setName = (name: string) => this.call("set_name", { p_name: name });
 
   async requestFriend(id: string) {
@@ -228,8 +250,8 @@ export class SupabaseStore implements Store {
 
   async leaderboard() {
     const { data } = await this.sb.rpc("leaderboard");
-    return (data ?? []).map((r: { id: string; name: string; lifetime: number; is_me: boolean }) => ({
-      id: r.id, name: r.name, lifetime: Number(r.lifetime), me: r.is_me,
+    return (data ?? []).map((r: { id: string; name: string; lifetime: number; is_me: boolean; garages: number; cafes: number }) => ({
+      id: r.id, name: r.name, lifetime: Number(r.lifetime), me: r.is_me, garages: r.garages ?? 0, cafes: r.cafes ?? 0,
     }));
   }
 }
