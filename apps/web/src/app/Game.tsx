@@ -9,7 +9,7 @@ import { createMap } from "./map";
 import { fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, type Net, type NetHandlers, type Peer } from "./net";
 import { Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
-import { makeCar, noInput, step, type Input } from "./physics";
+import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
 import { countFound, foundLine } from "./places";
 import { createView, type Garage } from "./scene";
 import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "./shop";
@@ -336,7 +336,7 @@ export function Game() {
     const sharePose = (now: number, asked = false) => {
       const m = modeRef.current;
       if (!net || tent < 0 || m === "boot" || m === "pick") return;
-      const pose = { x: car.x, y: car.y, z: car.z, heading: car.heading, pitch: car.pitch, roll: car.roll, speed: car.speed, steer: car.steer };
+      const pose = { x: car.x, y: car.y, z: car.z, heading: car.heading, pitch: car.pitch, roll: car.roll, speed: car.speed, steer: car.steer, turn: yawRateOf(car, spec) };
       if (!asked && !gate.due(pose, now, peers.size + 1)) return;
       net.sendPose(pose);
       gate.sent(pose, now);

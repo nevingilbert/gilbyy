@@ -92,6 +92,9 @@ export function makeCar(ground: Ground, x: number, z: number, heading: number, s
   };
 }
 
+/** How fast the car is turning, radians a second: the bicycle model, and none in the air. */
+export const yawRateOf = (car: Car, spec: CarSpec) => (car.grounded ? (car.speed * Math.tan(car.steer)) / spec.wheelbase : 0);
+
 /** How far a climbable rock lifts a wheel at (x, z): a dome, highest at its centre. */
 function bump(x: number, z: number, near: readonly Obstacle[], clearance: number) {
   let top = 0;
@@ -184,7 +187,7 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
   const steerTarget = ((input.left ? 1 : 0) - (input.right ? 1 : 0)) * MAX_STEER / (1 + Math.abs(car.speed) / 10);
   const ds = steerTarget - car.steer;
   car.steer += Math.sign(ds) * Math.min(Math.abs(ds), STEER_RATE * dt);
-  const yawRate = car.grounded ? (car.speed * Math.tan(car.steer)) / spec.wheelbase : 0;
+  const yawRate = yawRateOf(car, spec);
 
   // Turning swings the nose, not the momentum: re-split the velocity against the new
   // heading, then let the sideways part die away as fast as the ground allows.

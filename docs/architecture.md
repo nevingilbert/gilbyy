@@ -99,7 +99,8 @@ Rendering and UI:
   - vehicles: `car-model.ts` with `vehicle-models.ts` (eight bodies);
   - buildings: `garages.ts`, `campground-model.ts`, `coffee-shop-model.ts`;
   - missions: `mission-models.ts`;
-  - other players' trucks: `remote.ts`, interpolated between poses;
+  - other players' trucks: `remote.ts`, carried forward between poses along the bend
+    they were taking (`guessPose` in `net.ts`), with any correction faded in;
   - the garage interior: `showroom.ts`.
 - `map.ts`: a parchment topo map drawn once at load, under a fog layer cleared as you
   drive. The fog is kept in memory only, so it resets every visit. The garages and
@@ -232,8 +233,13 @@ that repo's problem, not this one's.
     - `PoseGate` in `net.ts` keeps players² × send rate under about 40 messages a
       second;
     - it sends nothing while a truck is parked;
-    - while cruising straight it sends only a heartbeat every 3 s, because the
-      others' dead reckoning already has the truck in the right place.
+    - while cruising straight or round a steady bend it sends only a heartbeat every
+      3 s, because the others' dead reckoning already has the truck in the right
+      place. Each pose carries the truck's turn rate so the guess can follow a bend;
+      the sender and the others use the same `guessPose`, so they agree on when the
+      guess has gone wrong. The others keep a quiet truck moving for a little longer
+      than the heartbeat (`staleAfter`), or it would stop and lurch on between
+      heartbeats.
   - **Presence has its own limit: five updates per client in thirty seconds, or
     Realtime closes that client's channel** (`ClientPresenceRateLimitReached` in the
     Realtime logs). Presence carries each player's tent, name and rig, so

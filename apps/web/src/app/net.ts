@@ -18,7 +18,18 @@ import type { VehicleId } from "./vehicles";
  * the others would guess it is, and less often the more players there are. See
  * docs/architecture.md.
  */
-export type Pose = { x: number; y: number; z: number; heading: number; pitch: number; roll: number; speed: number; steer: number };
+export type Pose = {
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  pitch: number;
+  roll: number;
+  speed: number;
+  steer: number;
+  /** How fast it's turning, radians a second, so the others can follow it round a bend. */
+  turn: number;
+};
 export type Peer = { id: string; name: string; vehicle: VehicleId; loadout: Loadout; tent: number; joined: number };
 export type ChatLine = { from: string; text: string };
 
@@ -92,10 +103,39 @@ export function settle(all: Peer[], me: Peer): Joined {
   return tent < 0 ? { full: true } : { tent };
 }
 
+/** A moving truck says where it is at least this often, seconds, even when the guess is right. */
+export const HEARTBEAT = 3;
+
+/** The least time between one player's poses. Budget: players² × rate ≲ 40 messages a second across the whole valley. */
+export const poseInterval = (players: number) => Math.max(0.2, (players * players) / 40);
+
 /**
- * When to send a pose: when the others' guess (carrying on in a straight line at the
- * last speed) is off by more than a metre or so, or the heading by a few degrees, but
- * never more often than the budget allows. Parked trucks send nothing.
+ * How long the others keep carrying a truck forward after its last pose: past the
+ * longest a moving truck stays quiet, with room for a slow delivery. Any sooner and a
+ * truck cruising between heartbeats would stop and then lurch on.
+ */
+export const staleAfter = (players: number) => Math.max(HEARTBEAT, poseInterval(players)) + 1.5;
+
+/**
+ * Where a truck is `age` seconds after `p`, if it kept the same speed and the same turn:
+ * along an arc, or a straight line when it isn't turning. Both ends use this, the sender
+ * to decide when the others' guess has gone wrong, the others to draw the truck.
+ */
+export function guessPose(p: Pose, age: number) {
+  // Up or down a hill, part of the speed goes into height.
+  const v = p.speed * Math.cos(p.pitch);
+  const heading = p.heading + p.turn * age;
+  if (Math.abs(p.turn) < 1e-4) {
+    return { x: p.x + Math.sin(p.heading) * v * age, z: p.z + Math.cos(p.heading) * v * age, heading };
+  }
+  const r = v / p.turn;
+  return { x: p.x + r * (Math.cos(p.heading) - Math.cos(heading)), z: p.z + r * (Math.sin(heading) - Math.sin(p.heading)), heading };
+}
+
+/**
+ * When to send a pose: when the others' guess (carrying on at the last speed and turn)
+ * is off by more than a metre or so, or the heading by a few degrees, but never more
+ * often than the budget allows. Parked trucks send nothing.
  */
 export class PoseGate {
   private last: Pose | null = null;
@@ -103,19 +143,16 @@ export class PoseGate {
 
   /** `players` counts everyone here, me included. */
   due(pose: Pose, now: number, players: number) {
-    // Budget: players² × rate ≲ 40 messages a second across the whole valley.
-    const interval = Math.max(0.2, (players * players) / 40);
     const age = now - this.sentAt;
-    if (age < interval) return false;
+    if (age < poseInterval(players)) return false;
     const l = this.last;
     if (!l) return true;
-    const guessX = l.x + Math.sin(l.heading) * l.speed * age;
-    const guessZ = l.z + Math.cos(l.heading) * l.speed * age;
-    const off = Math.hypot(pose.x - guessX, pose.z - guessZ);
-    const turned = Math.abs(Math.atan2(Math.sin(pose.heading - l.heading), Math.cos(pose.heading - l.heading)));
+    const guess = guessPose(l, age);
+    const off = Math.hypot(pose.x - guess.x, pose.z - guess.z);
+    const turned = Math.abs(Math.atan2(Math.sin(pose.heading - guess.heading), Math.cos(pose.heading - guess.heading)));
     const moving = Math.abs(pose.speed) > 0.2 || Math.abs(l.speed) > 0.2;
-    // A heartbeat every few seconds while moving, so a lost message doesn't strand anyone.
-    return off > 1.2 || turned > 0.08 || Math.abs(pose.speed - l.speed) > 2.5 || (moving && age > 3);
+    // A heartbeat while moving, so a lost message doesn't strand anyone.
+    return off > 1.2 || turned > 0.08 || Math.abs(pose.speed - l.speed) > 2.5 || (moving && age > HEARTBEAT);
   }
 
   /** Sends at the next chance, whatever the budget: someone new needs to know where we are. */
@@ -161,8 +198,9 @@ export class PresenceBudget {
 }
 
 const round = (n: number, k = 100) => Math.round(n * k) / k;
-const packPose = (p: Pose) => [round(p.x), round(p.y), round(p.z), round(p.heading, 1000), round(p.pitch, 1000), round(p.roll, 1000), round(p.speed), round(p.steer, 1000)];
-const unpackPose = (a: number[]): Pose => ({ x: a[0], y: a[1], z: a[2], heading: a[3], pitch: a[4], roll: a[5], speed: a[6], steer: a[7] });
+const packPose = (p: Pose) => [round(p.x), round(p.y), round(p.z), round(p.heading, 1000), round(p.pitch, 1000), round(p.roll, 1000), round(p.speed), round(p.steer, 1000), round(p.turn, 1000)];
+// A tab still running the previous version sends no turn.
+const unpackPose = (a: number[]): Pose => ({ x: a[0], y: a[1], z: a[2], heading: a[3], pitch: a[4], roll: a[5], speed: a[6], steer: a[7], turn: a[8] ?? 0 });
 
 /** The chat channel two friends share: the same name from either side. */
 export const chatTopic = (a: string, b: string) => (a < b ? `chat:${a}:${b}` : `chat:${b}:${a}`);
