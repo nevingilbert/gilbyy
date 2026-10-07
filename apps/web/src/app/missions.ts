@@ -1,4 +1,4 @@
-import { CAFE, FROZEN, LAKES, ROW, START, WORLD, nearest, sampleGrid, type Path, type Terrain } from "./terrain";
+import { CAFE, CAMP_GATE, FROZEN, LAKES, ROW, START, WORLD, nearest, sampleGrid, type Path, type Terrain } from "./terrain";
 
 /**
  * Optional driving challenges, laid out on the real terrain at load. Drive to a start
@@ -19,8 +19,10 @@ export type Mission = {
   cooldown: number;
   /** Faster than this is not believable; the server refuses the claim. */
   minSeconds: number;
-  /** How many drivers it takes: 1 for a course you drive alone, more for a convoy of friends. */
+  /** How many drivers it takes: 1 for a course you drive alone, more for a convoy or a race. */
   crew: number;
+  /** Driven by friends against each other rather than together. Paid the same either way. */
+  race: boolean;
 };
 
 type Pt = { x: number; z: number };
@@ -100,7 +102,7 @@ function forestSlalom(t: Terrain): Mission | null {
   return {
     id: "forest-slalom", name: "Forest Slalom", blurb: "Ten flags through the pines. Mind the trunks.",
     start: { ...best.start, heading: best.heading }, gates: gatesAlong(best.start, best.pts, 9),
-    reward: 1.5, repeatReward: 0.5, cooldown: 600, minSeconds: Math.floor(length(best.start, best.pts) / 23), crew: 1,
+    reward: 1.5, repeatReward: 0.5, cooldown: 600, minSeconds: Math.floor(length(best.start, best.pts) / 23), crew: 1, race: false,
   };
 }
 
@@ -134,7 +136,7 @@ function ridgeRun(t: Terrain): Mission | null {
   return {
     id: "ridge-run", name: "Ridge Run", blurb: `Seven flags, ${Math.round(best.climb)} metres of climb. Keep it steady.`,
     start: { ...best.start, heading: best.heading }, gates: gatesAlong(best.start, best.pts, 9),
-    reward: 2, repeatReward: 0.6, cooldown: 600, minSeconds: Math.floor(length(best.start, best.pts) / 23), crew: 1,
+    reward: 2, repeatReward: 0.6, cooldown: 600, minSeconds: Math.floor(length(best.start, best.pts) / 23), crew: 1, race: false,
   };
 }
 
@@ -162,7 +164,7 @@ function lakeshoreLoop(t: Terrain): Mission | null {
   return {
     id: "lakeshore-loop", name: "Lakeshore Loop", blurb: "Once round the west lake. Wet feet optional.",
     start: { ...start, heading: tangent }, gates: gatesAlong(start, loop, 10),
-    reward: 2.5, repeatReward: 0.8, cooldown: 600, minSeconds: Math.floor(length(start, loop) / 23), crew: 1,
+    reward: 2.5, repeatReward: 0.8, cooldown: 600, minSeconds: Math.floor(length(start, loop) / 23), crew: 1, race: false,
   };
 }
 
@@ -178,21 +180,30 @@ function iceDrift(t: Terrain): Mission | null {
   return {
     id: "ice-drift", name: "Ice Drift", blurb: "Flags across the frozen lake. Snow tyres help. A lot.",
     start: { ...start, heading: Math.PI / 2 }, gates: gatesAlong(start, pts, 12),
-    reward: 3, repeatReward: 1, cooldown: 600, minSeconds: Math.floor(length(start, pts) / 23), crew: 1,
+    reward: 3, repeatReward: 1, cooldown: 600, minSeconds: Math.floor(length(start, pts) / 23), crew: 1, race: false,
   };
 }
 
+/** What a loop course for friends is planned around, and what makes one better than another. */
+type LoopPlan = {
+  /** It starts at the flag nearest here, which must be within 260 m. */
+  near: Pt;
+  radii: number[];
+  flags: number;
+  score(loop: { climb: number; forest: number; steep: number; from: number }): number;
+};
+
 /**
- * For friends: a long loop out from the café and back, with flags wide enough for two
- * abreast. It starts a short drive from the café, where friends are made, and keeps well
- * clear of the other courses.
+ * The best loop for `plan`: flags round a circle, nudged onto clear ground, at least 50 m
+ * from every other course (`others`). Begins at the flag nearest `plan.near` and ends
+ * back on it, with room for a start arch and a line-up behind it.
  */
-function convoy(t: Terrain, others: Float32Array): Mission | null {
+function loopNear(t: Terrain, others: Float32Array, plan: LoopPlan): Pt[] | null {
   const { h, f, slope, clearAt, lineOk } = helpers(t);
   const clear = (x: number, z: number) => clearAt(x, z, 0.4) && f(others, x, z) > 50;
   /**
    * The valley is bumpy everywhere, and a loop this long can't miss every steep patch.
-   * How much of it is steep, or null if any stretch is a wall.
+   * How much of it is steep, or null if any stretch is a wall or runs near another course.
    */
   const steepness = (pts: Pt[]) => {
     let steep = 0, samples = 0, run = 0;
@@ -201,7 +212,10 @@ function convoy(t: Terrain, others: Float32Array): Mission | null {
       const b = pts[i];
       const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 4);
       for (let k = 0; k < n; k++) {
-        const s = slope(a.x + ((b.x - a.x) * k) / n, a.z + ((b.z - a.z) * k) / n);
+        const x = a.x + ((b.x - a.x) * k) / n;
+        const z = a.z + ((b.z - a.z) * k) / n;
+        if (f(others, x, z) <= 30) return null;
+        const s = slope(x, z);
         samples++;
         if (s > 0.45) steep++;
         run = s > 0.7 ? run + 1 : 0;
@@ -210,13 +224,13 @@ function convoy(t: Terrain, others: Float32Array): Mission | null {
     }
     return steep / samples;
   };
-  const n = 14;
+  const { near, flags: n } = plan;
   let best: { pts: Pt[]; score: number } | null = null;
-  for (let cz = CAFE.z - 700; cz <= CAFE.z + 700; cz += 50) {
-    for (let cx = CAFE.x - 700; cx <= CAFE.x + 700; cx += 50) {
-      for (const r of [240, 300, 360]) {
-        // The loop has to come past the café.
-        if (Math.abs(Math.hypot(cx - CAFE.x, cz - CAFE.z) - r) > 200) continue;
+  for (let cz = near.z - 700; cz <= near.z + 700; cz += 50) {
+    for (let cx = near.x - 700; cx <= near.x + 700; cx += 50) {
+      for (const r of plan.radii) {
+        // The loop has to come past `near`.
+        if (Math.abs(Math.hypot(cx - near.x, cz - near.z) - r) > 200) continue;
         const pts: Pt[] = [];
         for (let k = 0; k < n; k++) {
           const a = (k / n) * Math.PI * 2;
@@ -225,14 +239,13 @@ function convoy(t: Terrain, others: Float32Array): Mission | null {
           pts.push(p);
         }
         if (pts.length < n) continue;
-        // Begin at the flag nearest the café, with the start arch and the line-up behind it.
-        const first = pts.reduce((b, p, i) => (Math.hypot(p.x - CAFE.x, p.z - CAFE.z) < Math.hypot(pts[b].x - CAFE.x, pts[b].z - CAFE.z) ? i : b), 0);
+        const first = pts.reduce((b, p, i) => (Math.hypot(p.x - near.x, p.z - near.z) < Math.hypot(pts[b].x - near.x, pts[b].z - near.z) ? i : b), 0);
         const loop = [...pts.slice(first), ...pts.slice(0, first), pts[first]];
-        const fromCafe = Math.hypot(loop[0].x - CAFE.x, loop[0].z - CAFE.z);
-        if (fromCafe > 260) continue;
+        const from = Math.hypot(loop[0].x - near.x, loop[0].z - near.z);
+        if (from > 260) continue;
         const heading = Math.atan2(loop[1].x - loop[0].x, loop[1].z - loop[0].z);
         const back = (d: number) => ({ x: loop[0].x - Math.sin(heading) * d, z: loop[0].z - Math.cos(heading) * d });
-        if (!clearAt(back(40).x, back(40).z, 0.3) || !lineOk([back(75), loop[0]], 0.5)) continue;
+        if (!clearAt(back(40).x, back(40).z, 0.3) || f(others, back(75).x, back(75).z) <= 50 || !lineOk([back(75), loop[0]], 0.5)) continue;
         if (!lineOk(loop, Infinity)) continue;
         const steep = steepness(loop);
         if (steep === null) continue;
@@ -242,20 +255,55 @@ function convoy(t: Terrain, others: Float32Array): Mission | null {
           hi = Math.max(hi, h(p.x, p.z));
           forest += f(t.forest, p.x, p.z) / n;
         }
-        // Some climbing, some trees, not much that's steep, and not far from the café.
-        const score = Math.min(hi - lo, 40) / 40 + Math.min(forest, 0.5) - steep * 4 - fromCafe / 400;
+        const score = plan.score({ climb: hi - lo, forest, steep, from });
         if (!best || score > best.score) best = { pts: loop, score };
       }
     }
   }
-  if (!best) return null;
-  const loop = best.pts;
+  return best?.pts ?? null;
+}
+
+/** The start arch 40 m before the first flag, and the gates the rest of the way round. */
+function loopCourse(loop: Pt[], width: number) {
   const heading = Math.atan2(loop[1].x - loop[0].x, loop[1].z - loop[0].z);
   const start = { x: loop[0].x - Math.sin(heading) * 40, z: loop[0].z - Math.cos(heading) * 40 };
+  return { start: { ...start, heading }, gates: gatesAlong(start, loop, width), length: length(start, loop) };
+}
+
+/**
+ * For friends: a long loop out from the café and back, driven together, with flags wide
+ * enough for two abreast. It starts a short drive from the café, where friends are made.
+ */
+function convoy(t: Terrain, others: Float32Array): Mission | null {
+  const loop = loopNear(t, others, {
+    near: CAFE, radii: [240, 300, 360], flags: 14,
+    // Some climbing, some trees, not much that's steep, and not far from the café.
+    score: (l) => Math.min(l.climb, 40) / 40 + Math.min(l.forest, 0.5) - l.steep * 4 - l.from / 400,
+  });
+  if (!loop) return null;
+  const c = loopCourse(loop, 14);
   return {
     id: "convoy", name: "Convoy", blurb: "For two to four friends: once round and back to the café.",
-    start: { ...start, heading }, gates: gatesAlong(start, loop, 14),
-    reward: 4, repeatReward: 1.2, cooldown: 600, minSeconds: Math.floor(length(start, loop) / 23), crew: 2,
+    start: c.start, gates: c.gates,
+    reward: 4, repeatReward: 1.2, cooldown: 600, minSeconds: Math.floor(c.length / 23), crew: 2, race: false,
+  };
+}
+
+/**
+ * For friends who'd rather race: a fast loop by the camp, open and as gentle as the
+ * valley allows, so it's about the driving line more than the bumps.
+ */
+function race(t: Terrain, others: Float32Array): Mission | null {
+  const loop = loopNear(t, others, {
+    near: CAMP_GATE, radii: [260, 320, 380], flags: 12,
+    score: (l) => -l.steep * 6 - Math.max(0, l.forest - 0.2) - l.from / 300,
+  });
+  if (!loop) return null;
+  const c = loopCourse(loop, 14);
+  return {
+    id: "race", name: "Race", blurb: "Two to four friends, once round. Quickest wins; every finisher is paid the same.",
+    start: c.start, gates: c.gates,
+    reward: 3, repeatReward: 1, cooldown: 600, minSeconds: Math.floor(c.length / 23), crew: 2, race: true,
   };
 }
 
@@ -274,8 +322,8 @@ const courseDistOf = (missions: Mission[], reach: number) => {
 
 export function planMissions(t: Terrain) {
   const solo = [forestSlalom(t), ridgeRun(t), lakeshoreLoop(t), iceDrift(t)].filter((m): m is Mission => !!m);
-  const together = convoy(t, courseDistOf(solo, 60));
-  const missions = together ? [...solo, together] : solo;
+  const withConvoy = [...solo, convoy(t, courseDistOf(solo, 60))].filter((m): m is Mission => !!m);
+  const missions = [...withConvoy, race(t, courseDistOf(withConvoy, 60))].filter((m): m is Mission => !!m);
   // Keep every course clear of trees and rocks along its driving line.
   return { missions, courseDist: courseDistOf(missions, 20) };
 }

@@ -117,6 +117,9 @@ select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-
 select pg_temp.fails($$ select public.complete_convoy('convoy', 10, '{00000000-0000-0000-0000-00000000000b}') $$, 'impossibly fast convoys pay nothing');
 select pg_temp.check((select balance from public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c}')) = 16, 'a convoy with a friend in it pays the full reward');
 select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b}') $$, 'convoys wait for the cooldown too');
+select pg_temp.fails($$ select public.complete_mission('race', 200) $$, 'a race cannot be claimed as a solo run');
+select pg_temp.fails($$ select public.complete_convoy('race', 200, '{00000000-0000-0000-0000-00000000000c}') $$, 'a race against strangers pays nothing');
+select pg_temp.check((select balance from public.complete_convoy('race', 200, '{00000000-0000-0000-0000-00000000000b}')) = 19, 'a race against a friend pays the finisher');
 reset role;
 select pg_temp.as_player('b');
 set role authenticated;

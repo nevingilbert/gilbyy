@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { CALL_EVERY, CONVOY_MAX, CONVOY_SILENCE, Convoys, lineUp, readConvoy, type ConvoyEvent, type ConvoyMsg } from "./convoy";
 import type { Mission } from "./missions";
-import { CAFE, buildWorld } from "./world";
+import { CAFE, CAMP_GATE, buildWorld } from "./world";
 
 const course: Mission = {
   id: "convoy", name: "Convoy", blurb: "", start: { x: 0, z: 0, heading: 0 },
   gates: [{ x: 0, z: 40, heading: 0, width: 14 }, { x: 0, z: 80, heading: 0, width: 14 }, { x: 0, z: 120, heading: 0, width: 14 }],
-  reward: 4, repeatReward: 1.2, cooldown: 600, minSeconds: 1, crew: 2,
+  reward: 4, repeatReward: 1.2, cooldown: 600, minSeconds: 1, crew: 2, race: false,
 };
 
 /**
@@ -14,14 +14,14 @@ const course: Mission = {
  * returned, as they would over a network, and reach everyone else unless `drop` says
  * otherwise. `friends` lists who counts whom as a friend.
  */
-function valley(ids: string[], friends: [string, string][]) {
+function valley(ids: string[], friends: [string, string][], courses: Mission[] = [course]) {
   const events = new Map<string, ConvoyEvent[]>(ids.map((id) => [id, []]));
   const isFriend = (me: string) => (id: string) => friends.some(([a, b]) => (a === me && b === id) || (b === me && a === id));
   let now = 0;
   let drop: (from: string, msg: ConvoyMsg) => boolean = () => false;
   const queue: [string, ConvoyMsg][] = [];
   const players = new Map<string, Convoys>();
-  for (const id of ids) players.set(id, new Convoys(() => id, (msg) => void (drop(id, msg) || queue.push([id, msg])), [course]));
+  for (const id of ids) players.set(id, new Convoys(() => id, (msg) => void (drop(id, msg) || queue.push([id, msg])), courses));
   const deliver = () => {
     for (let next = queue.shift(); next; next = queue.shift()) {
       const [from, msg] = next;
@@ -60,12 +60,12 @@ function valley(ids: string[], friends: [string, string][]) {
 function gathered() {
   const v = valley(["ana", "ben", "cy"], [["ana", "ben"]]);
   v.p("ana").gather(course, v.now);
-  expect(v.seen("ben")).toEqual([{ kind: "called", leader: "ana", mission: "convoy" }]);
+  expect(v.seen("ben")).toEqual([{ kind: "called", leader: "ana", mission: course }]);
   const call = v.p("ben").callFor("convoy");
   expect(call?.leader).toBe("ana");
   v.p("ben").join(call!.id, v.now);
-  expect(v.seen("ana")).toEqual([{ kind: "joined", who: "ben" }]);
-  expect(v.seen("ben")).toEqual([{ kind: "joined", who: "ben" }]);
+  expect(v.seen("ana")).toEqual([{ kind: "joined", who: "ben", mission: course }]);
+  expect(v.seen("ben")).toEqual([{ kind: "joined", who: "ben", mission: course }]);
   return v;
 }
 
@@ -113,14 +113,14 @@ describe("gathering a convoy", () => {
   it("is called off when the gatherer leaves, or goes quiet", () => {
     const v = gathered();
     v.p("ana").leave();
-    expect(v.seen("ben")).toEqual([{ kind: "off", leader: "ana" }]);
+    expect(v.seen("ben")).toEqual([{ kind: "off", leader: "ana", mission: course }]);
     expect(v.p("ben").state).toBeNull();
     expect(v.p("ben").callFor("convoy")).toBeNull();
 
     const w = gathered();
     w.dropWhen((from) => from === "ana");
     w.wait(CONVOY_SILENCE + 1);
-    expect(w.seen("ben")).toContainEqual({ kind: "off", leader: "ana" });
+    expect(w.seen("ben")).toContainEqual({ kind: "off", leader: "ana", mission: course });
     expect(w.p("ben").state).toBeNull();
   });
 
@@ -132,7 +132,7 @@ describe("gathering a convoy", () => {
       return from === "ben";
     });
     v.wait(CONVOY_SILENCE + 1);
-    expect(v.seen("ana")).toContainEqual({ kind: "left", who: "ben" });
+    expect(v.seen("ana")).toContainEqual({ kind: "left", who: "ben", mission: course });
     expect(v.p("ana").state!.crew.map((d) => d.id)).toEqual(["ana"]);
     expect(calls).toBeGreaterThanOrEqual(Math.floor((CONVOY_SILENCE + 1) / CALL_EVERY) - 1);
   });
@@ -147,7 +147,7 @@ describe("gathering a convoy", () => {
     expect(v.p("ana").state!.crew).toHaveLength(1);
     v.wait(CALL_EVERY + 1);
     expect(v.p("ana").state!.crew.map((d) => d.id)).toEqual(["ana", "ben"]);
-    expect(v.seen("ben")).toContainEqual({ kind: "joined", who: "ben" });
+    expect(v.seen("ben")).toContainEqual({ kind: "joined", who: "ben", mission: course });
   });
 });
 
@@ -173,8 +173,8 @@ describe("driving as a convoy", () => {
     v.p("ben").passed(1, v.now);
     expect(v.p("ana").others()[0].passed).toBe(1);
     v.p("ben").passed(2, v.now);
-    expect(v.p("ben").passed(3, v.now)).toEqual([{ kind: "home", mission: course, with: ["ana"] }]);
-    expect(v.seen("ana")).toEqual([{ kind: "home", mission: course, with: ["ben"] }]);
+    expect(v.p("ben").passed(3, v.now)).toEqual([{ kind: "home", mission: course, with: ["ana"], times: [] }]);
+    expect(v.seen("ana")).toEqual([{ kind: "home", mission: course, with: ["ben"], times: [] }]);
     expect(v.p("ana").state).toBeNull();
     expect(v.p("ben").state).toBeNull();
   });
@@ -199,14 +199,14 @@ describe("driving as a convoy", () => {
     v.p("ana").go(v.now);
     for (const id of ["ana", "ben", "cy"]) v.seen(id);
     v.p("ben").leave();
-    expect(v.seen("ana")).toEqual([{ kind: "left", who: "ben" }]);
+    expect(v.seen("ana")).toEqual([{ kind: "left", who: "ben", mission: course }]);
     for (let n = 1; n <= 3; n++) v.p("ana").passed(n, v.now);
     v.dropWhen((from) => from === "cy");
     v.wait(CONVOY_SILENCE + 1);
     const seen = v.seen("ana");
-    expect(seen).toContainEqual({ kind: "left", who: "cy" });
+    expect(seen).toContainEqual({ kind: "left", who: "cy", mission: course });
     // Everyone who set off is named, gone or not.
-    expect(seen).toContainEqual({ kind: "home", mission: course, with: ["ben", "cy"] });
+    expect(seen).toContainEqual({ kind: "home", mission: course, with: ["ben", "cy"], times: [] });
   });
 
   it("takes back someone who went quiet and comes back", () => {
@@ -228,6 +228,9 @@ describe("convoy messages", () => {
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3 })).toEqual({ kind: "pass", id: "x", from: "a", passed: 3 });
     expect(readConvoy({ kind: "open", id: "x", mission: "convoy", crew: [] })).toBeNull();
     expect(readConvoy({ kind: "open", id: "x", mission: "convoy", crew: ["a", "b", "c", "d", "e"] })).toBeNull();
+    expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3, seconds: 92.5 })).toEqual({ kind: "pass", id: "x", from: "a", passed: 3, seconds: 92.5 });
+    expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3, seconds: -1 })).toBeNull();
+    expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3, seconds: "fast" })).toBeNull();
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 1.5 })).toBeNull();
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: -1 })).toBeNull();
     expect(readConvoy({ kind: "join", id: "x" })).toBeNull();
@@ -237,36 +240,107 @@ describe("convoy messages", () => {
   });
 });
 
-describe("the convoy course", () => {
+describe("racing", () => {
+  const racecourse: Mission = { ...course, id: "race", race: true };
+  const raceValley = () => {
+    const players = ["ana", "ben", "cy"];
+    const v = valley(players, [["ana", "ben"], ["ana", "cy"]], [racecourse]);
+    v.p("ana").gather(racecourse, v.now);
+    v.p("ben").join(v.p("ben").callFor("race")!.id, v.now);
+    v.p("cy").join(v.p("cy").callFor("race")!.id, v.now);
+    v.p("ana").go(v.now);
+    for (const id of players) v.seen(id);
+    return v;
+  };
+
+  it("says where everyone is: flags passed while racing, then times through the finish", () => {
+    const v = raceValley();
+    v.p("ben").passed(1, v.now);
+    v.p("ben").passed(2, v.now);
+    v.p("cy").passed(1, v.now);
+    expect(v.p("ben").place()).toBe(1);
+    expect(v.p("cy").place()).toBe(2);
+    expect(v.p("ana").place()).toBe(3);
+    v.p("ben").passed(3, v.now, 70);
+    for (let n = 1; n <= 3; n++) v.p("ana").passed(n, v.now, n === 3 ? 65 : undefined);
+    // Ana was quicker from her own "go", so she's ahead of Ben, who crossed first.
+    expect(v.p("ana").place()).toBe(1);
+    expect(v.p("ben").place()).toBe(2);
+    expect(v.p("cy").place()).toBe(3);
+  });
+
+  it("ends with everyone's times, quickest first, the same for all", () => {
+    const v = raceValley();
+    for (let n = 1; n <= 3; n++) v.p("ben").passed(n, v.now, n === 3 ? 70 : undefined);
+    for (let n = 1; n <= 3; n++) v.p("cy").passed(n, v.now, n === 3 ? 90 : undefined);
+    const last = (() => {
+      for (let n = 1; n < 3; n++) v.p("ana").passed(n, v.now);
+      return v.p("ana").passed(3, v.now, 65);
+    })();
+    const times = [{ id: "ana", seconds: 65 }, { id: "ben", seconds: 70 }, { id: "cy", seconds: 90 }];
+    expect(last).toEqual([{ kind: "home", mission: racecourse, with: ["ben", "cy"], times }]);
+    expect(v.seen("ben")).toContainEqual({ kind: "home", mission: racecourse, with: ["ana", "cy"], times });
+    expect(v.seen("cy")).toContainEqual({ kind: "home", mission: racecourse, with: ["ana", "ben"], times });
+  });
+
+  it("gets a time through even if the word of it was lost", () => {
+    const v = raceValley();
+    v.dropWhen((from, msg) => from === "ben" && msg.kind === "pass" && msg.seconds !== undefined);
+    for (let n = 1; n <= 3; n++) v.p("ben").passed(n, v.now, n === 3 ? 70 : undefined);
+    expect(v.p("ana").others().find((d) => d.id === "ben")?.seconds).toBeUndefined();
+    v.dropWhen(() => false);
+    v.wait(6);
+    expect(v.p("ana").others().find((d) => d.id === "ben")?.seconds).toBe(70);
+  });
+});
+
+describe("the courses for friends", () => {
   const world = buildWorld();
-  const convoy = world.missions.find((m) => m.crew > 1);
+  const together = world.missions.filter((m) => m.crew > 1);
+  const convoy = together.find((m) => !m.race)!;
+  const race = together.find((m) => m.race)!;
+  /** Points every 10 m along a course, from the start arch through every flag. */
+  const line = (m: Mission) => {
+    const pts = [m.start, ...m.gates];
+    return pts.slice(1).flatMap((b, i) => {
+      const a = pts[i];
+      const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 10);
+      return Array.from({ length: n }, (_, k) => ({ x: a.x + ((b.x - a.x) * k) / n, z: a.z + ((b.z - a.z) * k) / n }));
+    });
+  };
 
-  it("exists, needs friends, and is the only one that does", () => {
-    expect(convoy).toBeDefined();
-    expect(world.missions.filter((m) => m.crew > 1)).toHaveLength(1);
-    expect(convoy!.crew).toBe(2);
+  it("are a convoy and a race, each for two to four", () => {
+    expect(together.map((m) => [m.id, m.crew, m.race])).toEqual([["convoy", 2, false], ["race", 2, true]]);
   });
 
-  it("starts a short drive from the café and comes back to it", () => {
-    expect(Math.hypot(convoy!.start.x - CAFE.x, convoy!.start.z - CAFE.z)).toBeLessThan(300);
-    const first = convoy!.gates[0];
-    const last = convoy!.gates[convoy!.gates.length - 1];
-    expect(Math.hypot(first.x - last.x, first.z - last.z)).toBeLessThan(1);
-  });
-
-  it("has flags wide enough for two abreast, and the line-up on dry ground", () => {
-    expect(convoy!.gates.every((g) => g.width >= 12)).toBe(true);
-    for (let slot = 0; slot < CONVOY_MAX; slot++) {
-      const p = lineUp(convoy!, slot);
-      expect(world.height(p.x, p.z)).toBeGreaterThan(world.waterAt(p.x, p.z) + 0.3);
-      expect(world.obstaclesNear(p.x, p.z).filter((o) => Math.hypot(o.x - p.x, o.z - p.z) < o.r + 3)).toEqual([]);
+  it("start a short drive from the café and the camp, and come back round", () => {
+    expect(Math.hypot(convoy.start.x - CAFE.x, convoy.start.z - CAFE.z)).toBeLessThan(300);
+    expect(Math.hypot(race.start.x - CAMP_GATE.x, race.start.z - CAMP_GATE.z)).toBeLessThan(300);
+    for (const m of together) {
+      const first = m.gates[0];
+      const last = m.gates[m.gates.length - 1];
+      expect(Math.hypot(first.x - last.x, first.z - last.z)).toBeLessThan(1);
     }
   });
 
-  it("keeps away from the other courses", () => {
-    for (const m of world.missions.filter((m) => m !== convoy)) {
-      for (const g of [...m.gates, m.start]) {
-        for (const c of [...convoy!.gates, convoy!.start]) expect(Math.hypot(g.x - c.x, g.z - c.z)).toBeGreaterThan(50);
+  it("have flags wide enough for two abreast, and line-ups on dry, clear ground", () => {
+    for (const m of together) {
+      expect(m.gates.every((g) => g.width >= 12)).toBe(true);
+      for (let slot = 0; slot < CONVOY_MAX; slot++) {
+        const p = lineUp(m, slot);
+        expect(world.height(p.x, p.z)).toBeGreaterThan(world.waterAt(p.x, p.z) + 0.3);
+        expect(world.obstaclesNear(p.x, p.z).filter((o) => Math.hypot(o.x - p.x, o.z - p.z) < o.r + 3)).toEqual([]);
+      }
+    }
+  });
+
+  it("keep away from every other course", () => {
+    for (const m of together) {
+      const mine = line(m);
+      for (const other of world.missions.filter((o) => o !== m)) {
+        const theirs = line(other);
+        const closest = Math.min(...mine.map((p) => Math.min(...theirs.map((q) => Math.hypot(p.x - q.x, p.z - q.z)))));
+        expect(closest).toBeGreaterThan(25);
       }
     }
   });

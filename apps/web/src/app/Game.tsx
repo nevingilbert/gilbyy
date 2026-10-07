@@ -51,8 +51,8 @@ type Prompt =
   /** At the convoy's arch, or gathering one: `lead` in bold, then `rest`. `act` if E does something. */
   | { kind: "convoy"; lead: string; rest: string; act: boolean }
   | null;
-/** `crew` is the rest of a convoy: their names and how many flags each has passed. */
-type RunHud = { name: string; clock: number; gate: number; of: number; through: boolean; crew: { name: string; passed: number }[] } | null;
+/** `crew` is the rest of a convoy or race: their names and how many flags each has passed. `place` is mine in a race. */
+type RunHud = { name: string; clock: number; gate: number; of: number; through: boolean; crew: { name: string; passed: number }[]; place: number | null } | null;
 type ChatShown = { key: number; from: string; text: string };
 
 type Actions = {
@@ -81,6 +81,9 @@ const smooth = (lo: number, hi: number, x: number) => {
 };
 const turnToward = (from: number, to: number, t: number) => from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * t;
 const wrapHalf = (t: number) => ((((t + 0.5) % 1) + 1) % 1) - 0.5;
+const ordinal = (n: number) => `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}`;
+/** What a course for friends is called in passing. */
+const noun = (m: Mission) => (m.race ? "race" : "convoy");
 /** Compass position, 0–1 clockwise from north, of a heading (0 faces +z, which is south). */
 const bearingOf = (heading: number) => (((Math.PI - heading) / (Math.PI * 2)) % 1 + 1) % 1;
 
@@ -142,7 +145,7 @@ export function Game() {
 
     const world = buildWorld();
     const courses = world.missions.filter((m) => m.crew === 1);
-    const convoyCourse = world.missions.find((m) => m.crew > 1) ?? null;
+    const crewCourses = world.missions.filter((m) => m.crew > 1);
     let store: Store = new LocalStore();
     let net: Net | null = null;
     const rigParam = VEHICLES.find((v) => v.id === params.get("rig"))?.id ?? null;
@@ -231,10 +234,12 @@ export function Game() {
     const tags = new Map<string, HTMLDivElement>();
     let friendHere: { id: string; name: string } | null = null;
     let chatKey = 0;
-    // A convoy: what E does at its arch, and my time through its finish while the others come in.
+    // A convoy or a race: what E does at its arch, my time through its finish while the
+    // others come in, and a race's results once everyone is through.
     const convoys = new Convoys(() => store.get().id, (msg) => net?.convoy(msg), world.missions);
     let convoyAct: (() => void) | null = null;
     let throughIn: number | null = null;
+    let raceOver: string | null = null;
     // Presence as the loop sees it, alongside the copy React renders.
     let presenceNow: Presence = "solo";
     const present = (p: Presence) => {
@@ -417,7 +422,7 @@ export function Game() {
     let leftAt = 0;
     const goAway = () => {
       if (!net || tent < 0) return;
-      if (convoys.state) giveUp("You were away, so you've left the convoy.");
+      if (convoys.state) giveUp(`You were away, so you've left the ${noun(convoys.state.mission)}.`);
       net.leave();
       leftAt = Date.now();
       tent = -1;
@@ -640,6 +645,7 @@ export function Game() {
       running = startRun(m);
       runIndex = world.missions.indexOf(m);
       throughIn = null;
+      raceOver = null;
       lastPose = { x: car.x, z: car.z };
       shownPrompt = STALE;
       // The others need to see us in line now, not when the truck next moves.
@@ -647,16 +653,24 @@ export function Game() {
       sharePose(performance.now() / 1000, true);
     };
 
-    /** What the convoy's agreement has to say, as it happens. */
+    /** What the convoy's (or race's) agreement has to say, as it happens. */
     const onConvoy = (events: ConvoyEvent[]) => {
       const me = store.get().id;
       for (const e of events) {
-        if (e.kind === "called" && !convoys.state) say(`${nameOf(e.leader)} is gathering a convoy by the café. Follow the compass to join.`, 7);
-        else if (e.kind === "joined") say(e.who === me ? `You're in ${nameOf(convoys.state?.leader ?? "")}'s convoy. Wait here to set off together.` : `${nameOf(e.who)} joined the convoy.`);
+        const what = noun(e.mission);
+        if (e.kind === "called" && !convoys.state) say(`${nameOf(e.leader)} is gathering a ${what}. Follow the compass to join.`, 7);
+        else if (e.kind === "joined") say(e.who === me ? `You're in ${nameOf(convoys.state?.leader ?? "")}'s ${what}. Wait here to set off together.` : `${nameOf(e.who)} joined the ${what}.`);
         else if (e.kind === "go") setOff(e.mission, e.slot, e.crew);
-        else if (e.kind === "left") say(`${nameOf(e.who)} left the convoy.`);
-        else if (e.kind === "off") say(`${nameOf(e.leader)} called off the convoy.`);
-        else if (e.kind === "home") {
+        else if (e.kind === "left") say(`${nameOf(e.who)} left the ${what}.`);
+        else if (e.kind === "off") say(`${nameOf(e.leader)} called off the ${what}.`);
+        else if (e.kind === "home" && e.mission.race) {
+          // Everyone was paid at their own finish (`runOn`); this is just how it went.
+          throughIn = null;
+          setRun(null);
+          shownRun = "";
+          raceOver = `Race over: ${e.times.map((t, i) => `${ordinal(i + 1)} ${t.id === me ? "you" : nameOf(t.id)} ${fmtTime(t.seconds)}`).join(" · ")}`;
+          say(raceOver, 9);
+        } else if (e.kind === "home") {
           const m = e.mission;
           const seconds = throughIn ?? 0;
           throughIn = null;
@@ -672,42 +686,45 @@ export function Game() {
       }
     };
 
-    /** At the convoy's arch, or gathering one: what's on offer. Sets `convoyAct`. */
+    /** At the arch of a convoy or a race, or gathering one: what's on offer. Sets `convoyAct`. */
     const convoyPrompt = (): Prompt => {
       convoyAct = null;
-      const m = convoyCourse;
       const s = convoys.state;
-      if (!m || running || s?.phase === "running") return null;
-      const near = Math.hypot(car.x - m.start.x, car.z - m.start.z);
+      if (running || s?.phase === "running") return null;
+      const from = (m: Mission) => Math.hypot(car.x - m.start.x, car.z - m.start.z);
+      const m = s?.mission ?? crewCourses.find((c) => from(c) < GATHER_REACH);
+      if (!m) return null;
+      const what = noun(m);
       if (s) {
         // Drive off from the arch and you've left.
-        if (near > GATHER_REACH * 2) {
-          giveUp(s.leader === store.get().id ? "You drove off, so the convoy's off." : "You drove off, so you've left the convoy.");
+        if (from(m) > GATHER_REACH * 2) {
+          giveUp(s.leader === store.get().id ? `You drove off, so the ${what}'s off.` : `You drove off, so you've left the ${what}.`);
           return null;
         }
         const others = convoys.others().map((d) => d.id);
         if (s.leader !== store.get().id) {
           const lead = nameOf(s.leader);
           return convoys.mine()
-            ? { kind: "convoy", lead: `In ${lead}'s convoy`, rest: ` · waiting for ${lead} to set off · Esc to leave`, act: false }
-            : { kind: "convoy", lead: `Asking to join ${lead}'s convoy`, rest: "…", act: false };
+            ? { kind: "convoy", lead: `In ${lead}'s ${what}`, rest: ` · waiting for ${lead} to set off · Esc to leave`, act: false }
+            : { kind: "convoy", lead: `Asking to join ${lead}'s ${what}`, rest: "…", act: false };
         }
-        if (!others.length) return { kind: "convoy", lead: "Gathering a convoy", rest: " · waiting for friends to drive up · Esc to stop", act: false };
+        if (!others.length) return { kind: "convoy", lead: `Gathering a ${what}`, rest: " · waiting for friends to drive up · Esc to stop", act: false };
         convoyAct = () => onConvoy(convoys.go(performance.now() / 1000));
         return { kind: "convoy", lead: `Set off with ${names(others)}`, rest: others.length < CONVOY_MAX - 1 ? " · or wait for more" : "", act: true };
       }
-      if (near > GATHER_REACH || Math.abs(car.speed) > 5) return null;
+      if (Math.abs(car.speed) > 5) return null;
       const call = convoys.callFor(m.id);
       if (call) {
-        if (call.crew.length >= CONVOY_MAX) return { kind: "convoy", lead: `${nameOf(call.leader)}'s convoy is full`, rest: "", act: false };
+        if (call.crew.length >= CONVOY_MAX) return { kind: "convoy", lead: `${nameOf(call.leader)}'s ${what} is full`, rest: "", act: false };
         convoyAct = () => convoys.join(call.id, performance.now() / 1000);
-        return { kind: "convoy", lead: `Join ${nameOf(call.leader)}'s convoy`, rest: ` · ${m.blurb}`, act: true };
+        return { kind: "convoy", lead: `Join ${nameOf(call.leader)}'s ${what}`, rest: ` · ${m.blurb}`, act: true };
       }
       const rest = ` · ${m.blurb}`;
-      if (!net || tent < 0) return { kind: "convoy", lead: m.name, rest: `${rest} · sign in to drive it together`, act: false };
+      if (!net || tent < 0) return { kind: "convoy", lead: m.name, rest: `${rest} · sign in to drive it with friends`, act: false };
       if (![...peers.keys()].some((id) => friends.has(id))) return { kind: "convoy", lead: m.name, rest: `${rest} · none of your friends are here yet`, act: false };
       convoyAct = () => convoys.gather(m, performance.now() / 1000);
-      return { kind: "convoy", lead: "Gather a convoy here", rest: ` · your friends will hear · up to ${fmtMiles(m.reward)} mi each`, act: true };
+      const pay = m.race ? `up to ${fmtMiles(m.reward)} mi for everyone who finishes` : `up to ${fmtMiles(m.reward)} mi each`;
+      return { kind: "convoy", lead: `Gather a ${what} here`, rest: ` · your friends will hear · ${pay}`, act: true };
     };
 
     // ——— Keys ———
@@ -740,7 +757,8 @@ export function Game() {
         }
         if (k === "Escape" && (running || convoys.state)) {
           const s = convoys.state;
-          return giveUp(!s ? "Run abandoned." : s.phase === "gathering" && s.leader === store.get().id ? "Convoy called off." : "You've left the convoy.");
+          const what = s && noun(s.mission);
+          return giveUp(!s ? "Run abandoned." : s.phase === "gathering" && s.leader === store.get().id ? `The ${what}'s off.` : `You've left the ${what}.`);
         }
         if ((k === "l" || k === "L") && !e.repeat) {
           setBoard(true);
@@ -874,8 +892,9 @@ export function Game() {
         const g = currentGoal(store.get().goals, store.online || localNet);
         const nearest = (list: { x: number; z: number }[]) =>
           list.reduce<{ x: number; z: number } | null>((best, p) => (!best || Math.hypot(p.x - car.x, p.z - car.z) < Math.hypot(best.x - car.x, best.z - car.z) ? p : best), null);
-        // A friend gathering a convoy comes before the guidance; once in one, the course leads.
-        const called = convoyCourse && !convoys.state && convoys.callsOut().length ? convoyCourse.start : null;
+        // A friend gathering a convoy or a race comes before the guidance; once in one, the course leads.
+        const call = convoys.state ? undefined : convoys.callsOut()[0];
+        const called = call ? (crewCourses.find((c) => c.id === call.mission)?.start ?? null) : null;
         target =
           running || convoys.state ? null
           : called ? called
@@ -951,7 +970,7 @@ export function Game() {
       if (ev?.kind === "go") {
         setCount(0);
         window.setTimeout(() => setCount(null), 700);
-      } else if (ev?.kind === "lost") return giveUp(convoys.state ? "Too far off the course, so you've left the convoy." : "Too far off the course. Run abandoned.");
+      } else if (ev?.kind === "lost") return giveUp(convoys.state ? `Too far off the course, so you've left the ${noun(convoys.state.mission)}.` : "Too far off the course. Run abandoned.");
       else if (ev?.kind === "gate") onConvoy(convoys.passed(r.next, performance.now() / 1000));
       else if (ev?.kind === "finish") {
         const m = r.mission;
@@ -961,6 +980,20 @@ export function Game() {
         setRun(null);
         shownRun = "";
         view.showRun(-1, 0, time);
+        if (convoys.state?.mission.race) {
+          // Through, and paid now; the results come when everyone is through (`onConvoy`).
+          throughIn = seconds;
+          const crew = convoys.state.with;
+          const events = convoys.passed(r.next, performance.now() / 1000, seconds);
+          const place = convoys.state ? convoys.place() : 0;
+          onConvoy(events);
+          void store.completeMission(m, seconds, crew).then((res) => {
+            goal("mission");
+            const paid = "paid" in res ? `+${fmtMiles(res.paid)} mi` : res.error;
+            say(raceOver ? `${raceOver}. ${paid}` : `Through in ${fmtTime(seconds)}, ${ordinal(place)} so far. ${paid}`, 8);
+          });
+          return;
+        }
         if (convoys.state) {
           // Through, and the convoy is home when the others are. Paid then (`onConvoy`).
           throughIn = seconds;
@@ -979,13 +1012,14 @@ export function Game() {
       showRun(r.mission, Math.max(0, r.clock), r.next, false);
     };
 
-    /** The line at the top during a run: the course, the clock, the next flag, and in a convoy where the others are. */
+    /** The line at the top during a run: the course, the clock, the next flag, and with friends where the others are. */
     const showRun = (m: Mission, clock: number, gate: number, through: boolean) => {
       const crew = convoys.others().map((d) => ({ name: nameOf(d.id), passed: d.passed }));
-      const hud = `${m.id}|${gate}|${Math.floor(clock)}|${through}|${crew.map((c) => `${c.name}:${c.passed}`).join(",")}`;
+      const place = m.race && convoys.state ? convoys.place() : null;
+      const hud = `${m.id}|${gate}|${Math.floor(clock)}|${through}|${place}|${crew.map((c) => `${c.name}:${c.passed}`).join(",")}`;
       if (hud === shownRun) return;
       shownRun = hud;
-      setRun({ name: m.name, clock, gate, of: m.gates.length, through, crew });
+      setRun({ name: m.name, clock, gate, of: m.gates.length, through, crew, place });
     };
 
     const frame = (nowMs: number) => {
@@ -1234,6 +1268,7 @@ export function Game() {
       {run && driving && (
         <div className="pointer-events-none absolute inset-x-4 top-11 text-center text-sm text-[rgba(255,246,232,0.9)] drop-shadow">
           <span className="font-semibold">{run.name}</span> · {fmtTime(run.clock)} · {run.through ? "through" : `${Math.min(run.gate + 1, run.of)}/${run.of}`}
+          {run.place !== null && <span className="font-semibold"> · {ordinal(run.place)}</span>}
           {run.crew.map((c, i) => (
             <span key={i} className="text-[rgba(255,246,232,0.7)]">
               {" "}· {c.name} {c.passed >= run.of ? "through" : `${Math.min(c.passed + 1, run.of)}/${run.of}`}

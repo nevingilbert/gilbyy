@@ -130,7 +130,7 @@ describe("presence updates", () => {
 const course: Mission = {
   id: "test", name: "Test", blurb: "", start: { x: 0, z: -10, heading: 0 },
   gates: [{ x: 0, z: 0, heading: 0, width: 8 }, { x: 0, z: 20, heading: 0, width: 8 }],
-  reward: 1, repeatReward: 0.5, cooldown: 600, minSeconds: 1, crew: 1,
+  reward: 1, repeatReward: 0.5, cooldown: 600, minSeconds: 1, crew: 1, race: false,
 };
 
 describe("missions", () => {
