@@ -156,12 +156,6 @@ export function createView(canvas: HTMLCanvasElement, world: World, loadout: Loa
     renderer.render(scene, camera);
   }
 
-  /** Drops the chase camera straight behind the car, for after a cut (leaving a garage). */
-  function snapCamera() {
-    camYaw = NaN;
-    camPos.set(0, 0, 0);
-  }
-
   function setLoadout(l: Loadout) {
     car.setLoadout(l);
     showroom.setLoadout(l);
@@ -189,7 +183,6 @@ export function createView(canvas: HTMLCanvasElement, world: World, loadout: Loa
     garages: sites.garages,
     trainCars: () => railway.cars(),
     hour: () => hour,
-    snapCamera,
     resize,
     dispose,
   };

@@ -55,8 +55,8 @@ export const LIGHTS: Lights[] = [
   { id: "stock", name: "Stock headlights", tier: 0, blurb: "Dim and yellow. Drive slowly.", reach: 26, spread: 0.42, power: 1, fogLamps: false, bar: false, ditch: false },
   { id: "halogen", name: "Halogen bulbs", tier: 1, blurb: "Whiter, further.", reach: 42, spread: 0.45, power: 1.8, fogLamps: false, bar: false, ditch: false },
   { id: "driving", name: "Bumper driving lamps", tier: 2, blurb: "Wide light low down.", reach: 55, spread: 0.62, power: 2.5, fogLamps: true, bar: false, ditch: false },
-  { id: "bar", name: "Roof light bar", tier: 3, blurb: "Night becomes day, mostly.", reach: 90, spread: 0.58, power: 4, fogLamps: true, bar: true, ditch: false },
-  { id: "fullRig", name: "Full rig", tier: 4, blurb: "Bar, driving lamps, ditch lights.", reach: 115, spread: 0.75, power: 5.5, fogLamps: true, bar: true, ditch: true },
+  { id: "bar", name: "Roof light bar", tier: 3, blurb: "Night becomes day, mostly.", reach: 90, spread: 0.58, power: 3.4, fogLamps: true, bar: true, ditch: false },
+  { id: "fullRig", name: "Full rig", tier: 4, blurb: "Bar, driving lamps, ditch lights.", reach: 115, spread: 0.72, power: 4.2, fogLamps: true, bar: true, ditch: true },
 ];
 
 export const SNORKELS: Snorkel[] = [

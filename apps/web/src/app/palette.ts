@@ -130,7 +130,7 @@ export const PALETTE = {
     waterDeep: "#6f97a6",
     contour: "rgba(120,92,60,0.32)",
     track: "#5c4636",
-    fog: "rgba(96,90,84,0.94)",
+    fog: "rgba(104,98,92,0.84)",
     car: "#c4473a",
     garage: "#3b2f27",
     train: "#2b2421",

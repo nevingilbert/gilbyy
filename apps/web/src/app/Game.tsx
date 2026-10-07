@@ -71,8 +71,9 @@ export function Game() {
     const map = createMap(world);
 
     // For checking things by screenshot: ?hour=22 starts the clock there, ?garage=2 parks
-    // you at a garage's door. Not linked from anywhere.
+    // you at a garage's door, ?at=x,z,heading drops you anywhere. Not linked from anywhere.
     const params = new URLSearchParams(window.location.search);
+    const at = (params.get("at") ?? "").split(",").map(Number);
     const startHour = Number(params.get("hour"));
     const startGarage = view.garages[Number(params.get("garage"))];
 
@@ -136,7 +137,7 @@ export function Game() {
     actions.current.leave = () => {
       if (modeRef.current !== "garage") return;
       cut.t = 0;
-      view.snapCamera();
+      if (fadeRef.current) fadeRef.current.style.opacity = "1";
       saveProgress(progress);
       setModeBoth("leaving");
     };
@@ -208,7 +209,7 @@ export function Game() {
 
     if (params.has("garage") && startGarage) {
       placeOnGround(startGarage.approach.x, startGarage.approach.z, startGarage.heading + Math.PI, 0);
-    }
+    } else if (at.length >= 2 && at.every(Number.isFinite)) placeOnGround(at[0], at[1], at[2] ?? 0, 0);
 
     /** The truck drives itself into the garage while the door opens, then the screen fades. */
     const animateEnter = (g: Garage, dt: number) => {
@@ -229,11 +230,12 @@ export function Game() {
       if (t >= ENTER_TIME) {
         view.openShowroom(g.style, progress.loadout);
         setGarageStyle(g.style);
+        cut.t = 0;
         setModeBoth("garage");
       }
     };
 
-    /** And back out again: fade in, roll out of the door (or up the ramp), the door shuts. */
+    /** And back out again: fade in, reverse out of the door (or up the ramp), the door shuts. */
     const animateLeave = (g: Garage, dt: number) => {
       cut.t += dt;
       const t = cut.t;
@@ -241,12 +243,12 @@ export function Game() {
       view.setDoor(cut.garage, 1 - smooth(1.7, 2.4, t));
       const px = car.x;
       const pz = car.z;
-      placeOnGround(g.inside.x + (g.approach.x - g.inside.x) * u, g.inside.z + (g.approach.z - g.inside.z) * u, g.heading, g.sink * (1 - smooth(0, 0.5, u)));
-      if (g.sink) car.pitch = 0.22 * smooth(0, 0.15, u) * (1 - smooth(0.4, 0.6, u));
-      car.speed = Math.hypot(car.x - px, car.z - pz) / Math.max(dt, 1e-3);
+      placeOnGround(g.inside.x + (g.approach.x - g.inside.x) * u, g.inside.z + (g.approach.z - g.inside.z) * u, g.heading + Math.PI, g.sink * (1 - smooth(0, 0.5, u)));
+      if (g.sink) car.pitch = -0.22 * smooth(0, 0.15, u) * (1 - smooth(0.4, 0.6, u));
+      car.speed = -Math.hypot(car.x - px, car.z - pz) / Math.max(dt, 1e-3);
       if (fadeRef.current) fadeRef.current.style.opacity = String(1 - smooth(0, 0.7, t));
       if (t >= LEAVE_TIME) {
-        car.speed = 2.5;
+        car.speed = -1;
         lastDistance = car.distance;
         setModeBoth("drive");
       }
@@ -259,6 +261,9 @@ export function Game() {
       const garage = view.garages[cut.garage];
 
       if (m === "garage") {
+        // Lights up inside: the fade from driving in clears over half a second.
+        cut.t += dt;
+        if (fadeRef.current) fadeRef.current.style.opacity = String(1 - smooth(0, 0.5, cut.t));
         view.renderShowroom(dt, turnRef.current);
         turnRef.current = 0;
       } else if (m === "map") {
@@ -308,6 +313,8 @@ export function Game() {
         view.render(car, dt, time, spec);
 
         const mini = miniRef.current;
+        // The minimap unmounts while you're in a garage, so check its size each frame.
+        if (mini && mini.width !== Math.round(mini.clientWidth * Math.min(window.devicePixelRatio || 1, 2))) sizeCanvas(mini);
         const g = mini?.getContext("2d");
         if (mini && g) {
           const lead = view.trainCars()[0];
@@ -428,7 +435,8 @@ export function Game() {
           showHint && ready && mode === "drive" && !near ? "opacity-100" : "opacity-0"
         }`}
       >
-        arrows or WASD to drive · M for the map
+        <span className="hidden sm:inline">arrows or WASD to drive · M for the map</span>
+        <span className="sm:hidden">hold ▲ to drive</span>
       </p>
 
       {near && mode === "drive" && (

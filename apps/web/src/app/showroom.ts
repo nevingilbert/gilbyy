@@ -110,8 +110,11 @@ export function buildShowroom() {
     renderer.render(scene, camera);
   }
 
+  /** Frames the truck beside the menu: to its left on wide screens, above it on phones. */
   function resize(w: number, h: number) {
     camera.aspect = w / Math.max(1, h);
+    if (w >= 640) camera.setViewOffset(w, h, w * 0.15, 0, w, h);
+    else camera.setViewOffset(w, h, 0, h * 0.2, w, h);
     camera.updateProjectionMatrix();
   }
 
