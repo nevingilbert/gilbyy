@@ -184,7 +184,12 @@ describe("single player progress", () => {
 
   it("guides a newcomer one thing at a time", () => {
     expect(currentGoal([], false)?.id).toBe("garage");
-    expect(currentGoal(["garage", "buy", "mission"], false)).toBeNull();
-    expect(currentGoal(["garage", "buy", "mission"], true)?.id).toBe("cafe");
+    // The compass mark leads to a garage, then the café, then goes away.
+    expect(currentGoal(["garage"], false)?.target).toBe("cafe");
+    expect(currentGoal(["garage"], false)?.text).not.toMatch(/friends/);
+    expect(currentGoal(["garage"], true)?.text).toMatch(/friends/);
+    expect(currentGoal(["garage", "cafe"], true)?.target).toBeNull();
+    expect(currentGoal(["garage", "cafe", "buy"], false)?.target).toBeNull();
+    expect(currentGoal(["garage", "cafe", "buy", "mission"], true)).toBeNull();
   });
 });
