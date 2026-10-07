@@ -12,7 +12,8 @@ subdomains." Update the **You are here** marker as you progress.
 > the game was played signed in from two browsers on `feat/multiplayer`
 > (`sessions/2026-10-07-connect-supabase.md`).
 > Found garages and cafés now stay on the map and are counted there and on the
-> leaderboard (`decisions/0008`).
+> leaderboard (`decisions/0008`). The compass mark leads to a first garage and then the
+> café, and each of those is an achievement shown on the leaderboard (`decisions/0009`).
 > It is all on `main` and live at gilbyy.com since 2026-10-07.
 > **Next:** play it signed in on the live site. Still open:
 > the frame rate on a real phone and laptop. Sign-in is Google only (the email link was

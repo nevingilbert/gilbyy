@@ -86,7 +86,7 @@ Pure modules, no three.js, all unit-tested:
 - `net.ts`: presence, tents, poses, friend requests and chat. `SupabaseNet` runs over
   Supabase Realtime; `LocalNet` runs over a `BroadcastChannel`, for testing across
   tabs.
-- `goals.ts` (first-time guidance), `track.ts` (train and crossings as functions of
+- `goals.ts` (first-time guidance), `achievements.ts` (which goals are achievements), `track.ts` (train and crossings as functions of
   time), `daylight.ts` (hour and sky).
 
 Rendering and UI:
@@ -133,6 +133,8 @@ for sign-in (Google only), and Realtime for the shared valley. See
   signed-in users can execute the nine game functions; that is the design.
 - `20261007120000_found_places.sql` adds the `places` list, `profiles.discovered`,
   `discover()`, and the found counts on `leaderboard()`.
+- `20261007200000_achievements.sql` has `leaderboard()` return each player's goals too,
+  so friends see each other's achievements (ADR 0009).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

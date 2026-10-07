@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { achievementsOf } from "./achievements";
 import { fmtMiles } from "./GarageMenu";
 import { foundLine } from "./places";
 import type { Standing } from "./store";
@@ -178,18 +179,31 @@ export function Leaderboard({
           <p className="mt-3 text-sm text-[rgba(255,246,232,0.5)]">Looking…</p>
         ) : (
           <ol className="mt-3 space-y-1">
-            {rows.map((r, i) => (
-              <li key={r.id} className={`flex items-baseline gap-3 rounded-lg px-3 py-1.5 text-sm ${r.me ? "bg-white/[0.08]" : ""}`}>
-                <span className="w-5 text-right text-xs text-[rgba(255,246,232,0.45)]">{i + 1}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{r.name}</span>
-                  <span className="block text-[11px] tabular-nums text-[rgba(255,246,232,0.45)]">
-                    {foundLine({ garage: r.garages, cafe: r.cafes })} found
+            {rows.map((r, i) => {
+              const earned = achievementsOf(r.goals);
+              return (
+                <li key={r.id} className={`flex items-baseline gap-3 rounded-lg px-3 py-1.5 text-sm ${r.me ? "bg-white/[0.08]" : ""}`}>
+                  <span className="w-5 text-right text-xs text-[rgba(255,246,232,0.45)]">{i + 1}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{r.name}</span>
+                    <span className="block text-[11px] tabular-nums text-[rgba(255,246,232,0.45)]">
+                      {foundLine({ garage: r.garages, cafe: r.cafes })} found
+                    </span>
+                    {/* Achievements, in the compass mark's yellow: it's what leads you to them. */}
+                    {earned.length > 0 && (
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {earned.map((a) => (
+                          <span key={a.goal} className="rounded-full bg-[rgba(255,211,107,0.14)] px-2 py-px text-[10px] font-medium text-[rgba(255,211,107,0.9)]">
+                            {a.name}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </span>
-                </span>
-                <span className="tabular-nums text-[rgba(255,246,232,0.75)]">{fmtMiles(r.lifetime)} mi</span>
-              </li>
-            ))}
+                  <span className="tabular-nums text-[rgba(255,246,232,0.75)]">{fmtMiles(r.lifetime)} mi</span>
+                </li>
+              );
+            })}
             {rows.length === 1 && (
               <li className="pt-2 text-xs text-[rgba(255,246,232,0.45)]">Meet someone at the café by camp and press F to add them.</li>
             )}

@@ -40,7 +40,8 @@ apps, you are in the wrong repo.
     - `physics.ts`: a pure `step(car, input, dt, ground, spec)`.
     - `vehicles.ts` (the eight rigs), `shop.ts` (parts, prices, `specFor`),
       `missions.ts` and `mission-run.ts` (courses and runs), `goals.ts` (first-time
-      guidance).
+      guidance: the compass mark leads to a garage, then the café), `achievements.ts`
+      (those two steps as achievements, ADR 0009).
     - `track.ts` (train and crossings), `daylight.ts` (time of day), `noise.ts`.
     - `places.ts`: the garages and the café as things to find, and how they're counted
       (ADR 0008).
@@ -110,7 +111,7 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't make sign-in required. Single player with no account must keep working, and say clearly that nothing is saved.
 - Don't reach for a game engine, a physics engine, react-three-fiber or a post-processing stack. three.js is the one rendering dependency (ADR 0005); the physics is ours and stays a pure, tested function. Anything more needs its own ADR.
 - Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
-- Don't add pressure. Miles are the one currency, missions are optional and never fail beyond giving up, and the leaderboard is you and your friends only (ADR 0007). It also says how many garages and cafés each of you has found (ADR 0008); finding them pays nothing and must stay that way. The game is meant to be calm; see `docs/art-direction.md`.
+- Don't add pressure. Miles are the one currency, missions are optional and never fail beyond giving up, and the leaderboard is you and your friends only (ADR 0007). It also says how many garages and cafés each of you has found (ADR 0008); finding them pays nothing and must stay that way. The same goes for the achievements beside each name (ADR 0009). The game is meant to be calm; see `docs/art-direction.md`.
 - Don't spend the Realtime budget carelessly. Supabase's free plan counts every broadcast once per receiver; poses go through `PoseGate` in `net.ts` for that reason. Presence is stricter still: Realtime closes a client's channel after five presence updates in thirty seconds, so announcements go through `PresenceBudget`, and nothing that changes often goes in presence. See the free-tier notes in `docs/architecture.md`.
 - Don't add buildings that link to the other gilbyy.com apps without a new ADR superseding 0004. The owner has floated it for later; it is not built.
 - Don't judge frame rate from headless screenshots. Headless Chromium renders WebGL in software at ~3 fps; screenshots are fine for looks, nothing else.
@@ -141,6 +142,7 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - eight rigs, and eight garages that sell rigs and parts for miles;
 - four missions, and first-time guidance;
 - a map with fog of war, where the garages and café you've found stay marked and are counted (ADR 0008);
+- achievements for the first garage and the café, shown on the leaderboard (ADR 0009);
 - optional sign-in for saved progress, a shared valley, friends, chat and a leaderboard (ADR 0007).
 
 The online half is connected (2026-10-07): the Supabase project `gilbyy` has all three migrations, Google sign-in works, and the whole list (name, tent, seeing each other, friending at the café, chat, leaderboard, a purchase and a mission payout that persist) was played from two browsers. It was merged to `main` the same day, so gilbyy.com offers sign-in. A tab left hidden for five minutes, or untouched for fifteen, gives its tent back and takes one again on return. Sign-in is Google only; the email-link option was removed because Supabase's built-in mailer only reaches members of the Supabase org. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.

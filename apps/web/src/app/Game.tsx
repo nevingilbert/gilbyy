@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { achievementFor } from "./achievements";
 import { secondsUntil } from "./daylight";
 import { GarageMenu, fmtMiles } from "./GarageMenu";
 import { currentGoal } from "./goals";
@@ -307,7 +308,13 @@ export function Game() {
     };
     attach(store);
 
-    const goal = (id: string) => store.markGoal(id);
+    /** An achievement just earned, announced once the truck is back on the road. */
+    let cheer: string | null = null;
+    const goal = (id: string) => {
+      if (store.get().goals.includes(id)) return;
+      store.markGoal(id);
+      cheer = achievementFor(id)?.name ?? cheer;
+    };
 
     // ——— Other players ———
 
@@ -902,6 +909,10 @@ export function Game() {
           }
           runOn(dt);
           lookAround();
+          if (cheer) {
+            say(`Achievement: ${cheer}`, 6);
+            cheer = null;
+          }
         } else if (m === "entering" && garage) animateEnter(garage, dt);
         else if (m === "leaving" && garage) animateLeave(garage, dt);
 

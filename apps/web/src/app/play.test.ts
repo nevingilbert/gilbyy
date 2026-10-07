@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
-import { currentGoal } from "./goals";
+import { ACHIEVEMENTS, achievementsOf } from "./achievements";
+import { currentGoal, GOALS } from "./goals";
 import { COUNTDOWN, crossed, startRun, tick } from "./mission-run";
 import type { Mission } from "./missions";
 import { AWAY_HIDDEN, AWAY_IDLE, MAX_PLAYERS, PoseGate, PresenceBudget, chatTopic, isAway, settle, type Peer, type Pose } from "./net";
@@ -191,5 +192,14 @@ describe("single player progress", () => {
     expect(currentGoal(["garage", "cafe"], true)?.target).toBeNull();
     expect(currentGoal(["garage", "cafe", "buy"], false)?.target).toBeNull();
     expect(currentGoal(["garage", "cafe", "buy", "mission"], true)).toBeNull();
+  });
+
+  it("turns the first garage and the café into achievements, and nothing else", async () => {
+    expect(ACHIEVEMENTS.every((a) => GOALS.some((g) => g.id === a.goal))).toBe(true);
+    expect(achievementsOf([]).map((a) => a.name)).toEqual([]);
+    expect(achievementsOf(["cafe", "buy", "made-up", "garage"]).map((a) => a.name)).toEqual(["First garage", "First café"]);
+    const s = new LocalStore("me");
+    s.markGoal("garage");
+    expect(achievementsOf((await s.leaderboard())[0].goals).map((a) => a.name)).toEqual(["First garage"]);
   });
 });
