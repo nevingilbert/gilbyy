@@ -1089,6 +1089,25 @@ export function Game() {
         </>
       )}
 
+      {/* The keys that aren't driving, kept on the right edge for keyboards. Talk only works with a friend near. */}
+      {driving && (
+        <ul className="pointer-events-none absolute right-5 top-1/2 hidden -translate-y-1/2 flex-col gap-1.5 text-[11px] font-medium tracking-wide text-[rgba(255,246,232,0.82)] drop-shadow sm:flex">
+          {[
+            { key: "M", label: "map" },
+            { key: "L", label: "leaderboard" },
+            { key: "T", label: "talk", note: canChat ? "" : "when a friend is near" },
+          ].map((k) => (
+            <li key={k.key} className="flex items-center gap-2">
+              <span className="w-5 rounded border border-white/40 text-center text-[10px] font-semibold">{k.key}</span>
+              <span>
+                {k.label}
+                {k.note && <span className="text-[rgba(255,246,232,0.6)]"> · {k.note}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {driving && solo && !run && <SoloBanner canSignIn={onlineConfigured} onSignIn={() => setSigningIn(true)} />}
 
       {run && driving && (
@@ -1148,7 +1167,7 @@ export function Game() {
           showHint && ready && mode === "drive" && !prompt && !run ? "opacity-100" : "opacity-0"
         }`}
       >
-        <span className="hidden sm:inline">arrows or WASD to drive · M for the map · L for miles</span>
+        <span className="hidden sm:inline">arrows or WASD to drive</span>
         <span className="sm:hidden">hold ▲ to drive</span>
       </p>
 
