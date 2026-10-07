@@ -1,10 +1,12 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import { currentGoal } from "./goals";
 import { COUNTDOWN, crossed, startRun, tick } from "./mission-run";
 import type { Mission } from "./missions";
-import { MAX_PLAYERS, PoseGate, PresenceBudget, chatTopic, settle, type Peer, type Pose } from "./net";
+import { AWAY_HIDDEN, AWAY_IDLE, MAX_PLAYERS, PoseGate, PresenceBudget, chatTopic, isAway, settle, type Peer, type Pose } from "./net";
 import { STOCK_LOADOUT } from "./shop";
-import { LocalStore } from "./store";
+import { LocalStore, NAME_PATTERN } from "./store";
 
 const peer = (id: string, tent: number, joined: number): Peer => ({ id, name: id, vehicle: "bluff", loadout: STOCK_LOADOUT, tent, joined });
 
@@ -60,6 +62,33 @@ describe("pose sending", () => {
 
   it("names a chat channel the same from either side", () => {
     expect(chatTopic("b", "a")).toBe(chatTopic("a", "b"));
+  });
+});
+
+describe("giving a tent back", () => {
+  it("happens to a tab left out of sight, sooner than to a game left untouched", () => {
+    expect(isAway(0, 60)).toBe(false);
+    expect(isAway(AWAY_HIDDEN - 1, AWAY_HIDDEN - 1)).toBe(false);
+    expect(isAway(AWAY_HIDDEN, AWAY_HIDDEN)).toBe(true);
+    // Showing, but nobody has touched it for a long while.
+    expect(isAway(0, AWAY_IDLE - 1)).toBe(false);
+    expect(isAway(0, AWAY_IDLE)).toBe(true);
+    expect(AWAY_HIDDEN).toBeLessThan(AWAY_IDLE);
+  });
+});
+
+describe("names", () => {
+  it("can be as short as two characters", async () => {
+    const store = new LocalStore();
+    expect(await store.setName("T")).not.toBeNull();
+    expect(await store.setName(" TJ ")).toBeNull();
+    expect(store.get().name).toBe("TJ");
+    expect(await store.setName("x".repeat(21))).not.toBeNull();
+  });
+
+  it("follow the same rule on the server", () => {
+    const sql = readFileSync(resolve(__dirname, "../../../../supabase/migrations/20261007180000_short_names.sql"), "utf8");
+    expect(sql).toContain(`'${NAME_PATTERN.source}'`);
   });
 });
 

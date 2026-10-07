@@ -6,7 +6,7 @@ import { GarageMenu, fmtMiles } from "./GarageMenu";
 import { currentGoal } from "./goals";
 import { createMap } from "./map";
 import { fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
-import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, type Net, type NetHandlers, type Peer } from "./net";
+import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, type Net, type NetHandlers, type Peer } from "./net";
 import { Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
 import { makeCar, noInput, step, type Input } from "./physics";
 import { countFound, foundLine } from "./places";
@@ -42,7 +42,7 @@ const COMPASS_ITEM = 28;
 const COMPASS_VIEW = COMPASS_ITEM * 8;
 
 type Mode = "boot" | "pick" | "drive" | "entering" | "garage" | "leaving" | "map";
-type Presence = "solo" | "local" | "joining" | "online" | "full";
+type Presence = "solo" | "local" | "joining" | "online" | "full" | "away";
 type Prompt =
   | { kind: "garage"; style: SiteStyle }
   | { kind: "mission"; mission: Mission }
@@ -394,6 +394,47 @@ export function Game() {
       say(`Tent ${tent + 1} is yours.`);
       await refreshFriends();
     };
+
+    // ——— Away ———
+
+    // A tab left in the background, or a game nobody is touching, gives its tent back so
+    // someone else can have it, and takes one again the moment the player returns. This
+    // runs on a timer, not in the frame loop, because a hidden tab draws no frames.
+    let touchedAt = Date.now();
+    let hiddenAt = document.hidden ? Date.now() : 0;
+    let leftAt = 0;
+    const goAway = () => {
+      if (!net || tent < 0) return;
+      net.leave();
+      leftAt = Date.now();
+      tent = -1;
+      peers.clear();
+      view.remotes.sync([]);
+      setPeople(1);
+      present("away");
+      void store.flush();
+    };
+    const comeBack = () => {
+      if (presenceNow !== "away") return;
+      present("joining");
+      // If this comes right on the heels of leaving, let the old channel finish closing first.
+      window.setTimeout(() => !cancelled && void join(), Math.max(0, 1000 - (Date.now() - leftAt)));
+    };
+    const touched = () => {
+      touchedAt = Date.now();
+      comeBack();
+    };
+    const onVisibility = () => {
+      hiddenAt = document.hidden ? Date.now() : 0;
+      if (!document.hidden) touched();
+    };
+    const awayCheck = window.setInterval(() => {
+      const now = Date.now();
+      if (isAway(hiddenAt ? (now - hiddenAt) / 1000 : 0, (now - touchedAt) / 1000)) goAway();
+    }, 15000);
+    window.addEventListener("keydown", touched);
+    window.addEventListener("pointerdown", touched);
+    document.addEventListener("visibilitychange", onVisibility);
 
     /** Signed in (or testing across tabs): load the profile, ask for a name, take a tent. */
     const boot = async () => {
@@ -926,6 +967,10 @@ export function Game() {
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
+      window.clearInterval(awayCheck);
+      window.removeEventListener("keydown", touched);
+      window.removeEventListener("pointerdown", touched);
+      document.removeEventListener("visibilitychange", onVisibility);
       window.clearTimeout(toastTimer);
       onUnload();
       unsubscribe();
@@ -1014,6 +1059,18 @@ export function Game() {
           <div className="pointer-events-none absolute left-1/2 top-[2.1rem] h-0 w-0">
             <div ref={markRef} className="absolute -left-[5px] h-2.5 w-2.5 rotate-45 rounded-[2px] bg-[rgba(255,211,107,0.95)] opacity-0 shadow transition-opacity" />
           </div>
+
+          {/* Signed in: a dot and your name in the corner. It opens the panel that signs you out. */}
+          {online && (
+            <button
+              onClick={() => setBoard(true)}
+              title={profile?.name ? `Signed in as ${profile.name}` : "Signed in"}
+              className="absolute right-4 top-3.5 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-[rgba(255,246,232,0.78)] drop-shadow-sm sm:right-5"
+            >
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[rgba(168,222,150,0.95)]" />
+              <span className="max-w-[3.5rem] truncate sm:max-w-[11rem]">{profile?.name ?? "Signed in"}</span>
+            </button>
+          )}
 
           {/* Minimap and odometer: top-right on phones (clear of the thumbs), bottom-left otherwise. */}
           <div className="absolute right-4 top-12 flex flex-col items-center gap-1 sm:bottom-5 sm:left-5 sm:right-auto sm:top-auto">

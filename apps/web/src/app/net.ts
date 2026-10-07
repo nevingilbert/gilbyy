@@ -52,6 +52,14 @@ export interface Net {
 }
 
 export const MAX_PLAYERS = CAMP_PITCHES;
+/**
+ * There are only thirty tents, so a player who isn't really here gives theirs back: after
+ * this long with the tab out of sight, or this long without touching the game. Seconds.
+ */
+export const AWAY_HIDDEN = 5 * 60;
+export const AWAY_IDLE = 15 * 60;
+/** `hiddenFor` is 0 while the tab is showing. */
+export const isAway = (hiddenFor: number, untouchedFor: number) => hiddenFor >= AWAY_HIDDEN || untouchedFor >= AWAY_IDLE;
 /** How near a friend has to be to hear you. */
 export const CHAT_RANGE = 90;
 export const MAX_CHAT = 140;
