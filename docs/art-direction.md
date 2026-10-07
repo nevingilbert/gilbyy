@@ -39,13 +39,18 @@ unhurried exploration in a classic 4x4.
 - Swaying grass near the car, bushes breaking up the open ground, pine forests with a
   few golden larches and autumn broadleaves.
 - A nearly absent HUD: a compass strip, a small round topo minimap and an odometer.
-- Calm: no timers, scores, objectives or nagging.
+  First-time guidance is one small line under the title and a mark on the compass.
+- Calm. Missions are optional, start only when you drive up and press E, and have no
+  failure beyond giving up. Their timer shows only while you're on one.
+- Driving together, as in the trailer's co-op shots: other players' trucks share the
+  valley, name tags float over them, and chat appears as small speech bubbles.
 
 ## What we don't (yet)
 
-- Co-op, winching, planks, deformable mud and snow, the photo compendium.
+- Winching, planks, deformable mud and snow, the photo compendium.
 - Weather. Rain, lightning and fog banks are the strongest candidates to add next.
-- Multiple maps and vehicles. There is one valley and one truck, which you upgrade.
+- Multiple maps. There is one valley (with a snowy plateau in the north) and eight
+  rigs, each inspired by a real off-roader.
 - Scope in general. It is a shipped commercial game; this is a hobby page.
 
 ## Where the current build sits
@@ -71,7 +76,8 @@ all come round. Honest gaps:
 3. **Keep the HUD nearly absent.** If a new element competes with the world for
    attention, it is wrong. Low contrast, small, cornered.
 4. **Light and haze before detail.** Shadow, fog and sun buy more than more objects do.
-5. **No pressure mechanics.** No timers, no scores, no objectives. If a feature makes
-   the player feel behind, it does not belong. The one progression is miles quietly
-   unlocking garage parts (ADR 0006); nothing is ever lost or spent.
+5. **No pressure mechanics.** If a feature makes the player feel behind, it does not
+   belong. Miles are spent in the shop, but what you buy is never lost. Mission timers
+   appear only during a run you chose to start, and a slow run still pays. The
+   leaderboard shows only you and your friends (ADR 0007).
 6. **Colours go in `palette.ts`.** No hex literals in render code.

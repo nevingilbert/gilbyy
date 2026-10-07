@@ -1,7 +1,8 @@
 import * as THREE from "three";
-import { buildCar } from "./car-model";
 import { PALETTE } from "./palette";
-import type { Loadout } from "./upgrades";
+import { buildCar, type CarModel } from "./car-model";
+import { specFor, type Loadout } from "./shop";
+import { vehicleById, type VehicleId } from "./vehicles";
 import type { SiteStyle } from "./world";
 
 /** The inside of every garage: walls dressed per style, a bench, and your truck in the middle. */
@@ -12,6 +13,8 @@ const WALLS: Record<SiteStyle, { wall: string; floor: string }> = {
   quonset: { wall: PALETTE.corrugated, floor: PALETTE.concrete },
   cabin: { wall: PALETTE.logWood, floor: PALETTE.timber },
   container: { wall: PALETTE.shipping[1], floor: PALETTE.concreteDark },
+  hangar: { wall: PALETTE.roofTin, floor: PALETTE.concrete },
+  ranch: { wall: PALETTE.timber, floor: PALETTE.timber },
 };
 
 export const GARAGE_NAMES: Record<SiteStyle, string> = {
@@ -21,6 +24,8 @@ export const GARAGE_NAMES: Record<SiteStyle, string> = {
   quonset: "The Quonset Hut",
   cabin: "The Log Cabin",
   container: "The Container Yard",
+  hangar: "The Airstrip Hangar",
+  ranch: "The Ranch",
 };
 
 export function buildShowroom() {
@@ -76,24 +81,31 @@ export function buildShowroom() {
   fill.position.set(6, 8, 10);
   scene.add(fill);
 
-  const car = buildCar();
-  scene.add(car.object);
-
+  let car: CarModel | null = null;
   let sweep = 0;
   let offset = 0;
   let style: SiteStyle = "workshop";
 
-  function open(s: SiteStyle, loadout: Loadout) {
+  function open(s: SiteStyle, vehicle: VehicleId, loadout: Loadout) {
     style = s;
     wallMat.color.set(WALLS[style].wall);
     floorMat.color.set(WALLS[style].floor);
-    setLoadout(loadout);
+    setRig(vehicle, loadout);
   }
 
-  function setLoadout(l: Loadout) {
+  /** The truck on the floor: rebuilt for a different rig, refitted for different parts. */
+  function setRig(vehicle: VehicleId, l: Loadout) {
+    if (car?.vehicle !== vehicle) {
+      if (car) {
+        scene.remove(car.object);
+        car.dispose();
+      }
+      car = buildCar(vehicle);
+      scene.add(car.object);
+    }
     car.setLoadout(l);
     car.setLights(0.85);
-    car.park();
+    car.park(specFor(vehicle, l));
   }
 
   /**
@@ -104,7 +116,8 @@ export function buildShowroom() {
     sweep += dt * 0.15;
     offset = Math.max(-0.85, Math.min(0.85, offset + turn));
     const angle = Math.max(-0.85, Math.min(0.85, Math.sin(sweep) * 0.6 + offset));
-    const r = 8.4;
+    // Stand back further for the long pickups.
+    const r = 4.6 + (car ? vehicleById(car.vehicle).length : 4.5) * 0.85;
     camera.position.set(Math.sin(angle) * r, 3.2, Math.cos(angle) * r);
     camera.lookAt(0, 0.9, 0);
     renderer.render(scene, camera);
@@ -118,5 +131,14 @@ export function buildShowroom() {
     camera.updateProjectionMatrix();
   }
 
-  return { open, setLoadout, render, resize };
+  function dispose() {
+    scene.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        for (const m of [o.material].flat()) m.dispose();
+      }
+    });
+  }
+
+  return { open, setRig, render, resize, dispose };
 }

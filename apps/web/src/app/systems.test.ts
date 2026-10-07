@@ -1,9 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { DAY_LENGTH, START_HOUR, hourAt, skyAt } from "./daylight";
 import { CONSIST, TRAIN_LENGTH, TRAIN_SPEED, crossingClosed, trackPoint, trainCars, trainHead, trainObstacles } from "./track";
-import {
-  LIGHTS, PAINTS, SNORKELS, STOCK_LOADOUT, TIER_MILES, TYRES, loadProgress, saveProgress, specFor, tierAt,
-} from "./upgrades";
 import { buildWorld } from "./world";
 
 const { track } = buildWorld();
@@ -68,45 +65,5 @@ describe("time of day", () => {
     expect(skyAt(12).lightIntensity).toBeGreaterThan(skyAt(0).lightIntensity * 4);
     // The light always comes from above the horizon, sun or moon.
     for (let h = 0; h < 24; h += 0.5) expect(skyAt(h).lightDir[1]).toBeGreaterThan(0);
-  });
-});
-
-describe("upgrades", () => {
-  beforeEach(() => localStorage.clear());
-
-  it("unlocks tiers by miles driven", () => {
-    expect(tierAt(0)).toBe(0);
-    expect(tierAt(TIER_MILES[1])).toBe(1);
-    expect(tierAt(TIER_MILES[4] + 100)).toBe(4);
-    for (const list of [PAINTS, TYRES, LIGHTS, SNORKELS]) expect(list.some((u) => u.tier === 0)).toBe(true);
-  });
-
-  it("only lets a snorkel ford the river, and keeps it high tier", () => {
-    const snorkel = SNORKELS.find((s) => s.fitted)!;
-    expect(snorkel.tier).toBeGreaterThanOrEqual(3);
-    const biggest = TYRES[TYRES.length - 1].id;
-    expect(specFor({ ...STOCK_LOADOUT, tyres: biggest }).wade).toBeLessThan(2.2);
-    expect(specFor({ ...STOCK_LOADOUT, snorkel: snorkel.id }).wade).toBeGreaterThan(2.2);
-  });
-
-  it("gives bigger tyres more clearance and grip", () => {
-    for (let i = 1; i < TYRES.length; i++) {
-      expect(TYRES[i].clearance).toBeGreaterThan(TYRES[i - 1].clearance);
-      expect(TYRES[i].grip).toBeGreaterThan(TYRES[i - 1].grip);
-    }
-  });
-
-  it("remembers miles and loadout, but never keeps a part you haven't unlocked", () => {
-    saveProgress({ miles: 4, loadout: { ...STOCK_LOADOUT, paint: "mustard", tyres: "crawler37" } });
-    const p = loadProgress();
-    expect(p.miles).toBe(4);
-    expect(p.loadout.paint).toBe("mustard");
-    expect(p.loadout.tyres).toBe("road");
-  });
-
-  it("starts fresh when storage is empty or garbled", () => {
-    expect(loadProgress()).toEqual({ miles: 0, loadout: STOCK_LOADOUT });
-    localStorage.setItem("gilbyy.progress.v1", "{not json");
-    expect(loadProgress().miles).toBe(0);
   });
 });

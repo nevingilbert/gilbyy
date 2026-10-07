@@ -89,9 +89,11 @@ export function tiled<T extends { x: number; z: number }>(
   return out;
 }
 
-export function buildTrees(trees: Tree[]) {
+/** `snowAt` is how snowy it is at a spot, 0–1: pines there are frosted. */
+export function buildTrees(trees: Tree[], snowAt: (x: number, z: number) => number = () => 0) {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const pine = PALETTE.pine.map(colour);
+  const frosted = PALETTE.snowPine.map(colour);
   const larch = PALETTE.larch.map(colour);
   const leaf = PALETTE.broadleaf.map(colour);
   const q = new THREE.Quaternion();
@@ -100,6 +102,7 @@ export function buildTrees(trees: Tree[]) {
     q.setFromAxisAngle(up, t.rot);
     m.compose(new THREE.Vector3(t.x, t.y, t.z), q, new THREE.Vector3(t.scale, t.scale * (0.9 + t.tone * 0.3), t.scale));
     if (t.kind === "broadleaf") c.copy(pick(leaf, t.tone));
+    else if (snowAt(t.x, t.z) > 0.5) c.copy(pick(frosted, t.tone));
     else c.copy(t.tone < 0.16 ? pick(larch, t.tone / 0.16) : pick(pine, (t.tone - 0.16) / 0.84));
   };
   const group = new THREE.Group();

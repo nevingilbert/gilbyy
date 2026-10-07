@@ -74,6 +74,7 @@ export const PALETTE = {
     pearlWhite: "#efece6",
     sunsetOrange: "#e2702f",
     midnight: "#26303d",
+    forestGreen: "#3d5a3e",
   },
   lightBar: "#2a2826",
 
@@ -119,6 +120,36 @@ export const PALETTE = {
   barrierRed: "#c23a2e",
   signalRed: "#ff4a3a",
 
+  // Vehicle details shared by every rig.
+  chrome: "#c9c6c0",
+  tailLight: "#b8322a",
+  bumperBlack: "#2a2724",
+
+  // Snow country: drifts, frosted pines, a frozen lake.
+  snowDrift: ["#f4efe9", "#e8e4ea", "#dcdde6"],
+  snowPine: ["#5f7d6f", "#6e8a7c", "#4f6b60"],
+  ice: "#cfe3ea",
+
+  // The campground at the spawn: canvas tents, numbered pitches.
+  tent: ["#d9772f", "#3f7a5a", "#2f6f9f", "#d9b23a", "#a8432f", "#6b5a8a"],
+  tentPole: "#3a332e",
+  parkingLine: "#e9e1d0",
+  picnic: "#8a6a4a",
+  fireRing: "#6f6a64",
+  ember: "#ff8a3a",
+
+  // The coffee shop, where friends meet.
+  coffeeWall: "#5d7a6a",
+  coffeeTrim: "#efe6d6",
+  coffeeAwning: ["#c4473a", "#efe6d6"],
+  coffeeSign: "#3a2a22",
+
+  // Missions: start arches, gate flags (next, ahead, passed), finish banners.
+  flag: "#e2702f",
+  flagNext: "#ffd36b",
+  flagDone: "#6f9f6a",
+  banner: "#c4473a",
+
   // The map: an old parchment topo sheet, greyed out wherever you haven't been.
   map: {
     paper: "#eadcc0",
@@ -134,6 +165,12 @@ export const PALETTE = {
     car: "#c4473a",
     garage: "#3b2f27",
     train: "#2b2421",
+    ice: "#d7e6ea",
+    road: "#8a6f55",
+    camp: "#2f6f9f",
+    mission: "#e2702f",
+    player: "#f2efe6",
+    friend: "#ffd36b",
     rim: "rgba(255,246,232,0.55)",
   },
 

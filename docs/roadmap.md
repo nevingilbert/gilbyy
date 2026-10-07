@@ -4,11 +4,14 @@ Path from where we are to "gilbyy.com live, with the apps hanging off it as
 subdomains." Update the **You are here** marker as you progress.
 
 > **You are here:** Phase C, the game. 3D on three.js since 2026-10-06
-> (`decisions/0005`), and later that day a much bigger second pass (`decisions/0006`):
-> a 4 km valley with rivers, a railway and train, day and night, six garages with
-> mile-gated upgrades, and a map with fog of war.
-> **Next:** drive it on a real phone and laptop to check the frame rate (it got
-> heavier), then tune night lighting on real hardware.
+> (`decisions/0005`, `0006`). On 2026-10-07 came accounts, the shared valley and a shop
+> (`decisions/0007`): a 6 km map with a snow plateau, a 30-tent campground and a café,
+> eight rigs, missions, and a shop that spends miles. With no sign-in it's single
+> player.
+> **Next:** the online setup in `architecture.md` → *Online setup* (Supabase project,
+> migration, Realtime private-only, Google provider, two Vercel env vars). Then play
+> it signed in from two devices, and check the frame rate on a real phone and laptop:
+> the scene is heavier again.
 >
 > Phases A and B are complete: levels retired and auth removed (2026-08-28), the
 > Supabase project deleted, and all six hostnames live on gilbyy.com with Google

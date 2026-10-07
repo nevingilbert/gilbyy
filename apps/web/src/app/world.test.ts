@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { buildWorld, sampleGrid, gridX, gridZ, START, WORLD, LAKES, ROW, CELL, HALF, STOCK_WADE } from "./world";
+import {
+  buildWorld, campPitches, sampleGrid, gridX, gridZ, CAFE, FROZEN, START, WORLD, LAKES, ROW, CELL, HALF, STOCK_WADE,
+} from "./world";
 
 const world = buildWorld();
 const zoneAt = (x: number, z: number) => world.zone[Math.round((z + HALF) / CELL) * ROW + Math.round((x + HALF) / CELL)];
@@ -26,7 +28,7 @@ describe("buildWorld", () => {
   });
 
   it("walls the valley in", () => {
-    const rim = [0, 1, 2, 3, 4, 5].map((k) => world.height(Math.cos(k) * 1900, Math.sin(k) * 1900));
+    const rim = [0, 1, 2, 3, 4, 5].map((k) => world.height(Math.cos(k) * 2800, Math.sin(k) * 2800));
     expect(Math.min(...rim)).toBeGreaterThan(world.height(START.x, START.z) + 150);
   });
 
@@ -40,11 +42,40 @@ describe("buildWorld", () => {
     expect(snorkelOnly * CELL * CELL).toBeGreaterThan(1e6);
   });
 
-  it("puts six differently styled garages in reach, two of them over the river", () => {
-    expect(world.sites).toHaveLength(6);
-    expect(new Set(world.sites.map((s) => s.style)).size).toBe(6);
+  it("puts eight differently styled garages in reach, two of them over the river", () => {
+    expect(world.sites).toHaveLength(8);
+    expect(new Set(world.sites.map((s) => s.style)).size).toBe(8);
     expect(world.sites.filter((s) => zoneAt(s.x, s.z) === 2)).toHaveLength(2);
-    expect(world.sites.filter((s) => zoneAt(s.x, s.z) === 1)).toHaveLength(4);
+    expect(world.sites.filter((s) => zoneAt(s.x, s.z) === 1)).toHaveLength(6);
+  });
+
+  it("lays out thirty level, clear parking bays at the campground, and the café on flat ground", () => {
+    const bays = campPitches().map((p) => p.parking);
+    expect(bays).toHaveLength(30);
+    const hs = bays.map((b) => world.height(b.x, b.z));
+    expect(Math.max(...hs) - Math.min(...hs)).toBeLessThan(0.05);
+    for (const b of bays) {
+      expect(world.obstaclesNear(b.x, b.z).some((o) => Math.hypot(o.x - b.x, o.z - b.z) < 4)).toBe(false);
+      expect(zoneAt(b.x, b.z)).toBe(1);
+    }
+    expect(Math.abs(world.height(CAFE.x, CAFE.z + 26) - world.height(CAFE.x, CAFE.z))).toBeLessThan(0.1);
+  });
+
+  it("has snow country with a frozen lake, and green grass at camp", () => {
+    expect(world.slipAt(FROZEN[0].x, FROZEN[0].z)).toBeGreaterThan(1.9);
+    expect(world.slipAt(FROZEN[0].x, FROZEN[0].z - 500)).toBeGreaterThan(0.9);
+    expect(world.slipAt(START.x, START.z)).toBe(0);
+  });
+
+  it("lays out missions with their gates on dry ground, clear of trees", () => {
+    expect(world.missions.length).toBeGreaterThanOrEqual(4);
+    for (const m of world.missions) {
+      expect(m.gates.length).toBeGreaterThanOrEqual(6);
+      for (const g of m.gates) {
+        expect(world.height(g.x, g.z)).toBeGreaterThan(world.waterAt(g.x, g.z));
+        expect(world.trees.some((t) => Math.hypot(t.x - g.x, t.z - g.z) < 3)).toBe(false);
+      }
+    }
   });
 
   it("lays a closed railway loop, gently graded, with bridges and level crossings", () => {

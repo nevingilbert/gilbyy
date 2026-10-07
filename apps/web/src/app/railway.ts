@@ -54,10 +54,25 @@ function onBridge(track: Track, s: number) {
   return track.bridges.some(([a, b]) => s >= a && s <= b);
 }
 
-/** A strip of dirt road draped over the terrain, for each level crossing. */
+/** Dirt strips draped over the terrain: one across each level crossing, and the camp's roads. */
 function buildRoads(world: World) {
   const { track } = world;
   const pos: number[] = [];
+  const strip = (ax: number, az: number, bx: number, bz: number, half: number) => {
+    const len = Math.hypot(bx - ax, bz - az) || 1;
+    const ux = (bx - ax) / len;
+    const uz = (bz - az) / len;
+    const at = (d: number, side: number) => {
+      const x = ax + ux * d - uz * side * half;
+      const z = az + uz * d + ux * side * half;
+      return [x, world.height(x, z) + 0.07, z];
+    };
+    // Overlap the ends a little so joined segments leave no gap at the corner.
+    for (let d = -half; d < len + half; d += 3) {
+      const [a, b, c, e] = [at(d, -1), at(d, 1), at(d + 3, -1), at(d + 3, 1)];
+      pos.push(...a, ...c, ...b, ...b, ...c, ...e);
+    }
+  };
   for (const s of track.crossings) {
     const p = trackPoint(track, s);
     const q = trackPoint(track, s + 5);
@@ -65,16 +80,10 @@ function buildRoads(world: World) {
     // Road runs at right angles to the rails.
     const rx = (q.z - p.z) / tl;
     const rz = -(q.x - p.x) / tl;
-    const half = 2.6;
-    for (let d = -45; d < 45; d += 3) {
-      const at = (dd: number, side: number) => {
-        const x = p.x + rx * dd - rz * side * half;
-        const z = p.z + rz * dd + rx * side * half;
-        return [x, world.height(x, z) + 0.07, z];
-      };
-      const [a, b, c, e] = [at(d, -1), at(d, 1), at(d + 3, -1), at(d + 3, 1)];
-      pos.push(...a, ...c, ...b, ...b, ...c, ...e);
-    }
+    strip(p.x - rx * 45, p.z - rz * 45, p.x + rx * 45, p.z + rz * 45, 2.6);
+  }
+  for (const road of world.roads) {
+    for (let i = 1; i < road.xs.length; i++) strip(road.xs[i - 1], road.zs[i - 1], road.xs[i], road.zs[i], 2.8);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));

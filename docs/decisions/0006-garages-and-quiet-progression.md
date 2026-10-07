@@ -1,8 +1,11 @@
 # 0006 — Garages, upgrades unlocked by miles, and a map you uncover
 
 Date: 2026-10-06
-Status: Accepted. Narrows the "no scores, timers or achievements" rule in `CLAUDE.md` and
-`art-direction.md`, and the "nothing to persist" line. Builds on `0005`.
+Status: Accepted, partly superseded by `0007`: miles are now spent in a shop rather than
+unlocking tiers, and progress is kept on the server when signed in (or not at all in
+single player) rather than in `localStorage`. Narrowed the "no scores, timers or
+achievements" rule in `CLAUDE.md` and `art-direction.md`, and the "nothing to persist"
+line. Builds on `0005`.
 
 ## Context
 

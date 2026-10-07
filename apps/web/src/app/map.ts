@@ -1,10 +1,11 @@
 import { PALETTE } from "./palette";
-import { HALF, WORLD, sampleGrid, type Site, type World } from "./world";
+import { CAFE, CAMP, HALF, WORLD, sampleGrid, type Mission, type Site, type World } from "./world";
 
 /**
  * The map: a parchment topo sheet of the valley, drawn once, under a grey fog that
  * clears wherever you've driven. The fog lives only in memory, so every visit starts
- * unexplored. Garages appear on it once you've seen them.
+ * unexplored. Garages and mission starts appear on it once you've seen them; the camp
+ * and the café are marked from the start.
  */
 const SIZE = 512;
 const PX = SIZE / WORLD.size;
@@ -36,6 +37,7 @@ function paintBase(world: World) {
   const snow = rgb(C.snow);
   const water = rgb(C.water);
   const deep = rgb(C.waterDeep);
+  const ice = rgb(C.ice);
   const step = 1 / PX;
   const heights = new Float32Array(SIZE * SIZE);
   for (let py = 0; py < SIZE; py++) {
@@ -56,8 +58,9 @@ function paintBase(world: World) {
       const lit = Math.max(0, Math.min(1, 0.62 + (dx + dz) * -0.35 - Math.hypot(dx, dz) * 0.15));
       let c = mix(shade, paper, lit);
       const depth = sampleGrid(world.water, x, z) - h;
-      if (depth > 0) c = mix(water, deep, Math.min(1, depth / 12));
-      else if (h > 190) c = mix(c, snow, 0.7);
+      if (sampleGrid(world.ice, x, z) > 0.5) c = mix(c, ice, 0.85);
+      else if (depth > 0) c = mix(water, deep, Math.min(1, depth / 12));
+      else if (h > 190 || sampleGrid(world.snow, x, z) > 0.6) c = mix(c, snow, 0.7);
       else if (Math.hypot(dx, dz) > 0.75) c = mix(c, rock, 0.6);
       else if (sampleGrid(world.forest, x, z) > 0.6) c = mix(c, forest, 0.55);
       const k = (py * SIZE + px) * 4;
@@ -88,7 +91,65 @@ function paintBase(world: World) {
   g.closePath();
   g.stroke();
   g.setLineDash([]);
+
+  // The camp's roads.
+  g.strokeStyle = C.road;
+  g.lineWidth = 1;
+  for (const r of world.roads) {
+    g.beginPath();
+    r.xs.forEach((x, i) => (i ? g.lineTo(toPx(x), toPx(r.zs[i])) : g.moveTo(toPx(x), toPx(r.zs[i]))));
+    g.stroke();
+  }
   return canvas;
+}
+
+/** A tent for the camp. */
+function drawCamp(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  g.fillStyle = PALETTE.map.camp;
+  g.beginPath();
+  g.moveTo(x - s, y + s * 0.7);
+  g.lineTo(x, y - s * 0.9);
+  g.lineTo(x + s, y + s * 0.7);
+  g.closePath();
+  g.fill();
+}
+
+/** A mug for the café. */
+function drawCafe(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  g.fillStyle = PALETTE.map.garage;
+  g.fillRect(x - s * 0.7, y - s * 0.6, s * 1.1, s * 1.3);
+  g.strokeStyle = PALETTE.map.garage;
+  g.lineWidth = Math.max(1, s * 0.25);
+  g.beginPath();
+  g.arc(x + s * 0.45, y + s * 0.05, s * 0.35, -Math.PI / 2, Math.PI / 2);
+  g.stroke();
+}
+
+/** A pennant for a mission start. */
+function drawFlag(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  g.strokeStyle = PALETTE.map.garage;
+  g.lineWidth = Math.max(1, s * 0.2);
+  g.beginPath();
+  g.moveTo(x - s * 0.5, y + s);
+  g.lineTo(x - s * 0.5, y - s);
+  g.stroke();
+  g.fillStyle = PALETTE.map.mission;
+  g.beginPath();
+  g.moveTo(x - s * 0.5, y - s);
+  g.lineTo(x + s, y - s * 0.5);
+  g.lineTo(x - s * 0.5, y);
+  g.closePath();
+  g.fill();
+}
+
+function drawDot(g: CanvasRenderingContext2D, x: number, y: number, s: number, colour: string) {
+  g.fillStyle = colour;
+  g.strokeStyle = PALETTE.map.garage;
+  g.lineWidth = Math.max(1, s * 0.3);
+  g.beginPath();
+  g.arc(x, y, s, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
 }
 
 function drawGarage(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
@@ -125,6 +186,8 @@ function drawCar(g: CanvasRenderingContext2D, x: number, y: number, heading: num
 }
 
 export type Spot = { x: number; z: number; heading: number };
+/** Other things on the map this frame: the train (if seen), other players, and where the guidance is pointing. */
+export type Extras = { train?: Spot; players?: (Spot & { friend: boolean })[] };
 
 export function createMap(world: World) {
   const base = paintBase(world);
@@ -134,6 +197,7 @@ export function createMap(world: World) {
   f.fillStyle = PALETTE.map.fog;
   f.fillRect(0, 0, SIZE, SIZE);
   const seen = new Set<Site>();
+  const seenMissions = new Set<Mission>();
   let lastX = Infinity;
   let lastZ = Infinity;
 
@@ -151,17 +215,20 @@ export function createMap(world: World) {
     f.fillRect(toPx(x) - r, toPx(z) - r, r * 2, r * 2);
     f.globalCompositeOperation = "source-over";
     for (const s of world.sites) if (Math.hypot(s.x - x, s.z - z) < SIGHT * 0.8) seen.add(s);
+    for (const m of world.missions) if (Math.hypot(m.start.x - x, m.start.z - z) < SIGHT * 0.8) seenMissions.add(m);
   }
 
-  const markers = (g: CanvasRenderingContext2D, place: (x: number, z: number) => [number, number], icon: number) => {
-    for (const s of seen) {
-      const [px, py] = place(s.x, s.z);
-      drawGarage(g, px, py, icon);
-    }
+  const markers = (g: CanvasRenderingContext2D, place: (x: number, z: number) => [number, number], icon: number, extras: Extras) => {
+    drawCamp(g, ...place(CAMP.x, CAMP.z), icon * 1.1);
+    drawCafe(g, ...place(CAFE.x, CAFE.z), icon * 0.9);
+    for (const s of seen) drawGarage(g, ...place(s.x, s.z), icon);
+    for (const m of seenMissions) drawFlag(g, ...place(m.start.x, m.start.z), icon);
+    if (extras.train) drawDot(g, ...place(extras.train.x, extras.train.z), icon * 0.55, PALETTE.map.train);
+    for (const p of extras.players ?? []) drawDot(g, ...place(p.x, p.z), icon * 0.5, p.friend ? PALETTE.map.friend : PALETTE.map.player);
   };
 
   /** Round, north-up, centred on the truck: `size` px across, showing `radius` metres. */
-  function drawMini(g: CanvasRenderingContext2D, size: number, car: Spot, train?: Spot) {
+  function drawMini(g: CanvasRenderingContext2D, size: number, car: Spot, extras: Extras = {}) {
     const radius = 480;
     const scale = size / (radius * 2);
     g.clearRect(0, 0, size, size);
@@ -177,14 +244,7 @@ export function createMap(world: World) {
     g.drawImage(base, sx, sy, sw, sw, 0, 0, size, size);
     g.drawImage(fog, sx, sy, sw, sw, 0, 0, size, size);
     const place = (x: number, z: number): [number, number] => [(x - car.x + radius) * scale, (z - car.z + radius) * scale];
-    markers(g, place, size * 0.035);
-    if (train) {
-      const [tx, ty] = place(train.x, train.z);
-      g.fillStyle = PALETTE.map.train;
-      g.beginPath();
-      g.arc(tx, ty, size * 0.022, 0, Math.PI * 2);
-      g.fill();
-    }
+    markers(g, place, size * 0.035, extras);
     drawCar(g, size / 2, size / 2, car.heading, size * 0.05);
     g.restore();
     g.strokeStyle = PALETTE.map.rim;
@@ -195,7 +255,7 @@ export function createMap(world: World) {
   }
 
   /** The whole valley, fitted into a `size` px square. */
-  function drawFull(g: CanvasRenderingContext2D, size: number, car: Spot, train?: Spot) {
+  function drawFull(g: CanvasRenderingContext2D, size: number, car: Spot, extras: Extras = {}) {
     // Crop to the valley itself; the square's corners are all mountain.
     const span = WORLD.limit * 2.1;
     const scale = size / span;
@@ -205,14 +265,7 @@ export function createMap(world: World) {
     g.drawImage(base, sx, sx, sw, sw, 0, 0, size, size);
     g.drawImage(fog, sx, sx, sw, sw, 0, 0, size, size);
     const place = (x: number, z: number): [number, number] => [(x + span / 2) * scale, (z + span / 2) * scale];
-    markers(g, place, size * 0.014);
-    if (train) {
-      const [tx, ty] = place(train.x, train.z);
-      g.fillStyle = PALETTE.map.train;
-      g.beginPath();
-      g.arc(tx, ty, size * 0.008, 0, Math.PI * 2);
-      g.fill();
-    }
+    markers(g, place, size * 0.014, extras);
     const [cx, cy] = place(car.x, car.z);
     drawCar(g, cx, cy, car.heading, size * 0.018);
   }

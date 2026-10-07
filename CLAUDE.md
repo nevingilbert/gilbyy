@@ -5,8 +5,12 @@ This file orients Claude Code (and Cowork) when working in this repo. Read this 
 ## What this project is
 
 Gilbyy is a **driving game** at gilbyy.com. You load the site and drive a 4x4 around a
-low-poly 3D valley: rivers, a railway, day and night, garages where miles driven unlock
-upgrades, and a map you uncover as you go. That is the entire product.
+low-poly 3D valley: rivers, a railway, snow country, day and night, garages that sell
+rigs and parts for the miles you drive, optional missions, and a map you uncover as you
+go. With no sign-in it is single player and nothing is saved. Signed in, progress
+persists and everyone shares the valley: you spawn at a 30-tent campground, make friends
+by meeting at the café, and chat with friends nearby (ADR 0007). That is the entire
+product.
 
 It is not a hub, a menu, or a launcher, and it **must not link to any other app**. See
 `docs/vision.md` and `docs/decisions/0004-gilbyy-is-just-a-driving-game.md` — this has
@@ -28,18 +32,37 @@ apps, you are in the wrong repo.
 
 - `apps/web/` — the Next.js app. The game lives in `src/app/`:
   - Pure, no three.js, unit-tested:
-    - `terrain.ts`: the valley as grid fields (heights, water, distances), the railway's
-      earthworks, the rivers, garage sites, and which ground needs the snorkel.
-    - `world.ts`: scatter (trees, rocks, bushes), obstacles, and the `Ground` the physics reads.
+    - `terrain.ts`: the valley as grid fields (heights, water, snow, ice, distances), the
+      railway's earthworks, the rivers, the campground and café, garage sites, and which
+      ground needs the snorkel.
+    - `world.ts`: scatter (trees, rocks, bushes), obstacles, and the `Ground` the physics
+      reads.
     - `physics.ts`: a pure `step(car, input, dt, ground, spec)`.
-    - `track.ts` (train and crossings), `daylight.ts` (time of day), `upgrades.ts`
-      (catalogue, tiers, `localStorage` progress), `noise.ts`.
+    - `vehicles.ts` (the eight rigs), `shop.ts` (parts, prices, `specFor`),
+      `missions.ts` and `mission-run.ts` (courses and runs), `goals.ts` (first-time
+      guidance).
+    - `track.ts` (train and crossings), `daylight.ts` (time of day), `noise.ts`.
+  - Online, also unit-tested:
+    - `store.ts`: progress, either `LocalStore` (in memory) or `SupabaseStore`
+      (database functions).
+    - `net.ts`: presence, tents, poses, friend requests and chat, either `SupabaseNet`
+      or `LocalNet` (tabs of one browser, `?net=local`).
+    - `supabase.ts`: the client and sign-in.
   - `palette.ts`: every colour, in one place, including the sky keyframes.
-  - three.js: `scene.ts` (assembles everything), `terrain-mesh.ts`, `scenery.ts`,
-    `sky.ts`, `railway.ts`, `car-model.ts`, `garages.ts`, `train-model.ts`,
-    `crossing-model.ts`, `showroom.ts` (garage interior).
+  - three.js:
+    - `scene.ts` assembles everything.
+    - Ground and sky: `terrain-mesh.ts`, `scenery.ts`, `sky.ts`.
+    - Railway: `railway.ts`, `train-model.ts`, `crossing-model.ts`.
+    - Vehicles: `car-model.ts` with `vehicle-models.ts`, and `remote.ts` for other
+      players' trucks.
+    - Buildings: `garages.ts`, `campground-model.ts`, `coffee-shop-model.ts`,
+      `showroom.ts` (the garage interior).
+    - Missions: `mission-models.ts`.
   - `map.ts`: the 2D map and its fog of war.
-  - React: `Game.tsx` (loop, modes, HUD), `GarageMenu.tsx`.
+  - React: `Game.tsx` (loop, modes, HUD), `GarageMenu.tsx` (the shop), `Panels.tsx`
+    (starter picker, banner, sign-in, name, leaderboard).
+- `supabase/`: the one migration (schema, RLS, the functions every write goes through,
+  realtime policies) and its plain-Postgres tests.
 - `packages/` — empty. Add a package only when two directories *in this repo* need the same thing, which is now a high bar.
 - `docs/` — design docs.
   - `vision.md` — the why
@@ -52,7 +75,7 @@ apps, you are in the wrong repo.
 
 ## Stack
 
-Next.js (App Router) + TypeScript + Tailwind, on Vercel free tier. **No database, no auth, no middleware, no runtime dependencies beyond React and three.js.** The whole app is one static page rendering a WebGL canvas. See `docs/architecture.md`.
+Next.js (App Router) + TypeScript + Tailwind, on Vercel free tier, plus one free Supabase project (auth, Postgres, Realtime) used straight from the browser. **No middleware, no server routes, no runtime dependencies beyond React, three.js and `@supabase/supabase-js`.** The whole app is one static page rendering a WebGL canvas. Without the two `NEXT_PUBLIC_SUPABASE_*` env vars it is single player only. See `docs/architecture.md` and ADR 0007.
 
 ## Commands
 
@@ -81,10 +104,12 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't commit `.env` or any secret. Use `.env.local` (gitignored).
 - Don't add a paid service without explicit confirmation.
 - Don't add links, menus, or navigation to the other apps. gilbyy.com is a game, not a launcher.
-- Don't add auth or a database. There is nothing here to protect. The only thing persisted is miles and the truck's loadout, in `localStorage` (ADR 0006).
+- Don't let the client write progress directly. Every change to miles, purchases and friendships goes through a checked `security definer` function in `supabase/migrations/`; keep prices and mission payouts in sync with `shop.ts`/`missions.ts` (`shop.test.ts` enforces it). Only the publishable key ever reaches the browser.
+- Don't make sign-in required. Single player with no account must keep working, and say clearly that nothing is saved.
 - Don't reach for a game engine, a physics engine, react-three-fiber or a post-processing stack. three.js is the one rendering dependency (ADR 0005); the physics is ours and stays a pure, tested function. Anything more needs its own ADR.
 - Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
-- Don't add timers, scores, objectives or currencies. The game is meant to be calm; see `docs/art-direction.md`. The one sanctioned progression is miles unlocking garage parts (ADR 0006); keep it that quiet.
+- Don't add pressure. Miles are the one currency, missions are optional and never fail beyond giving up, and the leaderboard is you and your friends only (ADR 0007). The game is meant to be calm; see `docs/art-direction.md`.
+- Don't spend the Realtime budget carelessly. Supabase's free plan counts every broadcast once per receiver; poses go through `PoseGate` in `net.ts` for that reason. See the free-tier notes in `docs/architecture.md`.
 - Don't add buildings that link to the other gilbyy.com apps without a new ADR superseding 0004. The owner has floated it for later; it is not built.
 - Don't judge frame rate from headless screenshots. Headless Chromium renders WebGL in software at ~3 fps; screenshots are fine for looks, nothing else.
 - Don't run autonomous agents that hit the Anthropic API without confirming first — currently we're staying in interactive Claude Code sessions only.
@@ -107,4 +132,13 @@ The user is on Claude Pro and is intentionally avoiding API costs. To survive to
 
 ## Status
 
-The app is one static page with no auth or database. The game is 3D on three.js (since 2026-10-06): a 4 km valley with lakes, two rivers that need the snorkel, a railway loop with a train and level crossings, day and night, six garages with tiered upgrades unlocked by miles driven, and a map with fog of war. Real-device frame rate is still unmeasured, and the scene got heavier. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.
+The app is one static page. The game is 3D on three.js (since 2026-10-06), and since 2026-10-07:
+- a 6 km valley with lakes, two rivers that need the snorkel, a snow plateau with a frozen lake, and a railway loop with a train and level crossings;
+- day and night;
+- a 30-tent campground spawn and a café;
+- eight rigs, and eight garages that sell rigs and parts for miles;
+- four missions, and first-time guidance;
+- a map with fog of war;
+- optional sign-in for saved progress, a shared valley, friends, chat and a leaderboard (ADR 0007).
+
+The online half is built and tested locally (SQL tests, `?net=local` across tabs), but no Supabase project is connected yet; see `docs/architecture.md` → *Online setup*. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.

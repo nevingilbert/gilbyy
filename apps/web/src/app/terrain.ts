@@ -7,28 +7,63 @@ import { fbm, makeNoise2D, smoothstep } from "./noise";
  * renderer, the physics and the scatter all read the same ground. Units are metres.
  */
 export const WORLD = {
-  size: 4000,
-  segments: 400,
+  size: 6000,
+  segments: 600,
   /** Lake surface height. Rivers have their own, higher surfaces. */
   water: 0,
   /** Where the valley wall starts to rise. */
-  wallStart: 1450,
+  wallStart: 2350,
   /** Past this radius you stop, whatever the ground is doing. */
-  limit: 1880,
+  limit: 2880,
 } as const;
 
 export const CELL = WORLD.size / WORLD.segments;
 export const HALF = WORLD.size / 2;
 export const ROW = WORLD.segments + 1;
 
-/** The big lake in the middle takes both rivers; the second sits off to the west. */
+/** The big lake in the middle takes both rivers; two smaller ones sit west and south. */
 export const LAKES = [
-  { x: 250, z: -100, r: 300, depth: 42 },
-  { x: -650, z: 550, r: 220, depth: 34 },
+  { x: 500, z: 100, r: 400, depth: 48 },
+  { x: -1300, z: 900, r: 260, depth: 34 },
+  { x: 200, z: 1450, r: 220, depth: 30 },
 ];
 
-/** Spawn on a gentle rise west of the big lake, looking across it toward the far side. */
-export const START = { x: -300, z: 150, heading: Math.atan2(550, -250) };
+/** Snow country: the north of the valley, raised into a plateau. Snow starts around here. */
+export const SNOWLINE_Z = -1250;
+/** A lake up there that's frozen solid: flat ice you can drive across, and slide on. */
+export const FROZEN = [{ x: 250, z: -1550, r: 240 }];
+
+/**
+ * The campground everyone starts in: 30 pitches in three rows of ten, each with a
+ * parking bay facing the camp road, a fire pit to the east, and a dirt road on to the
+ * coffee shop.
+ */
+export const CAMP = { x: -900, z: -150 };
+export const CAMP_PITCHES = 30;
+export const CAFE = { x: -620, z: -205, rot: 0 };
+
+export type Pitch = { index: number; x: number; z: number; parking: { x: number; z: number; heading: number } };
+
+/** Pitch centres and their parking bays. Each pitch faces +z, onto the road in front of its row. */
+export function campPitches(): Pitch[] {
+  const out: Pitch[] = [];
+  for (let row = 0; row < 3; row++) {
+    for (let i = 0; i < 10; i++) {
+      const x = CAMP.x - 54 + i * 12;
+      const z = CAMP.z - 50 + row * 45;
+      out.push({ index: out.length, x, z, parking: { x, z: z + 4, heading: 0 } });
+    }
+  }
+  return out;
+}
+
+/** The camp's fire pit and entrance gate, east of the pitches. */
+export const CAMP_CENTRE = { x: CAMP.x + 82, z: CAMP.z - 5 };
+export const CAMP_GATE = { x: CAMP.x + 118, z: CAMP.z - 5 };
+
+/** Spawn: the first pitch's parking bay, facing out along the camp road. */
+const firstBay = campPitches()[0].parking;
+export const START = { x: firstBay.x, z: firstBay.z, heading: firstBay.heading };
 
 /** How deep the stock truck will wade, and how deep it will with a snorkel. */
 export const STOCK_WADE = 1.3;
@@ -74,6 +109,9 @@ export function makeBase(seed: number) {
     const outcrop = smoothstep(0.3, 0.65, n4(x / 210 + 31, z / 210 - 17));
     if (outcrop > 0) h += outcrop * (1 - Math.abs(fbm(n4, x / 40, z / 40, 3))) * 13;
 
+    // Snow country sits on a raised plateau in the north.
+    h += snowAmount(x, z) * 45;
+
     // Lakes: a guaranteed deep bowl, then a shore shelving up at about 7 degrees.
     for (const lake of LAKES) {
       const d = Math.hypot(x - lake.x, z - lake.z);
@@ -86,12 +124,23 @@ export function makeBase(seed: number) {
     return h + wall * wall * (330 + 150 * fbm(n2, x / 300, z / 300, 3));
   };
 
-  // Keep the spawn point level and dry: blend toward a flat shelf around it.
-  const shelf = Math.max(6, raw(START.x, START.z));
+  // Frozen lakes: a flat sheet of ice a few metres below the surrounding ground,
+  // with a shelving shore down to it.
+  const iceLevels = FROZEN.map((f) => raw(f.x, f.z) - 6);
   return (x: number, z: number) => {
-    const calm = 1 - smoothstep(30, 150, Math.hypot(x - START.x, z - START.z));
-    return lerp(raw(x, z), shelf, calm * 0.9);
+    let h = raw(x, z);
+    FROZEN.forEach((f, i) => {
+      const d = Math.hypot(x - f.x, z - f.z);
+      h = Math.min(h, d < f.r ? iceLevels[i] : iceLevels[i] + (d - f.r) * 0.14);
+    });
+    return h;
   };
+}
+
+/** 0 south of the snowline, rising to 1 a few hundred metres north of it, with a ragged edge. */
+const snowEdge = makeNoise2D(777);
+export function snowAmount(x: number, z: number) {
+  return smoothstep(SNOWLINE_Z + 120, SNOWLINE_Z - 280, z + snowEdge(x / 400, z / 400) * 140);
 }
 
 export type Path = { xs: number[]; zs: number[] };
@@ -136,7 +185,7 @@ export const FAR = 1000;
  * For every grid vertex within `reach` of a path, the distance to it and which point
  * along it is nearest (segment index plus fraction). Untouched vertices stay at FAR.
  */
-function nearest(path: Path, closed: boolean, reach: number) {
+export function nearest(path: Path, closed: boolean, reach: number) {
   const dist = new Float32Array(ROW * ROW).fill(FAR);
   const at = new Float32Array(ROW * ROW);
   const n = path.xs.length;
@@ -193,7 +242,7 @@ export type Track = Path & {
 };
 
 const TRACK_SPACING = 5;
-const TRACK_RADIUS = 1300;
+const TRACK_RADIUS = 2050;
 const TRACK_BED = 0.4;
 
 /** The railway: a loop around the foot of the mountains, graded gently. */
@@ -201,9 +250,9 @@ function layTrack(base: (x: number, z: number) => number, seed: number): Track {
   const wobble = makeNoise2D(seed + 50);
   const cx: number[] = [];
   const cz: number[] = [];
-  for (let k = 0; k < 18; k++) {
-    const a = (k / 18) * Math.PI * 2;
-    const r = TRACK_RADIUS + wobble(k * 0.37, 0.5) * 90;
+  for (let k = 0; k < 26; k++) {
+    const a = (k / 26) * Math.PI * 2;
+    const r = TRACK_RADIUS + wobble(k * 0.37, 0.5) * 120;
     cx.push(Math.cos(a) * r);
     cz.push(Math.sin(a) * r);
   }
@@ -290,7 +339,7 @@ function runRiver(base: (x: number, z: number) => number, angle: number, seed: n
   return { xs, zs, surface };
 }
 
-export type SiteStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container";
+export type SiteStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch";
 export type Site = { x: number; z: number; rot: number; style: SiteStyle; y: number };
 
 export type Terrain = {
@@ -303,19 +352,30 @@ export type Terrain = {
   riverDist: Float32Array;
   roadDist: Float32Array;
   siteDist: Float32Array;
+  /** Distance to the campground's pitches and fire pit (0 inside). Kept clear of trees. */
+  campDist: Float32Array;
   /** 1 = reachable on stock tyres, 2 = needs the snorkel, 0 = out of reach. */
   zone: Uint8Array;
+  /** 0–1 snow cover, and 1 on the frozen lake's ice. Both make the ground slippery. */
+  snow: Float32Array;
+  ice: Float32Array;
   track: Track;
   rivers: River[];
+  /** The campground's dirt roads, for drawing. */
+  roads: Path[];
   sites: Site[];
 };
 
 const SITE_FLAT = 22;
 const SITE_BLEND = 26;
 
-/** Garages: one near the start, the rest spread out, two of them over the river. */
+/**
+ * Garages, each style placed by its own rule: the roadside workshop a short drive from
+ * camp, four more on the near side, the log cabin up in the snow, and the bunker and
+ * container yard over the river where only the snorkel gets you.
+ */
 function chooseSites(t: Omit<Terrain, "sites">, rand: () => number): Site[] {
-  const { heights, zone, trackDist, riverDist, water } = t;
+  const { heights, zone, trackDist, riverDist, roadDist, campDist, water, snow } = t;
   const candidates: { k: number; x: number; z: number; rough: number }[] = [];
   for (let j = 4; j < ROW - 4; j += 3) {
     for (let i = 4; i < ROW - 4; i += 3) {
@@ -323,8 +383,9 @@ function chooseSites(t: Omit<Terrain, "sites">, rand: () => number): Site[] {
       const x = gridX(i);
       const z = gridZ(j);
       const r = Math.hypot(x, z);
-      if (r < 180 || r > WORLD.wallStart - 60 || !zone[k]) continue;
-      if (trackDist[k] < 60 || riverDist[k] < 70) continue;
+      if (r > WORLD.wallStart - 60 || !zone[k]) continue;
+      if (trackDist[k] < 60 || riverDist[k] < 70 || roadDist[k] < 30 || campDist[k] < 120) continue;
+      if (Math.hypot(x - CAFE.x, z - CAFE.z) < 160) continue;
       let lo = Infinity;
       let hi = -Infinity;
       let wet = false;
@@ -346,23 +407,46 @@ function chooseSites(t: Omit<Terrain, "sites">, rand: () => number): Site[] {
     const j = Math.floor(rand() * (i + 1));
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
-  const styles: SiteStyle[] = ["workshop", "barn", "quonset", "container", "bunker", "cabin"];
+  type Candidate = (typeof candidates)[number];
+  const fromStart = (c: Candidate) => Math.hypot(c.x - START.x, c.z - START.z);
+  const nearSide = (c: Candidate) => zone[c.k] === 1 && snow[c.k] < 0.2 && c.rough < 4;
+  const plan: { style: SiteStyle; accept: (c: Candidate) => boolean }[] = [
+    { style: "workshop", accept: (c) => nearSide(c) && fromStart(c) > 260 && fromStart(c) < 600 },
+    { style: "barn", accept: nearSide },
+    { style: "quonset", accept: nearSide },
+    { style: "hangar", accept: nearSide },
+    { style: "ranch", accept: nearSide },
+    { style: "cabin", accept: (c) => zone[c.k] === 1 && snow[c.k] > 0.7 && c.rough < 6 },
+    { style: "bunker", accept: (c) => zone[c.k] === 2 },
+    { style: "container", accept: (c) => zone[c.k] === 2 },
+  ];
   const picked: Site[] = [];
-  const take = (want: number, accept: (c: (typeof candidates)[number]) => boolean, spacing: number) => {
-    for (const c of candidates) {
-      if (picked.length >= want) return;
-      if (!accept(c)) continue;
-      if (picked.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < spacing)) continue;
-      picked.push({ x: c.x, z: c.z, rot: rand() * Math.PI * 2, style: styles[picked.length], y: heights[c.k] });
-    }
-  };
-  const fromStart = (c: { x: number; z: number }) => Math.hypot(c.x - START.x, c.z - START.z);
-  take(1, (c) => zone[c.k] === 1 && c.rough < 4 && fromStart(c) > 120 && fromStart(c) < 320, 0);
-  take(4, (c) => zone[c.k] === 1 && c.rough < 4, 550);
-  take(6, (c) => zone[c.k] === 2, 450);
-  // The first garage faces the spawn, so it's the first thing you find.
+  for (const { style, accept } of plan) {
+    const c = candidates.find((c) => accept(c) && picked.every((p) => Math.hypot(p.x - c.x, p.z - c.z) > 650));
+    if (c) picked.push({ x: c.x, z: c.z, rot: rand() * Math.PI * 2, style, y: heights[c.k] });
+  }
+  // The first garage faces the camp, so it's the first thing you find.
   if (picked[0]) picked[0].rot = Math.atan2(START.x - picked[0].x, START.z - picked[0].z);
   return picked;
+}
+
+/** Levels the ground toward `y` within `flat` metres of `dist`'s zero, blending out over `blend`. */
+function level(heights: Float32Array, box: { x0: number; x1: number; z0: number; z1: number }, y: number, flat: number, blend: number, out?: Float32Array) {
+  const reach = flat + blend;
+  const i0 = Math.max(0, Math.floor((box.x0 - reach + HALF) / CELL));
+  const i1 = Math.min(WORLD.segments, Math.ceil((box.x1 + reach + HALF) / CELL));
+  const j0 = Math.max(0, Math.floor((box.z0 - reach + HALF) / CELL));
+  const j1 = Math.min(WORLD.segments, Math.ceil((box.z1 + reach + HALF) / CELL));
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const k = j * ROW + i;
+      const dx = Math.max(box.x0 - gridX(i), 0, gridX(i) - box.x1);
+      const dz = Math.max(box.z0 - gridZ(j), 0, gridZ(j) - box.z1);
+      const d = Math.hypot(dx, dz);
+      if (out) out[k] = Math.min(out[k], d);
+      heights[k] = lerp(y, heights[k], smoothstep(flat, reach, d));
+    }
+  }
 }
 
 /** Which vertices a truck can reach from the start without wading deeper than `wade`. */
@@ -493,30 +577,55 @@ export function buildTerrain(seed: number, rand: () => number): Terrain {
     for (let k = 0; k < rd.length; k++) roadDist[k] = Math.min(roadDist[k], rd[k]);
   }
 
+  // The campground: levelled, with a dirt road along each row of pitches and on to the café.
+  const campDist = new Float32Array(ROW * ROW).fill(FAR);
+  const siteDist = new Float32Array(ROW * ROW).fill(FAR);
+  const pitches = campPitches();
+  const campBox = {
+    x0: Math.min(...pitches.map((p) => p.x)) - 8, x1: CAMP_CENTRE.x + 14,
+    z0: Math.min(...pitches.map((p) => p.z)) - 9, z1: Math.max(...pitches.map((p) => p.z)) + 16,
+  };
+  const campY = Math.max(WORLD.water + 4, sampleGrid(heights, CAMP.x, CAMP.z));
+  level(heights, campBox, campY, 0, 50, campDist);
+  const cafeY = Math.max(WORLD.water + 4, sampleGrid(heights, CAFE.x, CAFE.z));
+  // The building, its patio and its lot, out to the far side of the meeting spot.
+  level(heights, { x0: CAFE.x - 15, x1: CAFE.x + 15, z0: CAFE.z - 10, z1: CAFE.z + 28 }, cafeY, 0, 30, siteDist);
+  const campRoads: Path[] = [0, 1, 2].map((row) => {
+    const z = pitches[row * 10].z + 13;
+    return { xs: [campBox.x0, CAMP_GATE.x], zs: [z, z] };
+  });
+  campRoads.push({ xs: [CAMP.x - 64, CAMP.x - 64], zs: [campBox.z0 + 4, campBox.z1] });
+  // Joins the row roads at the camp's east end, where the gate road leaves.
+  campRoads.push({ xs: [CAMP_GATE.x, CAMP_GATE.x], zs: [campRoads[0].zs[0], campRoads[2].zs[0]] });
+  campRoads.push({ xs: [CAMP_GATE.x, CAMP_GATE.x + 70, CAFE.x, CAFE.x], zs: [CAMP_GATE.z, CAMP_GATE.z, CAMP_GATE.z, CAFE.z + 12] });
+  for (const road of campRoads) {
+    const rd = nearest(road, false, 20).dist;
+    for (let k = 0; k < rd.length; k++) roadDist[k] = Math.min(roadDist[k], rd[k]);
+  }
+
+  // Snow cover and the frozen lake's ice, as fields the physics and the renderer share.
+  const snow = new Float32Array(ROW * ROW);
+  const ice = new Float32Array(ROW * ROW);
+  for (let j = 0; j < ROW; j++) {
+    for (let i = 0; i < ROW; i++) {
+      const k = j * ROW + i;
+      const x = gridX(i);
+      const z = gridZ(j);
+      const wet = heights[k] < water[k] + 0.3;
+      snow[k] = wet ? 0 : snowAmount(x, z);
+      for (const f of FROZEN) ice[k] = Math.max(ice[k], 1 - smoothstep(f.r - 6, f.r + 4, Math.hypot(x - f.x, z - f.z)));
+    }
+  }
+
   const zone = new Uint8Array(ROW * ROW);
   flood(heights, water, STOCK_WADE, zone, 1);
   flood(heights, water, SNORKEL_WADE, zone, 2);
 
-  const partial = { heights, water, forest, trackDist, riverDist, roadDist, siteDist: new Float32Array(0), zone, track, rivers };
+  const partial = { heights, water, forest, trackDist, riverDist, roadDist, siteDist, campDist, zone, snow, ice, track, rivers, roads: campRoads };
   const sites = chooseSites(partial, rand);
 
-  // Level each site into a yard.
-  const siteDist = new Float32Array(ROW * ROW).fill(FAR);
-  for (const site of sites) {
-    const reach = SITE_FLAT + SITE_BLEND;
-    const i0 = Math.max(0, Math.floor((site.x - reach + HALF) / CELL));
-    const i1 = Math.min(WORLD.segments, Math.ceil((site.x + reach + HALF) / CELL));
-    const j0 = Math.max(0, Math.floor((site.z - reach + HALF) / CELL));
-    const j1 = Math.min(WORLD.segments, Math.ceil((site.z + reach + HALF) / CELL));
-    for (let j = j0; j <= j1; j++) {
-      for (let i = i0; i <= i1; i++) {
-        const k = j * ROW + i;
-        const d = Math.hypot(gridX(i) - site.x, gridZ(j) - site.z);
-        siteDist[k] = Math.min(siteDist[k], d);
-        heights[k] = lerp(site.y, heights[k], smoothstep(SITE_FLAT, reach, d));
-      }
-    }
-  }
+  // Level each garage site into a yard.
+  for (const site of sites) level(heights, { x0: site.x, x1: site.x, z0: site.z, z1: site.z }, site.y, SITE_FLAT, SITE_BLEND, siteDist);
 
-  return { ...partial, siteDist, sites };
+  return { ...partial, sites };
 }

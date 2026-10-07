@@ -1,14 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { makeCar, noInput, step, MAX_SPEED, MAX_REVERSE, RIDE, STOCK, type Car, type CarSpec, type Input } from "./physics";
+import { makeCar, noInput, step, MAX_REVERSE, STOCK, type Car, type CarSpec, type Input } from "./physics";
 import type { Ground, Obstacle } from "./world";
 
 /** Test grounds: flat by default, or any height function, with optional obstacles. */
-const ground = (height: (x: number, z: number) => number = () => 0, obstacles: Obstacle[] = [], water = -100): Ground => ({
+const ground = (height: (x: number, z: number) => number = () => 0, obstacles: Obstacle[] = [], water = -100, slip = 0): Ground => ({
   height,
   waterAt: () => water,
   obstaclesNear: () => obstacles,
+  slipAt: () => slip,
   limit: 1000,
 });
+const MAX_SPEED = STOCK.maxSpeed;
+const RIDE = STOCK.ride;
 
 const flat = ground();
 const DT = 1 / 120;
@@ -132,6 +135,39 @@ describe("tyres", () => {
     const stock = run(makeCar(steep, 0, 0, 0), steep, { gas: true }, 8);
     const grippy = run(makeCar(steep, 0, 0, 0), steep, { gas: true }, 8, { ...STOCK, grip: 1.3 });
     expect(grippy.z).toBeGreaterThan(stock.z + 5);
+  });
+});
+
+describe("snow and ice", () => {
+  const snow = ground(() => 0, [], -100, 1);
+  const ice = ground(() => 0, [], -100, 2);
+  /** Up to speed in a straight line, then a hard left: how far does it slide sideways? */
+  const slide = (g: Ground, spec: CarSpec = STOCK) => {
+    const c = makeCar(g, 0, 0, 0);
+    c.speed = 14;
+    let most = 0;
+    for (let t = 0; t < 1.5; t += DT) {
+      step(c, { ...noInput(), gas: true, left: true }, DT, g, spec);
+      most = Math.max(most, Math.abs(c.side));
+    }
+    return most;
+  };
+
+  it("hardly slides on dirt, slides on snow, slides most on ice", () => {
+    const dirt = slide(flat);
+    expect(dirt).toBeLessThan(0.9);
+    expect(slide(snow)).toBeGreaterThan(dirt * 3);
+    expect(slide(ice)).toBeGreaterThan(slide(snow));
+  });
+
+  it("holds on snow with studded tyres", () => {
+    expect(slide(snow, { ...STOCK, snowGrip: 0.95 })).toBeLessThan(slide(snow) * 0.5);
+  });
+
+  it("pulls away slowly on ice", () => {
+    const onIce = run(makeCar(ice, 0, 0, 0), ice, { gas: true }, 2);
+    const onDirt = run(makeCar(flat, 0, 0, 0), flat, { gas: true }, 2);
+    expect(onIce.speed).toBeLessThan(onDirt.speed * 0.5);
   });
 });
 

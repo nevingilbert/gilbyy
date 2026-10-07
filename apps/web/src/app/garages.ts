@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { PALETTE } from "./palette";
 
-export type GarageStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container";
-export const GARAGE_STYLES: readonly GarageStyle[] = ["workshop", "barn", "bunker", "quonset", "cabin", "container"];
+export type GarageStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch";
+export const GARAGE_STYLES: readonly GarageStyle[] = ["workshop", "barn", "bunker", "quonset", "cabin", "container", "hangar", "ranch"];
 
 export type Circle = { x: number; z: number; r: number };
 
@@ -67,6 +67,14 @@ export class Kit {
     this.add(m, new THREE.CylinderGeometry(r, r, h, segs), x, y, z, rx, 0, rz);
   }
 
+  /** A thin square bar from a to b, [x, y, z] each: ropes, wires, chains. */
+  strut(m: THREE.Material, a: readonly number[], b: readonly number[], t = 0.02) {
+    const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    const len = d.length();
+    const e = new THREE.Euler().setFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
+    this.box(m, t, len, t, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, e.x, e.y, e.z);
+  }
+
   /** A child kit, offset and turned about y, feeding the same batches. */
   at(x: number, y: number, z: number, ry = 0) {
     return new Kit(this.parts, this.base.clone().multiply(new THREE.Matrix4().makeRotationY(ry).setPosition(x, y, z)));
@@ -84,16 +92,16 @@ export class Kit {
   }
 }
 
-// --- Building parts. ---
+// --- Building parts, also used by the camp, the café and the mission props. ---
 
 /** A polygon in xy, extruded `depth` along z and centred on z = 0. */
-function prism(shape: THREE.Shape | number[][], depth: number) {
+export function prism(shape: THREE.Shape | number[][], depth: number) {
   const s = Array.isArray(shape) ? new THREE.Shape(shape.map(([x, y]) => new THREE.Vector2(x, y))) : shape;
   return new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false, curveSegments: 6 }).translate(0, 0, -depth / 2);
 }
 
 /** Boards along a profile in xy, eave to ridge to eave with the +x side first, `depth` long in z. */
-function roof(k: Kit, m: THREE.Material, pts: number[][], depth: number, t = 0.16, over = 0.4) {
+export function roof(k: Kit, m: THREE.Material, pts: number[][], depth: number, t = 0.16, over = 0.4) {
   for (let i = 1; i < pts.length; i++) {
     const [[x0, y0], [x1, y1]] = [pts[i - 1], pts[i]];
     const len = Math.hypot(x1 - x0, y1 - y0);
@@ -123,7 +131,7 @@ function shell(k: Kit, m: THREE.Material, w: number, d: number, h: number, dw: n
 }
 
 /** A framed window facing +z in `k`'s space. The pane is the caller's material, so it lights up after dark. */
-function pane(k: Kit, glass: THREE.Material, w: number, h: number, frame: THREE.ColorRepresentation = PALETTE.trimCream) {
+export function pane(k: Kit, glass: THREE.Material, w: number, h: number, frame: THREE.ColorRepresentation = PALETTE.trimCream) {
   const f = lambert(frame);
   k.box(f, w + 0.22, h + 0.22, 0.1, 0, 0, 0.03);
   k.box(glass, w, h, 0.1, 0, 0, 0.06);
@@ -148,7 +156,7 @@ function swingDoors(root: THREE.Group, w: number, z: number, leaf: (k: Kit, s: n
 }
 
 /** Rings a rectangle with overlapping circles: enough to keep the car out, and none poke far past the edges. */
-function ring(out: Circle[], x0: number, x1: number, z0: number, z1: number) {
+export function ring(out: Circle[], x0: number, x1: number, z0: number, z1: number) {
   const nx = Math.max(1, Math.round((x1 - x0) / 2.4));
   const nz = Math.max(1, Math.round((z1 - z0) / 2.4));
   const [cw, cd] = [(x1 - x0) / nx, (z1 - z0) / nz];
@@ -195,7 +203,7 @@ function bench(k: Kit) {
   k.box(lambert(PALETTE.doorDark), 0.25, 0.18, 0.2, 0.7, 1.06, 0.25);
 }
 
-// --- The six styles. Each adds static parts to `k` and moving parts straight to `root`. ---
+// --- The styles. Each adds static parts to `k` and moving parts straight to `root`. ---
 
 type Build = (root: THREE.Group, k: Kit, glass: THREE.Material) => Omit<GarageModel, "object">;
 
@@ -461,7 +469,159 @@ const containers: Build = (root, k, glass) => {
   return { setDoor, colliders, ...entry(5, 9) };
 };
 
-const BUILDERS: Record<GarageStyle, Build> = { workshop, barn, bunker, quonset, cabin, container: containers };
+const hangar: Build = (root, k, glass) => {
+  const W = 15, D = 13, H = 5.2, DW = 7.5, DH = 4.6, F = D / 2, RISE = 1.7;
+  const tin = lambert(PALETTE.corrugated), rib = lambert(tone(PALETTE.corrugated, 0.78)), dark = lambert(PALETTE.doorDark);
+  const steel = lambert(tone(PALETTE.roofTin, 0.6)), wood = lambert(PALETTE.timber);
+  shell(k, tin, W, D, H, DW, DH, 0.2);
+  const gable = [[W / 2, H], [0, H + RISE], [-W / 2, H]];
+  k.add(tin, prism(gable, D), 0, 0, 0);
+  roof(k, lambert(PALETTE.roofTin), gable, D + 0.8, 0.16, 0.5);
+  k.box(steel, 0.5, 0.12, D + 0.9, 0, H + RISE + 0.12, 0);
+  // Corrugation ribs; on the front only beside and above the door, where the leaves don't cover them.
+  for (let z = -F + 0.25; z < F; z += 0.5) for (const s of [1, -1]) k.box(rib, 0.06, H, 0.1, s * (W / 2 + 0.01), H / 2, z);
+  for (let x = -W / 2 + 0.25; x < W / 2; x += 0.5) {
+    k.box(rib, 0.1, H, 0.06, x, H / 2, -F - 0.01);
+    if (Math.abs(x) > DW / 2 + 0.1) k.box(rib, 0.1, H, 0.06, x, H / 2, F + 0.01);
+    else k.box(rib, 0.1, H - DH, 0.06, x, (H + DH) / 2, F + 0.01);
+  }
+  for (const s of [1, -1]) for (const z of [-3.6, 0, 3.6]) pane(k.at(s * (W / 2 + 0.03), 3.9, z, (s * Math.PI) / 2), glass, 1.6, 0.7);
+  // Side door, and the track the big leaves hang from, running the full width.
+  k.box(dark, 0.08, 2.1, 1.0, W / 2 + 0.06, 1.05, F - 1.8);
+  k.box(dark, W + 0.3, 0.24, 0.24, 0, DH + 0.32, F + 0.3);
+  k.box(steel, W, 0.05, 0.14, 0, 0.03, F + 0.3);
+  // Windsock: tapering red and white bands drooping off a hoop.
+  const ws = k.at(-W / 2 - 3.6, 0, F + 1.4, Math.PI * 0.8);
+  ws.box(lambert(PALETTE.concrete), 0.8, 0.2, 0.8, 0, 0.1, 0);
+  ws.cyl(steel, 0.07, 6.6, 0, 3.3, 0, 0, 0, 8);
+  const droop = 0.25;
+  ws.add(steel, new THREE.TorusGeometry(0.36, 0.03, 4, 10), 0.25, 6.3, 0, 0, Math.PI / 2);
+  for (let i = 0; i < 5; i++) {
+    const [r0, d] = [0.36 - i * 0.045, 0.25 + (i + 0.5) * 0.44];
+    const band = lambert(i % 2 ? PALETTE.barrierWhite : PALETTE.barrierRed, THREE.DoubleSide);
+    ws.add(band, new THREE.CylinderGeometry(r0 - 0.045, r0, 0.44, 10, 1, true), 0.25 + d * Math.cos(droop), 6.3 - d * Math.sin(droop), 0, 0, 0, -Math.PI / 2 - droop);
+  }
+  // Fuel drums, and an old wooden propeller with yellow tips leaning on the wall.
+  drum(k, -W / 2 - 0.8, -2.0, PALETTE.barrierRed);
+  drum(k, -W / 2 - 0.85, -2.75, PALETTE.shipping[1]);
+  drum(k, -W / 2 - 1.5, -2.35, PALETTE.barrierRed);
+  const lean = 0.3, hub = 1.2 * Math.cos(lean);
+  const pr = k.at(W / 2 + 0.42, 0, -2.6);
+  pr.box(wood, 0.07, 2.4, 0.26, 0, hub, 0, 0, 0, lean);
+  pr.box(lambert(tone(PALETTE.timber, 0.8)), 0.1, 0.6, 0.26, 0, hub, 0, 0, 0, lean);
+  for (const e of [1, -1]) pr.box(lambert(PALETTE.hazardYellow), 0.08, 0.24, 0.27, -e * 1.08 * Math.sin(lean), hub + e * 1.08 * Math.cos(lean), 0, 0, 0, lean);
+  pr.cyl(dark, 0.12, 0.3, 0, hub, 0, 0, Math.PI / 2, 8);
+  // Two big corrugated leaves on separate tracks, sliding apart along the front.
+  const paint = lambert(PALETTE.paint.skyBlue), paintRib = lambert(tone(PALETTE.paint.skyBlue, 0.8));
+  const [lw, lh] = [DW / 2 + 0.06, DH + 0.2];
+  const leaves = [1, -1].map((s) => ({
+    s,
+    g: part(root, 0, 0, F + (s > 0 ? 0.2 : 0.34), (dk) => {
+      dk.box(paint, lw, lh, 0.06, 0, lh / 2, 0);
+      for (let x = -lw / 2 + 0.2; x < lw / 2; x += 0.4) dk.box(paintRib, 0.06, lh, 0.1, x, lh / 2, 0);
+      for (const y of [0.12, lh / 2, lh - 0.12]) dk.box(paintRib, lw, 0.14, 0.12, 0, y, 0);
+    }),
+  }));
+  const setDoor = (t: number) => leaves.forEach(({ g, s }) => (g.position.x = s * (DW / 4 + (t * DW) / 2)));
+  const props = [{ x: -W / 2 - 3.6, z: F + 1.4, r: 0.4 }, { x: -W / 2 - 1.1, z: -2.4, r: 1.0 }, { x: W / 2 + 0.45, z: -2.6, r: 0.5 }];
+  return { setDoor, colliders: ring(props, -W / 2, W / 2, -F, F), ...entry(F, 12) };
+};
+
+/** A run of post-and-rail fence, posts every ~2.2 m; its colliders are small circles along the line. */
+function fence(k: Kit, out: Circle[], x0: number, z0: number, x1: number, z1: number, gate = false) {
+  const post = lambert(tone(PALETTE.timber, 0.75)), rail = lambert(tone(PALETTE.timber, 1.15));
+  const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(len / 2.2)), ry = Math.atan2(-(z1 - z0), x1 - x0);
+  const at = (f: number) => [x0 + (x1 - x0) * f, z0 + (z1 - z0) * f];
+  for (let i = 0; i < n; i++) {
+    const [x, z] = at(i / n);
+    k.box(post, 0.18, 1.6, 0.18, x, 0.8, z, 0, ry);
+  }
+  for (const y of [0.5, 0.95, 1.4]) k.box(rail, len, 0.12, 0.07, (x0 + x1) / 2, y, (z0 + z1) / 2, 0, ry);
+  // A five-bar gate's brace across the middle panel.
+  if (gate) {
+    const [x, z] = at((Math.floor(n / 2) + 0.5) / n), seg = len / n;
+    k.box(rail, Math.hypot(seg, 0.9) - 0.2, 0.12, 0.07, x, 0.95, z, 0, ry, Math.atan2(0.9, seg));
+  }
+  for (let i = 0; i <= 2 * n; i++) {
+    const [x, z] = at(i / (2 * n));
+    out.push({ x, z, r: 0.35 });
+  }
+}
+
+const ranch: Build = (root, k, glass) => {
+  const W = 10, D = 10, H = 3.8, DW = 3.8, DH = 3.4, F = D / 2, RISE = 2.6;
+  const grey = lambert(PALETTE.boardsGrey), seam = lambert(tone(PALETTE.boardsGrey, 0.75));
+  const wood = lambert(PALETTE.timber), woodDark = lambert(tone(PALETTE.timber, 0.75)), strap = lambert(PALETTE.doorDark);
+  const hay = lambert(tone(PALETTE.hazardYellow, 0.9));
+  shell(k, grey, W, D, H, DW, DH);
+  const gable = [[W / 2, H], [0, H + RISE], [-W / 2, H]];
+  k.add(grey, prism(gable, D), 0, 0, 0);
+  roof(k, lambert(PALETTE.roofRust), gable, D + 0.8, 0.16, 0.5);
+  // Board seams on every wall, up into the front gable; timber corner posts.
+  for (let x = -W / 2 + 0.3; x < W / 2; x += 0.6) {
+    k.box(seam, 0.08, H, 0.06, x, H / 2, -F - 0.02);
+    const gh = RISE * (1 - Math.abs(x) / (W / 2)) - 0.1;
+    if (Math.abs(x) > DW / 2 + 0.25) k.box(seam, 0.08, H + gh, 0.06, x, (H + gh) / 2, F + 0.02);
+    else if (Math.abs(x) > 0.85) k.box(seam, 0.08, H - DH + gh, 0.06, x, (DH + H + gh) / 2, F + 0.02);
+  }
+  for (let z = -F + 0.3; z < F; z += 0.6) for (const s of [1, -1]) k.box(seam, 0.06, H, 0.08, s * (W / 2 + 0.02), H / 2, z);
+  for (const sx of [1, -1]) for (const sz of [1, -1]) k.box(wood, 0.24, H, 0.24, sx * (W / 2 - 0.06), H / 2, sz * (F - 0.06));
+  for (const s of [1, -1]) k.box(wood, 0.22, DH + 0.2, 0.12, s * (DW / 2 + 0.11), DH / 2 + 0.1, F + 0.06);
+  k.box(wood, DW + 0.66, 0.22, 0.12, 0, DH + 0.11, F + 0.06);
+  // A horseshoe over the door, open end up; the hayloft door and hoist beam above.
+  k.add(lambert(PALETTE.rail), new THREE.TorusGeometry(0.15, 0.035, 4, 9, Math.PI * 1.5), 0, DH + 0.42, F + 0.08, 0, 0, -Math.PI * 1.25);
+  k.box(wood, 1.5, 1.3, 0.08, 0, H + 0.95, F + 0.04);
+  for (const r of [1, -1]) k.box(woodDark, 1.8, 0.12, 0.05, 0, H + 0.95, F + 0.1, 0, 0, r * Math.atan2(1.3, 1.5));
+  k.box(wood, 0.22, 0.22, 1.4, 0, H + RISE - 0.45, F + 0.6);
+  k.box(strap, 0.03, 1.1, 0.03, 0, H + RISE - 1.05, F + 1.15);
+  // Dutch stall doors down the west side, top halves open.
+  for (const z of [-3.4, -0.8]) {
+    const st = k.at(-W / 2, 0, z, -Math.PI / 2);
+    st.box(woodDark, 1.4, 2.35, 0.08, 0, 1.18, 0.07);
+    st.box(lambert(PALETTE.void), 1.1, 0.95, 0.06, 0, 1.75, 0.11);
+    st.box(wood, 1.1, 1.15, 0.08, 0, 0.66, 0.13);
+    st.box(woodDark, 1.5, 0.1, 0.04, 0, 0.66, 0.18, 0, 0, Math.atan2(1.15, 1.1));
+    st.box(wood, 1.1, 0.95, 0.06, 1.3, 1.75, 0.12);
+  }
+  for (const z of [-2.5, 1.5]) pane(k.at(W / 2 + 0.03, 2.2, z, Math.PI / 2), glass, 0.9, 0.7, PALETTE.timber);
+  // Porch lamp, a wagon wheel leaning by the door, square bales, a hitching rail.
+  k.box(strap, 0.08, 0.08, 0.35, DW / 2 + 0.6, 2.95, F + 0.15);
+  k.box(glass, 0.22, 0.3, 0.22, DW / 2 + 0.6, 2.75, F + 0.32);
+  k.box(strap, 0.3, 0.06, 0.3, DW / 2 + 0.6, 2.93, F + 0.32);
+  const wl = k.at(-3.6, 0, F + 0.26);
+  const tilt = -0.12, wy = 0.66 * Math.cos(tilt);
+  wl.add(woodDark, new THREE.TorusGeometry(0.62, 0.05, 4, 14), 0, wy, 0, tilt);
+  for (let i = 0; i < 4; i++) wl.box(wood, 0.05, 1.2, 0.04, 0, wy, 0, tilt, 0, (i * Math.PI) / 4);
+  wl.cyl(strap, 0.1, 0.16, 0, wy, 0, Math.PI / 2 + tilt, 0, 8);
+  for (const [z, y] of [[2.1, 0], [2.65, 0], [3.2, 0], [2.4, 0.46], [2.95, 0.46]]) {
+    k.box(hay, 1.0, 0.45, 0.52, -W / 2 - 0.85, y + 0.23, z);
+    for (const x of [-0.25, 0.25]) k.box(strap, 0.03, 0.46, 0.53, -W / 2 - 0.85 + x, y + 0.23, z);
+  }
+  for (const z of [F + 1.2, F + 3.6]) k.box(woodDark, 0.18, 1.2, 0.18, -W / 2 - 1.8, 0.6, z);
+  k.cyl(wood, 0.1, 2.8, -W / 2 - 1.8, 1.12, F + 2.4, Math.PI / 2, 0, 7);
+  // The corral on the east side: trough by the near fence, a round bale in the far corner.
+  const [cx0, cx1, cz0, cz1] = [W / 2 + 1.6, W / 2 + 10.4, -F + 0.4, F - 1.6];
+  const colliders: Circle[] = [];
+  fence(k, colliders, cx0, cz0, cx1, cz0);
+  fence(k, colliders, cx1, cz0, cx1, cz1);
+  fence(k, colliders, cx1, cz1, cx0, cz1, true);
+  fence(k, colliders, cx0, cz1, cx0, cz0);
+  k.box(wood, 0.7, 0.55, 2.2, cx0 + 0.8, 0.28, -1.2);
+  k.box(lambert(PALETTE.water), 0.5, 0.04, 2.0, cx0 + 0.8, 0.53, -1.2);
+  bale(k, cx1 - 1.6, 0, cz0 + 1.6);
+  // Plank doors with an X brace and strap hinges.
+  const setDoor = swingDoors(root, DW, F, (dk, s) => {
+    const w = DW / 2 - 0.02;
+    for (let i = 0; i < 5; i++) dk.box(i % 2 ? woodDark : wood, w / 5, DH - 0.02, 0.1, s * (w / 5) * (i + 0.5), DH / 2, 0.06);
+    for (const r of [1, -1]) dk.box(woodDark, Math.hypot(w, DH) - 0.3, 0.14, 0.04, (s * w) / 2, DH / 2, 0.13, 0, 0, r * Math.atan2(DH, w));
+    for (const y of [0.5, DH - 0.5]) dk.box(strap, w * 0.5, 0.1, 0.04, s * w * 0.25, y, 0.15);
+  });
+  const props = [{ x: -W / 2 - 0.85, z: 2.65, r: 0.95 }, { x: -3.6, z: F + 0.3, r: 0.5 }];
+  for (const z of [F + 1.2, F + 2.4, F + 3.6]) props.push({ x: -W / 2 - 1.8, z, r: 0.4 });
+  return { setDoor, colliders: ring([...colliders, ...props], -W / 2, W / 2, -F, F), ...entry(F, 16.5) };
+};
+
+const BUILDERS: Record<GarageStyle, Build> = { workshop, barn, bunker, quonset, cabin, container: containers, hangar, ranch };
 
 /** A garage the car can drive into. `windowMaterial` is shared and owned by the caller; it glows at night. */
 export function buildGarage(style: GarageStyle, windowMaterial: THREE.Material): GarageModel {

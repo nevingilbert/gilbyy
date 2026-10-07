@@ -11,9 +11,12 @@ This document captures the technical decisions and the constraints that drove th
   each level gets a subdomain.
 - **CI:** GitHub Actions (free tier).
 
-This repo builds **gilbyy.com**, which is a driving game and nothing else — no
-database, no auth, no backend, no links to any other app. See
-`decisions/0004-gilbyy-is-just-a-driving-game.md`.
+This repo builds **gilbyy.com**, which is a driving game and nothing else, with no
+links to any other app (see `decisions/0004-gilbyy-is-just-a-driving-game.md`). Since
+2026-10-07 it can also sign you in, to save progress and share the valley with other
+players, on one free Supabase project (see
+`decisions/0007-accounts-multiplayer-and-a-shop.md`). With no session it's single
+player, entirely in the browser.
 
 This stack is chosen specifically because every piece has a free tier that covers a
 hobby project.
@@ -53,52 +56,97 @@ The game lives under `apps/web/src/app/` (3D since 2026-10-06, see
 
 Pure modules, no three.js, all unit-tested:
 
-- `terrain.ts`: the valley as fields on a 400×400 grid over 4 km (heights, water surface
-  height, forest, distance to the railway, rivers, roads and garage yards). It lays the
-  railway loop with graded earthworks, runs two rivers downhill into the big lake, finds
-  bridges and level crossings, floods the grid from the spawn at stock and snorkel
-  wading depths to find the snorkel-only ground, and places six garage sites.
-  `sampleGrid()` interpolates any field with the same triangulation as the mesh.
-- `world.ts`: trees, rocks and bushes scattered over that, a bucketed obstacle lookup
-  (each obstacle has a height, so tyres can decide what to climb), and the `Ground`
-  interface the physics reads.
-- `physics.ts`: `step(car, input, dt, ground, spec)`. Springs for height, pitch and roll
-  chasing the four wheels; rocks under the tyres' clearance are bumps under the wheels.
-  `CarSpec` (wade depth, grip, lift, clearance) comes from the fitted upgrades.
-- `track.ts`: train positions and crossing state as pure functions of time.
-- `daylight.ts`: hour of day from elapsed time, and the sky at each hour from keyframes
-  in `palette.ts`.
-- `upgrades.ts`: the parts catalogue, mileage tiers, and `localStorage` progress.
+- `terrain.ts`: the valley as fields on a 600×600 grid over 6 km. The fields are
+  heights, water surface height, forest, snow and ice, and distances to the railway,
+  rivers, roads, the camp and garage yards. It also:
+  - lays the railway loop with graded earthworks;
+  - runs two rivers downhill into the big lake;
+  - finds bridges and level crossings;
+  - levels the 30-pitch campground and the café;
+  - raises the snow plateau in the north, with a frozen lake;
+  - floods the grid from the spawn at stock and snorkel wading depths, to find the
+    ground that needs the snorkel;
+  - places eight garage sites.
+
+  `sampleGrid()` interpolates any field using the same triangulation as the mesh.
+- `missions.ts`: lays out the challenge courses on the real terrain at load (a forest
+  slalom, a ridge climb, a lake loop, an ice drift). `mission-run.ts`: the countdown,
+  gates and finish of a run.
+- `world.ts`: trees, rocks and bushes scattered over all that, a bucketed obstacle
+  lookup (each obstacle has a height, so tyres can decide what to climb), and the
+  `Ground` interface the physics reads, including how slippery the ground is.
+- `physics.ts`: `step(car, input, dt, ground, spec)`. Springs for height, pitch and
+  roll chase the four wheels. Rocks under the tyres' clearance are bumps under the
+  wheels. Sideways slip decays fast on dirt, slowly on snow and very slowly on ice,
+  scaled by the tyres' snow grip.
+- `vehicles.ts` (the eight rigs) and `shop.ts` (parts, prices, and `specFor()`, which
+  turns a rig and its loadout into a `CarSpec`).
+- `store.ts`: progress behind one interface. `LocalStore` is in memory for single
+  player; `SupabaseStore` calls the database functions.
+- `net.ts`: presence, tents, poses, friend requests and chat. `SupabaseNet` runs over
+  Supabase Realtime; `LocalNet` runs over a `BroadcastChannel`, for testing across
+  tabs.
+- `goals.ts` (first-time guidance), `track.ts` (train and crossings as functions of
+  time), `daylight.ts` (hour and sky).
 
 Rendering and UI:
 
-- `scene.ts` assembles the world and runs the chase camera; `terrain-mesh.ts` (chunked
-  terrain, lakes and rivers as one water mesh, grass near the car), `scenery.ts`
-  (instanced trees, bushes, rocks in culling tiles), `sky.ts`, `railway.ts`,
-  `car-model.ts`, `garages.ts`, `train-model.ts`, `crossing-model.ts`, `showroom.ts`.
+- `scene.ts` assembles the world and runs the chase camera. The pieces:
+  - terrain and water: `terrain-mesh.ts` (chunked terrain, lakes and rivers as one
+    water mesh, grass near the car), `scenery.ts` (instanced trees, bushes and rocks
+    in culling tiles), `sky.ts`;
+  - the railway: `railway.ts`, `train-model.ts`, `crossing-model.ts`;
+  - vehicles: `car-model.ts` with `vehicle-models.ts` (eight bodies);
+  - buildings: `garages.ts`, `campground-model.ts`, `coffee-shop-model.ts`;
+  - missions: `mission-models.ts`;
+  - other players' trucks: `remote.ts`, interpolated between poses;
+  - the garage interior: `showroom.ts`.
 - `map.ts`: a parchment topo map drawn once at load, under a fog layer cleared as you
-  drive (in memory only, so it resets every visit).
-- `Game.tsx`: a fixed 120 Hz physics loop, the modes (driving, entering, garage,
-  leaving, map), the HUD. `GarageMenu.tsx`: the upgrade menu.
+  drive. The fog is kept in memory only, so it resets every visit.
+- `Game.tsx`: a fixed 120 Hz physics loop, the modes (picking a rig, driving, garage,
+  map) and the HUD. `GarageMenu.tsx` is the shop. `Panels.tsx` holds the starter
+  picker, the single-player banner, sign-in, the name prompt and the leaderboard.
 
-three.js is the only runtime dependency beyond React (MIT, ~144 KB gzipped). There are
-no asset files: the whole world is generated at load (~0.5 s).
+Runtime dependencies beyond React: three.js (MIT, ~144 KB gzipped) and
+`@supabase/supabase-js` (MIT). There are no asset files: the whole world is generated
+at load (~1.5 s).
 
 The other apps (`friendlybets`, `wellness-planner`, `beeriokart-dashboard`) share the
 domain via subdomains and share nothing else. This repo does not reference them.
 
-## Auth
+## Auth and the database
 
-There is none, and there should never be one. gilbyy.com is a public page with nothing
-behind it to protect. No `@supabase/*` dependency, no middleware, no server-rendered
-route — one static page at `/`.
+One Supabase project, used only by this repo: Postgres for profiles and the shop, Auth
+for sign-in (Google, or an email magic link), and Realtime for the shared valley. See
+`decisions/0007-accounts-multiplayer-and-a-shop.md`.
 
-The other apps each handle their own login in their own repo. That is their business.
+- The schema, policies and functions are in
+  `supabase/migrations/20261007000000_gilbyy_game.sql`. The client holds only the
+  publishable key. Players can read profiles but can't write them; every change is a
+  `security definer` function that checks it (miles no faster than driving, prices
+  from `shop_items`, mission payouts and cooldowns from `missions`).
+- `supabase/tests/game.test.sql` plays three accounts against all of it on a plain
+  local Postgres (see `supabase/tests/README.md`).
+- There is no Next.js middleware and no server route. The page is still static, and
+  the browser talks to Supabase directly.
 
-## Database design
+### Online setup
 
-There is no database, and the game needs no server state. The old shared Supabase
-project (`dcxqaooehisluvdjniyb`) has been deleted.
+1. In Supabase, create a project (free plan) for gilbyy.
+2. Apply the migration: paste it into the SQL editor, or run
+   `supabase db push` with the CLI.
+3. Realtime → Settings: turn **off** "Allow public access", so only signed-in players
+   can join the private `world` and `chat:` channels.
+4. Authentication → Sign In / Providers: enable Google, with a Google Cloud OAuth
+   client whose redirect URI is the one Supabase shows. Email magic links are on by
+   default.
+5. Authentication → URL Configuration: set the Site URL to `https://gilbyy.com`, and
+   add `https://gilbyy.com/**` and `http://localhost:3000/**` to the redirect URLs.
+6. In the Vercel project, add `NEXT_PUBLIC_SUPABASE_URL` and
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (the publishable key, never the secret one),
+   then redeploy. Locally, put the same two in `apps/web/.env.local`.
+
+Without those two variables, the game is single player and shows no sign-in button.
 
 ## Hosting and deploys
 
@@ -141,10 +189,28 @@ that repo's problem, not this one's.
 
 ## Free-tier limits to watch
 
-- **Supabase free:** 500 MB DB, 1 GB storage, 50k MAU per project, and **a cap on how
-  many free projects one org may have** — a reason not to spin up a Supabase project
-  per level without thinking. Projects pause after 1 week of inactivity (revivable in
-  one click). This repo has no Supabase project; the limits apply per level repo.
+- **Supabase free:** 500 MB DB, 50k MAU per project, and **a cap on how many free
+  projects one org may have**. Projects pause after a week with no activity
+  (revivable in one click), so a quiet month means the first sign-in fails until
+  someone resumes the project.
+- **Supabase Realtime free:**
+  - **200 concurrent connections, 100 messages a second, and 2 million messages a
+    month.** A broadcast counts once when it's sent and once for each player who
+    receives it.
+  - Exceeding the limits restricts the service; there is no surprise bill.
+  - This is what really limits the shared valley:
+    - `PoseGate` in `net.ts` keeps players² × send rate under about 40 messages a
+      second;
+    - it sends nothing while a truck is parked;
+    - while cruising straight it sends only a heartbeat every 3 s, because the
+      others' dead reckoning already has the truck in the right place.
+  - Roughly: two friends driving for an hour cost on the order of 10–25k messages, so
+    the monthly budget covers about a hundred such hours. Thirty players at once would
+    hit the per-second cap; the tent limit is 30, but the comfortable number is under
+    ten.
+- **Supabase Auth email:** the built-in mailer sends only a few emails an hour.
+  That's fine for magic links at this scale; set up a custom SMTP sender if it ever
+  isn't.
 - **Vercel Hobby:** 100 GB bandwidth/month, 100 GB-hr serverless. Realistic for hobby; watch images.
 - **Sentry free:** 5k errors/month.
 - **GitHub Actions:** 2k minutes/month on private; unlimited on public.

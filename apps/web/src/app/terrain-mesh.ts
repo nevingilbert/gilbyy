@@ -6,7 +6,7 @@ import { CELL, ROW, WORLD, gridX, gridZ, sampleGrid, type World } from "./world"
 
 const colour = (hex: string) => new THREE.Color(hex);
 
-export type Surface = "lakebed" | "shore" | "rock" | "snow" | "floor" | "grass" | "dirt";
+export type Surface = "lakebed" | "shore" | "rock" | "snow" | "drift" | "ice" | "floor" | "grass" | "dirt";
 
 /**
  * What the ground is made of at a point, and a 0–1 tone for variation within it.
@@ -20,10 +20,14 @@ export function makeSurface(world: World) {
     const small = fine(x / 24, z / 24);
     const tone = Math.max(0, Math.min(1, (big * 0.7 + small * 0.3 + 1) / 2));
     const water = sampleGrid(world.water, x, z);
+    // The frozen lake is a flat sheet of ice; the snow country round it is drifts.
+    if (sampleGrid(world.ice, x, z) > 0.5) return ["ice", tone];
     if (y < water - 0.8) return ["lakebed", tone];
     if (y < water + 0.9 + big * 0.5) return ["shore", tone];
     // Garage yards are packed dirt.
     if (sampleGrid(world.siteDist, x, z) < 15 + big * 4) return ["dirt", tone];
+    const snow = sampleGrid(world.snow, x, z);
+    if (snow > 0.55 + small * 0.25) return [ny < 0.7 ? "rock" : "drift", tone];
     if (ny < 0.83 + small * 0.04) return ["rock", tone];
     if (y > 180 + big * 35 && ny > 0.62) return ["snow", tone];
     if (sampleGrid(world.forest, x, z) > 0.6 + small * 0.2) return ["floor", tone];
@@ -65,6 +69,8 @@ export function buildTerrainMesh(world: World, surface: SurfaceAt) {
     shore: [colour(PALETTE.shore), colour(PALETTE.shore)],
     lakebed: [colour(PALETTE.lakebed), colour(PALETTE.lakebed)],
     snow: [colour(PALETTE.snow), colour(PALETTE.snow)],
+    drift: PALETTE.snowDrift.map(colour),
+    ice: [colour(PALETTE.ice), colour(PALETTE.ice)],
   };
   const material = new THREE.MeshLambertMaterial({ vertexColors: true });
   const group = new THREE.Group();
@@ -258,8 +264,9 @@ export function buildGrass(world: World, surface: SurfaceAt) {
         const ny = 2 / Math.hypot(world.height(tx + 1, tz) - world.height(tx - 1, tz), 2, world.height(tx, tz + 1) - world.height(tx, tz - 1));
         const [kind, tone] = surface(tx, y, tz, ny);
         if (kind !== "grass" && !(kind === "floor" && hash(gx, gz, 3) < 0.3)) continue;
-        // Not on the railway, or the dirt roads over it.
+        // Not on the railway, the dirt roads, or the campground's gravel.
         if (sampleGrid(world.trackDist, tx, tz) < 5.5 || sampleGrid(world.roadDist, tx, tz) < 3.5) continue;
+        if (sampleGrid(world.campDist, tx, tz) < 0.5) continue;
         const size = (0.7 + hash(gx, gz, 4) * 0.8) * (1 - smoothstep(RADIUS - 14, RADIUS, d));
         if (size < 0.05) continue;
         q.setFromAxisAngle(up, hash(gx, gz, 5) * Math.PI * 2);

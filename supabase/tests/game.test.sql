@@ -1,0 +1,132 @@
+-- Exercises the game migration as three players, on a plain Postgres with
+-- local-stubs.sql standing in for Supabase. Any failed check raises and stops the run.
+-- See supabase/tests/README.md for how to run it.
+\set ON_ERROR_STOP on
+
+-- Supabase grants table access to these roles by default; RLS is what stops them.
+grant select, insert, update, delete on all tables in schema public to anon, authenticated;
+
+insert into auth.users (id) values
+  ('00000000-0000-0000-0000-00000000000a'),
+  ('00000000-0000-0000-0000-00000000000b'),
+  ('00000000-0000-0000-0000-00000000000c');
+
+create function pg_temp.check(ok boolean, what text) returns void language plpgsql as $$
+begin
+  if not coalesce(ok, false) then raise exception 'FAILED: %', what; end if;
+  raise notice 'ok: %', what;
+end;
+$$;
+
+create function pg_temp.fails(sql text, what text) returns void language plpgsql as $$
+begin
+  execute sql;
+  raise exception 'FAILED (should have been refused): %', what;
+exception when others then
+  if sqlerrm like 'FAILED%' then raise; end if;
+  raise notice 'ok: % (%)', what, sqlerrm;
+end;
+$$;
+
+-- Become a player: the JWT subject Supabase would set, and the authenticated role.
+create function pg_temp.as_player(who text) returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000' || who, false);
+end;
+$$;
+
+select pg_temp.check((select count(*) from public.profiles) = 3, 'every new account gets a profile');
+
+-- Miles: banked no faster than a truck could have driven them.
+update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select lifetime from public.add_miles(1)) = 1, 'miles bank when the time allows');
+select pg_temp.check((select lifetime from public.add_miles(10)) = 1, 'miles do not bank faster than driving');
+update public.profiles set balance = 9999;
+reset role;
+select pg_temp.check((select balance from public.profiles where id::text like '%a') = 1, 'players cannot write their own balance');
+
+-- Shop.
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.fails($$ select public.buy('tyres:mud') $$, 'cannot buy without the miles');
+select pg_temp.fails($$ select public.buy('tyres:gold') $$, 'cannot buy what the shop does not sell');
+reset role;
+update public.profiles set balance = 50 where id::text like '%a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select balance from public.buy('vehicle:summit')) = 10, 'buying takes the price');
+select pg_temp.check((select balance from public.buy('vehicle:summit')) = 10, 'buying twice charges once');
+select pg_temp.check((select balance from public.buy('tyres:road')) = 10, 'free things cost nothing');
+select pg_temp.fails($$ select public.equip('summit', '{"paint":"factory","tyres":"mud","lights":"stock","snorkel":"none","winter":"none"}') $$, 'cannot fit unbought tyres');
+select pg_temp.fails($$ select public.equip('duneclaw', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}') $$, 'cannot drive an unbought rig');
+select pg_temp.fails($$ select public.equip('summit', '{"engine":"v12"}') $$, 'cannot fit a made-up part');
+select pg_temp.check((select vehicle from public.equip('summit', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}')) = 'summit', 'can fit what is owned');
+select pg_temp.check((select vehicle from public.equip('bluff', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}')) = 'bluff', 'starters are free to drive');
+
+-- Missions.
+select pg_temp.fails($$ select public.complete_mission('forest-slalom', 5) $$, 'impossibly fast runs pay nothing');
+select pg_temp.check((select balance from public.complete_mission('forest-slalom', 60)) = 11.5, 'first finish pays the full reward');
+select pg_temp.fails($$ select public.complete_mission('forest-slalom', 60) $$, 'repeats wait for the cooldown');
+reset role;
+update public.mission_runs set finished_at = now() - interval '11 minutes';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select balance from public.complete_mission('forest-slalom', 60)) = 12, 'later finishes pay the repeat reward');
+
+-- Names and goals.
+select pg_temp.check((select name from public.set_name('  Nevin  ')) = 'Nevin', 'names are trimmed and saved');
+select pg_temp.fails($$ select public.set_name('x') $$, 'names must be 3 to 20 characters');
+select pg_temp.check((select cardinality(goals) from public.mark_goal('found-garage')) = 1, 'goals are recorded');
+select pg_temp.check((select cardinality(goals) from public.mark_goal('found-garage')) = 1, 'goals are recorded once');
+reset role;
+select pg_temp.as_player('b');
+set role authenticated;
+select pg_temp.fails($$ select public.set_name('Nevin') $$, 'names are unique');
+
+-- Friends: both have to ask.
+select pg_temp.check(public.request_friend('00000000-0000-0000-0000-00000000000a') = 'pending', 'asking once is pending');
+select pg_temp.check((select count(*) from public.friendships) = 0, 'not friends yet');
+reset role;
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check(public.request_friend('00000000-0000-0000-0000-00000000000b') = 'friends', 'asking back makes friends');
+select pg_temp.check((select count(*) from public.friendships) = 1, 'one friendship row');
+select pg_temp.check((select count(*) from public.friend_requests) = 0, 'requests are cleared');
+select pg_temp.check((select count(*) from public.leaderboard()) = 2, 'leaderboard shows me and my friend');
+select pg_temp.check((select bool_or(is_me) from public.leaderboard()), 'leaderboard marks me');
+reset role;
+select pg_temp.as_player('c');
+set role authenticated;
+select pg_temp.check((select count(*) from public.leaderboard()) = 1, 'a stranger sees only themselves');
+select pg_temp.check((select count(*) from public.friendships) = 0, 'strangers cannot see others'' friendships');
+reset role;
+
+-- Realtime channels.
+insert into realtime.messages (topic, extension, payload) values
+  ('world', 'broadcast', '{}'),
+  ('chat:00000000-0000-0000-0000-00000000000a:00000000-0000-0000-0000-00000000000b', 'broadcast', '{}');
+select set_config('realtime.topic', 'world', false);
+select pg_temp.as_player('c');
+set role authenticated;
+select pg_temp.check((select count(*) from realtime.messages where topic = 'world') = 1, 'any signed-in player hears the world');
+reset role;
+set role anon;
+select pg_temp.check((select count(*) from realtime.messages) = 0, 'signed-out visitors hear nothing');
+reset role;
+select set_config('realtime.topic', 'chat:00000000-0000-0000-0000-00000000000a:00000000-0000-0000-0000-00000000000b', false);
+select pg_temp.as_player('b');
+set role authenticated;
+select pg_temp.check((select count(*) from realtime.messages where topic like 'chat:%') = 1, 'friends hear their chat');
+insert into realtime.messages (topic, extension, payload) values (current_setting('realtime.topic'), 'broadcast', '{"text":"hi"}');
+select pg_temp.check(true, 'friends can send in their chat');
+reset role;
+select pg_temp.as_player('c');
+set role authenticated;
+select pg_temp.check((select count(*) from realtime.messages where topic like 'chat:%') = 0, 'others cannot listen in');
+select pg_temp.fails($$ insert into realtime.messages (topic, extension, payload) values (current_setting('realtime.topic'), 'broadcast', '{}') $$, 'others cannot post into a friends chat');
+reset role;
+select pg_temp.check(not public.is_chat_member('chat:not-a-uuid:also-not'), 'garbled chat topics are refused');
+
+select 'all checks passed' as result;
