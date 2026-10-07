@@ -22,6 +22,10 @@ import { buildWorld, campPitches, START, type Ground, type Mission, type Obstacl
 const STEP = 1 / 120;
 const ENTER_TIME = 2.3;
 const LEAVE_TIME = 2.4;
+/** How long the picture takes to come up from black. */
+const RISE_TIME = 0.6;
+/** The longest the opening shot hangs over the camp waiting for a tent. */
+const HOVER_LIMIT = 4;
 /** Miles bank on the server this often while driving signed in. */
 const FLUSH_EVERY = 15;
 /** Signed in, everyone shares one clock (so one sun and one train), counted from a fixed moment. */
@@ -142,10 +146,29 @@ export function Game() {
     try {
       view = createView(canvas, world, rig, loadout);
     } catch {
+      if (fadeRef.current) fadeRef.current.style.opacity = "0";
       return; // No WebGL. The fog-coloured backdrop is all there is to see.
     }
     const map = createMap(world);
     const pitches = campPitches();
+
+    // The opening. Signed in, the truck belongs at a tent, and which one isn't known for a
+    // second or two. So the picture comes up on a shot high over the camp, and the camera
+    // comes down to the truck once it is where it belongs (`land`). If the truck is put
+    // somewhere new after that, the picture dips to black so the move isn't seen (`dip`).
+    let opening = onlineConfigured && !localNet && !params.has("at") && !params.has("garage");
+    let rising = opening ? 0 : -1;
+    if (fadeRef.current) fadeRef.current.style.opacity = opening ? "1" : "0";
+    if (opening) view.flyIn();
+    const land = () => {
+      if (opening) view.land();
+      opening = false;
+    };
+    const dip = () => {
+      rising = 0;
+      view.cut();
+      if (fadeRef.current) fadeRef.current.style.opacity = "1";
+    };
 
     const at = (params.get("at") ?? "").split(",").map(Number);
     const startHour = Number(params.get("hour"));
@@ -214,11 +237,14 @@ export function Game() {
     };
     const nameOf = (id: string) => peers.get(id)?.name ?? friends.get(id) ?? "Someone";
 
+    /** Matches a canvas's pixels to its box. Setting either side clears it, so only when it's wrong. */
     const sizeCanvas = (c: HTMLCanvasElement | null) => {
       if (!c) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      c.width = Math.round(c.clientWidth * dpr);
-      c.height = Math.round(c.clientHeight * dpr);
+      const w = Math.round(c.clientWidth * dpr);
+      const h = Math.round(c.clientHeight * dpr);
+      if (c.width !== w) c.width = w;
+      if (c.height !== h) c.height = h;
     };
     const resize = () => {
       view.resize();
@@ -291,6 +317,16 @@ export function Game() {
       window.setTimeout(() => setChat((c) => c.filter((l) => l.key !== key)), 14000);
     };
 
+    /** Tells the others where the truck is when it's due, or at once if someone `asked`. */
+    const sharePose = (now: number, asked = false) => {
+      const m = modeRef.current;
+      if (!net || tent < 0 || m === "boot" || m === "pick") return;
+      const pose = { x: car.x, y: car.y, z: car.z, heading: car.heading, pitch: car.pitch, roll: car.roll, speed: car.speed, steer: car.steer };
+      if (!asked && !gate.due(pose, now, peers.size + 1)) return;
+      net.sendPose(pose);
+      gate.sent(pose, now);
+    };
+
     const handlers: NetHandlers = {
       peers(list) {
         // Someone new hasn't heard where we are (a parked truck sends nothing), so tell them.
@@ -305,6 +341,8 @@ export function Game() {
         setPeople(list.length + 1);
       },
       pose: (id, pose) => view.remotes.pose(id, pose, performance.now() / 1000),
+      // Answered here, not on the next frame: a tab in the background draws no frames.
+      wanted: () => sharePose(performance.now() / 1000, true),
       asked(from) {
         askedBy.add(from);
         store.noteAsked(from);
@@ -345,7 +383,11 @@ export function Game() {
       const bay = pitches[tent].parking;
       const m = modeRef.current;
       const placed = params.has("at") || params.has("garage");
-      if (!placed && (m === "boot" || m === "pick" || (m === "drive" && car.distance < 30))) placeOnGround(bay.x, bay.z, bay.heading, 0);
+      if (!placed && (m === "boot" || m === "pick" || (m === "drive" && car.distance < 30))) {
+        placeOnGround(bay.x, bay.z, bay.heading, 0);
+        // During the opening the truck hasn't been shown yet, and `boot` lands the camera on it.
+        if (!opening) dip();
+      }
       say(`Tent ${tent + 1} is yours.`);
       await refreshFriends();
     };
@@ -381,11 +423,16 @@ export function Game() {
         await store.buy(itemKey("vehicle", rigParam));
         if (!(await store.equip(rigParam, loadout))) fitRig(rigParam, loadout);
       }
-      setModeBoth(store.get().vehicle ? "drive" : "pick");
-      if (net) {
-        if (!p.name) setNaming(true);
-        else await join();
+      if (net && p.name) {
+        const joining = join();
+        // Take the tent before coming down to the truck, but don't hang over the camp for
+        // long if the valley is slow to answer.
+        if (opening) await Promise.race([joining, new Promise((r) => setTimeout(r, HOVER_LIMIT * 1000))]);
       }
+      if (cancelled) return;
+      setModeBoth(store.get().vehicle ? "drive" : "pick");
+      if (net && !p.name) setNaming(true);
+      land();
     };
     void boot();
 
@@ -770,6 +817,12 @@ export function Game() {
       const garage = view.garages[cut.garage];
       time = shared ? Date.now() / 1000 - SHARED_EPOCH : time + (m === "garage" || m === "map" ? 0 : dt);
 
+      if (rising >= 0) {
+        rising += dt;
+        if (fadeRef.current) fadeRef.current.style.opacity = String(1 - smooth(0, RISE_TIME, rising));
+        if (rising >= RISE_TIME) rising = -1;
+      }
+
       if (m === "garage") {
         // Lights up inside: the fade from driving in clears over half a second.
         cut.t += dt;
@@ -816,13 +869,7 @@ export function Game() {
           void store.flush();
         }
 
-        if (net && tent >= 0 && m !== "boot" && m !== "pick") {
-          const pose = { x: car.x, y: car.y, z: car.z, heading: car.heading, pitch: car.pitch, roll: car.roll, speed: car.speed, steer: car.steer };
-          if (gate.due(pose, now, peers.size + 1)) {
-            net.sendPose(pose);
-            gate.sent(pose, now);
-          }
-        }
+        sharePose(now);
         if (net && presenceNow === "full") {
           retryClock += dt;
           if (retryClock > RETRY_JOIN) {
@@ -838,8 +885,10 @@ export function Game() {
         if (Math.floor(now * 2) !== Math.floor((now - dt) * 2)) setCanChat(nearbyFriends().length > 0);
 
         const mini = miniRef.current;
-        // The minimap unmounts while you're in a garage, so check its size each frame.
-        if (mini && mini.width !== Math.round(mini.clientWidth * Math.min(window.devicePixelRatio || 1, 2))) sizeCanvas(mini);
+        // The minimap unmounts while you're in a garage, so check its size each frame. Both
+        // sides: a new canvas is 300 by 150, and 300 is exactly the width wanted on a
+        // desktop retina screen, which left it half as tall as it was drawn.
+        sizeCanvas(mini);
         const g = mini?.getContext("2d");
         if (mini && g) {
           const lead = view.trainCars()[0];
@@ -926,7 +975,8 @@ export function Game() {
         className={`block h-full w-full touch-none transition-opacity duration-[1500ms] ${ready ? "opacity-100" : "opacity-0"}`}
       />
       <div ref={tagsRef} className={`pointer-events-none absolute inset-0 overflow-hidden ${driving ? "" : "hidden"}`} />
-      <div ref={fadeRef} className="pointer-events-none absolute inset-0 bg-black opacity-0" />
+      {/* Black from the first paint when there may be a tent to wait for; the effect lifts it. */}
+      <div ref={fadeRef} className={`pointer-events-none absolute inset-0 bg-black ${onlineConfigured ? "opacity-100" : "opacity-0"}`} />
 
       <h1 className="pointer-events-none absolute left-5 top-4 text-lg font-semibold tracking-tight text-[rgba(255,246,232,0.78)] drop-shadow-sm">
         gilbyy

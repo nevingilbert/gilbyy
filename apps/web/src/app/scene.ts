@@ -15,7 +15,7 @@ import { buildShowroom } from "./showroom";
 import { buildSky } from "./sky";
 import { buildGrass, buildTerrainMesh, buildWaterMesh, makeSurface } from "./terrain-mesh";
 import type { VehicleId } from "./vehicles";
-import { CAFE, CAMP_CENTRE, CAMP_GATE, campPitches, sampleGrid, type Obstacle, type SiteStyle, type World } from "./world";
+import { CAFE, CAMP, CAMP_CENTRE, CAMP_GATE, campPitches, sampleGrid, type Obstacle, type SiteStyle, type World } from "./world";
 
 const SHADOW_SPAN = 55;
 const FAR = 2600;
@@ -136,6 +136,12 @@ function placeMissions(world: World, glow: THREE.Material) {
   return { group, show };
 }
 
+/** The opening shot: how far back from the camp and how high it hangs, how fast it drifts in, and how long the glide down to the truck takes. */
+const GLIDE_BACK = 120;
+const GLIDE_UP = 46;
+const HOVER_DRIFT = 5;
+const GLIDE_TIME = 3.4;
+
 export function createView(canvas: HTMLCanvasElement, world: World, vehicle: VehicleId, loadout: Loadout) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
@@ -195,6 +201,19 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
   let night = 0;
   let hour = 0;
   let orbit = 0;
+  // The opening. The camera hangs high over the camp, drifting in, with the truck not yet
+  // shown, until the game knows which tent the truck is at; then it glides down to it.
+  // `hover` and `glide` are seconds into each, or -1.
+  const aim = new THREE.Vector3();
+  const glideFrom = new THREE.Vector3();
+  const aimFrom = new THREE.Vector3();
+  let hover = -1;
+  let glide = -1;
+  const hang = () => {
+    const ground = world.height(CAMP.x, CAMP.z);
+    camPos.set(CAMP.x, ground + GLIDE_UP, CAMP.z - GLIDE_BACK + hover * HOVER_DRIFT);
+    aim.set(CAMP.x, ground, CAMP.z + 30);
+  };
 
   function resize() {
     const w = canvas.clientWidth;
@@ -227,14 +246,35 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
 
     const ease = (rate: number) => 1 - Math.exp(-rate * dt);
     if (Number.isNaN(camYaw)) camYaw = state.heading;
-    if (circling) {
+    /** Puts the camera at `want` looking at `look`: along the opening glide while that lasts, easing after the truck otherwise. */
+    const follow = (rate: number) => {
+      if (glide >= 0) {
+        glide += dt;
+        const k = Math.min(1, glide / GLIDE_TIME);
+        const eased = k * k * (3 - 2 * k);
+        camPos.lerpVectors(glideFrom, want, eased);
+        aim.lerpVectors(aimFrom, look, eased);
+        if (k >= 1) glide = -1;
+      } else {
+        if (camPos.lengthSq() === 0) camPos.copy(want);
+        else camPos.lerp(want, ease(rate));
+        aim.copy(look);
+      }
+      camera.position.copy(camPos);
+      camera.lookAt(aim);
+    };
+    car.object.visible = hover < 0;
+    if (hover >= 0) {
+      hover += dt;
+      hang();
+      camera.position.copy(camPos);
+      camera.lookAt(aim);
+    } else if (circling) {
       orbit += dt * 0.25;
       const a = state.heading + Math.PI * 0.8 + Math.sin(orbit) * 0.9;
       want.set(state.x + Math.sin(a) * 9, state.y + 3.2, state.z + Math.cos(a) * 9);
-      if (camPos.lengthSq() === 0) camPos.copy(want);
-      else camPos.lerp(want, ease(2));
-      camera.position.copy(camPos);
-      camera.lookAt(state.x, state.y + 0.4, state.z);
+      look.set(state.x, state.y + 0.4, state.z);
+      follow(2);
       camYaw = state.heading;
     } else {
       let dy = state.heading - camYaw;
@@ -245,11 +285,8 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
       const fz = Math.cos(camYaw);
       want.set(state.x - fx * dist, state.y + 8.5 + Math.abs(state.speed) * 0.05, state.z - fz * dist);
       want.y = Math.max(want.y, world.height(want.x, want.z) + 2.5);
-      if (camPos.lengthSq() === 0) camPos.copy(want);
-      else camPos.lerp(want, ease(4));
-      camera.position.copy(camPos);
       look.set(state.x + fx * 4, state.y + 0.4, state.z + fz * 4);
-      camera.lookAt(look);
+      follow(4);
     }
 
     // The shadow box follows the car; snapping it to texels stops it shimmering.
@@ -303,6 +340,27 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
   resize();
   return {
     render,
+    /** Puts the camera straight where it belongs on the next frame, for when the truck was moved, not driven. */
+    cut: () => {
+      camPos.set(0, 0, 0);
+      camYaw = NaN;
+      hover = glide = -1;
+    },
+    /** Starts the opening shot: high over the camp, the truck not shown yet. */
+    flyIn: () => {
+      hover = 0;
+      glide = -1;
+      hang();
+    },
+    /** The truck is where it belongs: show it, and bring the camera down to it. */
+    land: () => {
+      if (hover < 0) return;
+      hover = -1;
+      glideFrom.copy(camPos);
+      aimFrom.copy(aim);
+      glide = 0;
+      camYaw = NaN;
+    },
     renderShowroom: (dt: number, turn: number) => showroom.render(renderer, dt, turn),
     openShowroom: (style: SiteStyle, v: VehicleId, l: Loadout) => showroom.open(style, v, l),
     /** Tries a rig or part on the truck in the showroom without fitting it. */

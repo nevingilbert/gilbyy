@@ -26,6 +26,8 @@ export type NetHandlers = {
   /** Everyone else here, whenever that changes. */
   peers(peers: Peer[]): void;
   pose(id: string, pose: Pose): void;
+  /** Someone has just arrived and doesn't know where anyone is: say where you are. */
+  wanted(): void;
   /** `from` asked to be your friend (or accepted, if you'd asked). */
   asked(from: string): void;
   friended(from: string): void;
@@ -182,6 +184,10 @@ abstract class Base implements Net {
   async join(info: Omit<Peer, "tent" | "joined">): Promise<Joined> {
     const error = await this.open();
     if (error) return { error };
+    // Parked trucks send nothing, so ask. Presence can't be relied on to show the others
+    // that someone new is here: a second tab, or a quick reload, arrives under an id they
+    // already have.
+    this.emit("where", {});
     await wait(600); // Let presence fill in.
     const others = this.present().filter((p) => p.id !== info.id);
     if (others.length >= MAX_PLAYERS) {
@@ -244,6 +250,8 @@ abstract class Base implements Net {
     const me = this.me?.id;
     if (event === "pose" && typeof payload.id === "string" && Array.isArray(payload.p)) {
       this.on.pose(payload.id, unpackPose(payload.p as number[]));
+    } else if (event === "where") {
+      this.on.wanted();
     } else if ((event === "ask" || event === "friended") && payload.to === me && typeof payload.from === "string") {
       if (event === "ask") this.on.asked(payload.from);
       else this.on.friended(payload.from);
@@ -302,6 +310,7 @@ export class SupabaseNet extends Base {
     channel
       .on("presence", { event: "sync" }, () => this.peersChanged())
       .on("broadcast", { event: "pose" }, ({ payload }) => this.heard("pose", payload))
+      .on("broadcast", { event: "where" }, ({ payload }) => this.heard("where", payload))
       .on("broadcast", { event: "ask" }, ({ payload }) => this.heard("ask", payload))
       .on("broadcast", { event: "friended" }, ({ payload }) => this.heard("friended", payload));
     this.world = channel;
