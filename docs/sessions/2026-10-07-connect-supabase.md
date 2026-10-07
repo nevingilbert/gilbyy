@@ -93,7 +93,7 @@ from two browsers, and fix what broke.
   until found). **Not seen:** the signed-in path of `discover()` from a browser (the
   pane had been signed out); the SQL checks for it pass on the live project.
 
-## Added on `feat/idle-timeout-and-signed-in` (same day, after the merge)
+## Added on `feat/idle-timeout-and-signed-in` (same day, after the first merge)
 
 - **Idle timeout**, as above.
 - **Signed-in indicator:** a green dot and the player's name in the top right of the
@@ -103,7 +103,7 @@ from two browsers, and fix what broke.
 - **Names are 2 to 20 characters:** migration `20261007180000_short_names.sql`
   (applied), `NAME_PATTERN` in `store.ts`, and `SupabaseStore.setName` now turns the
   database's constraint errors into "Someone already has that name." and the rule.
-- This branch is pushed but **not merged**; the owner merges when they say so.
+- Merged to `main` at the owner's request the same evening.
 
 ## Played and confirmed (two browsers, two Google accounts)
 
