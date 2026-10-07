@@ -185,6 +185,14 @@ export function Leaderboard({
     void load().then((r) => live && setRows(r));
     return () => void (live = false);
   }, [load]);
+  // The game ignores keys while a panel is up, so the key that opened this has to close it here.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.repeat && (e.key === "l" || e.key === "L" || e.key === "Escape")) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm" onClick={onClose}>
