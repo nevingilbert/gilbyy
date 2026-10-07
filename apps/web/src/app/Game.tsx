@@ -810,7 +810,8 @@ export function Game() {
     };
 
     const frame = (nowMs: number) => {
-      const dt = Math.min((nowMs - last) / 1000, 0.1);
+      // Never negative: the first frame's timestamp can be a hair earlier than `last` was set.
+      const dt = Math.max(0, Math.min((nowMs - last) / 1000, 0.1));
       last = nowMs;
       const now = nowMs / 1000;
       const m = modeRef.current;
