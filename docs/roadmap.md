@@ -8,10 +8,14 @@ subdomains." Update the **You are here** marker as you progress.
 > (`decisions/0007`): a 6 km map with a snow plateau, a 30-tent campground and a café,
 > eight rigs, missions, and a shop that spends miles. With no sign-in it's single
 > player.
-> **Next:** the online setup in `architecture.md` → *Online setup* (Supabase project,
-> migration, Realtime private-only, Google provider, two Vercel env vars). Then play
-> it signed in from two devices, and check the frame rate on a real phone and laptop:
-> the scene is heavier again.
+> The online setup is done (2026-10-07): the Supabase project `gilbyy` is connected and
+> the game was played signed in from two browsers on `feat/multiplayer`
+> (`sessions/2026-10-07-connect-supabase.md`).
+> **Next:** merge `feat/multiplayer` to `main` when the owner says so. Then the owner's
+> requests from that session: discovered garages and cafés that stay on the map,
+> counts of them ("3/8 garages found"), and those counts on the leaderboard. Also
+> still open: a custom SMTP sender so magic links reach everyone, and the frame rate
+> on a real phone and laptop.
 >
 > Phases A and B are complete: levels retired and auth removed (2026-08-28), the
 > Supabase project deleted, and all six hostnames live on gilbyy.com with Google

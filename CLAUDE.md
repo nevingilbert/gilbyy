@@ -61,8 +61,8 @@ apps, you are in the wrong repo.
   - `map.ts`: the 2D map and its fog of war.
   - React: `Game.tsx` (loop, modes, HUD), `GarageMenu.tsx` (the shop), `Panels.tsx`
     (starter picker, banner, sign-in, name, leaderboard).
-- `supabase/`: the one migration (schema, RLS, the functions every write goes through,
-  realtime policies) and its plain-Postgres tests.
+- `supabase/`: the migrations (schema, RLS, the functions every write goes through,
+  realtime policies) and their SQL tests.
 - `packages/` — empty. Add a package only when two directories *in this repo* need the same thing, which is now a high bar.
 - `docs/` — design docs.
   - `vision.md` — the why
@@ -109,7 +109,7 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't reach for a game engine, a physics engine, react-three-fiber or a post-processing stack. three.js is the one rendering dependency (ADR 0005); the physics is ours and stays a pure, tested function. Anything more needs its own ADR.
 - Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
 - Don't add pressure. Miles are the one currency, missions are optional and never fail beyond giving up, and the leaderboard is you and your friends only (ADR 0007). The game is meant to be calm; see `docs/art-direction.md`.
-- Don't spend the Realtime budget carelessly. Supabase's free plan counts every broadcast once per receiver; poses go through `PoseGate` in `net.ts` for that reason. See the free-tier notes in `docs/architecture.md`.
+- Don't spend the Realtime budget carelessly. Supabase's free plan counts every broadcast once per receiver; poses go through `PoseGate` in `net.ts` for that reason. Presence is stricter still: Realtime closes a client's channel after five presence updates in thirty seconds, so announcements go through `PresenceBudget`, and nothing that changes often goes in presence. See the free-tier notes in `docs/architecture.md`.
 - Don't add buildings that link to the other gilbyy.com apps without a new ADR superseding 0004. The owner has floated it for later; it is not built.
 - Don't judge frame rate from headless screenshots. Headless Chromium renders WebGL in software at ~3 fps; screenshots are fine for looks, nothing else.
 - Don't run autonomous agents that hit the Anthropic API without confirming first — currently we're staying in interactive Claude Code sessions only.
@@ -126,7 +126,7 @@ The user is on Claude Pro and is intentionally avoiding API costs. To survive to
 
 - **CLAUDE.md (this file)** — project-wide orientation. Read first.
 - **Skills** — for a workflow you've done twice and want one keystroke for. Candidates: checkpoint-session, scaffold-a-new-level-repo.
-- **MCPs** — for live data access. The Vercel and Supabase MCPs are wired up; note that Supabase is irrelevant to this repo and only reaches the *level* projects.
+- **MCPs** — for live data access. The Vercel and Supabase MCPs are wired up. The Supabase project for this repo is `gilbyy` (ref `apqlumghzqkklmpwizex`); the org's other projects belong to the other apps.
 - **Subagents (Task tool)** — for parallel/isolated work in one session. Examples: "write tests for X while I keep iterating on Y," verify a finished change against acceptance criteria.
 - **New session** — different concern, or context cluttered, or picking up the next day from a checkpoint.
 
@@ -141,4 +141,4 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - a map with fog of war;
 - optional sign-in for saved progress, a shared valley, friends, chat and a leaderboard (ADR 0007).
 
-The online half is built and tested locally (SQL tests, `?net=local` across tabs), but no Supabase project is connected yet; see `docs/architecture.md` → *Online setup*. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.
+The online half is connected (2026-10-07): the Supabase project `gilbyy` has both migrations, Google sign-in works, and the whole list (name, tent, seeing each other, friending at the café, chat, leaderboard, a purchase and a mission payout that persist) was played from two browsers on `feat/multiplayer`. That branch is not merged to `main` yet, so gilbyy.com is still single player. Email magic links only reach members of the Supabase org until a custom SMTP sender is set up. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.

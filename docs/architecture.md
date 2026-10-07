@@ -125,28 +125,52 @@ for sign-in (Google, or an email magic link), and Realtime for the shared valley
   publishable key. Players can read profiles but can't write them; every change is a
   `security definer` function that checks it (miles no faster than driving, prices
   from `shop_items`, mission payouts and cooldowns from `missions`).
-- `supabase/tests/game.test.sql` plays three accounts against all of it on a plain
-  local Postgres (see `supabase/tests/README.md`).
+- `20261007060000_advisor_followups.sql` came out of Supabase's advisors on the real
+  project: it takes `handle_new_user()` and `is_chat_member()` out of the public API
+  and indexes the friend tables from both sides. The advisor still warns that
+  signed-in users can execute the nine game functions; that is the design.
+- `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
+  local Postgres or against the linked project in a transaction that rolls back (see
+  `supabase/tests/README.md`).
 - There is no Next.js middleware and no server route. The page is still static, and
   the browser talks to Supabase directly.
 
 ### Online setup
 
-1. In Supabase, create a project (free plan) for gilbyy.
-2. Apply the migration: paste it into the SQL editor, or run
-   `supabase db push` with the CLI.
+**Done on 2026-10-07.** The project is `gilbyy`, ref `apqlumghzqkklmpwizex`, in the
+Gilbyy org (free plan), region `us-west-1`. Both migrations are applied, and it was
+played signed in from two browsers; see `sessions/2026-10-07-connect-supabase.md`.
+To do it again from nothing:
+
+1. Create a project on the free plan: `supabase projects create gilbyy --org-id <org>
+   --region us-west-1 --db-password <generated>`. (The Supabase MCP's `create_project`
+   refused with a cost-confirmation error; the CLI works.)
+2. `supabase link --project-ref <ref>`, then `supabase db push`. Run the security and
+   performance advisors afterwards.
 3. Realtime → Settings: turn **off** "Allow public access", so only signed-in players
-   can join the private `world` and `chat:` channels.
-4. Authentication → Sign In / Providers: enable Google, with a Google Cloud OAuth
-   client whose redirect URI is the one Supabase shows. Email magic links are on by
-   default.
-5. Authentication → URL Configuration: set the Site URL to `https://gilbyy.com`, and
-   add `https://gilbyy.com/**` and `http://localhost:3000/**` to the redirect URLs.
-6. In the Vercel project, add `NEXT_PUBLIC_SUPABASE_URL` and
-   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (the publishable key, never the secret one),
-   then redeploy. Locally, put the same two in `apps/web/.env.local`.
+   can join the private `world` and `chat:` channels. A signed-out client then gets
+   `PrivateOnly` on any public channel.
+4. Authentication → URL Configuration: Site URL `https://gilbyy.com`, and these
+   redirect URLs:
+   - `https://gilbyy.com/**` and `https://www.gilbyy.com/**` (`www` serves the site
+     itself rather than redirecting, so a sign-in started there comes back there);
+   - `http://localhost:3000/**`;
+   - `https://gilbyy-*-nevin-gilbert-s-projects.vercel.app/**`, which covers both
+     shapes of preview URL (`gilbyy-<hash>-…` and `gilbyy-web-git-<branch>-…`).
+5. Authentication → Sign In / Providers → Google, with a Google Cloud OAuth client
+   (type *Web application*; the one in use is "gilbyy world" in the `gilbyy-projects`
+   Google Cloud project) whose only redirect URI is
+   `https://<ref>.supabase.co/auth/v1/callback`. Email magic links are on by default,
+   but see the mailer note under *Free-tier limits*.
+6. In the Vercel project `gilbyy-web`, add `NEXT_PUBLIC_SUPABASE_URL` and
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (the `sb_publishable_…` key, never the secret
+   one) for Production and Preview. Locally, put the same two in `apps/web/.env.local`.
 
 Without those two variables, the game is single player and shows no sign-in button.
+
+Two things are only on the machine that did the setup, both gitignored: the database
+password in `supabase/.env`, and the CLI's link in `supabase/.temp/`. Neither is needed
+to run the game; reset the password in the dashboard if it's ever wanted.
 
 ## Hosting and deploys
 
@@ -204,13 +228,27 @@ that repo's problem, not this one's.
     - it sends nothing while a truck is parked;
     - while cruising straight it sends only a heartbeat every 3 s, because the
       others' dead reckoning already has the truck in the right place.
+  - **Presence has its own limit: five updates per client in thirty seconds, or
+    Realtime closes that client's channel** (`ClientPresenceRateLimitReached` in the
+    Realtime logs). Presence carries each player's tent, name and rig, so
+    `PresenceBudget` in `net.ts` holds announcements to four per thirty seconds and
+    sends a burst as one. If the channel is closed anyway, `SupabaseNet` rejoins and
+    announces again after a full window. Nothing that changes often belongs in
+    presence.
+  - A parked truck sends no poses, so a player who has just arrived asks for them
+    (the `where` broadcast) and everyone answers once.
+  - The first private-channel join on a new or just-restored project can be refused
+    with `MissingPartition` while Realtime creates its message partitions;
+    `SupabaseNet.open()` tries three times.
   - Roughly: two friends driving for an hour cost on the order of 10–25k messages, so
     the monthly budget covers about a hundred such hours. Thirty players at once would
     hit the per-second cap; the tent limit is 30, but the comfortable number is under
     ten.
-- **Supabase Auth email:** the built-in mailer sends only a few emails an hour.
-  That's fine for magic links at this scale; set up a custom SMTP sender if it ever
-  isn't.
+- **Supabase Auth email:** the built-in mailer sends only a few emails an hour, and
+  **only to addresses that are members of the Supabase org**; anyone else gets "Email
+  address not authorized". So Google is the only sign-in that works for the public
+  today. Magic links for everyone need a custom SMTP sender, which is a new service
+  and so a decision for the owner under the free-tier rule.
 - **Vercel Hobby:** 100 GB bandwidth/month, 100 GB-hr serverless. Realistic for hobby; watch images.
 - **Sentry free:** 5k errors/month.
 - **GitHub Actions:** 2k minutes/month on private; unlimited on public.
