@@ -93,6 +93,18 @@ from two browsers, and fix what broke.
   until found). **Not seen:** the signed-in path of `discover()` from a browser (the
   pane had been signed out); the SQL checks for it pass on the live project.
 
+## Added on `feat/idle-timeout-and-signed-in` (same day, after the merge)
+
+- **Idle timeout**, as above.
+- **Signed-in indicator:** a green dot and the player's name in the top right of the
+  driving HUD (`Game.tsx`), which opens the leaderboard panel, where sign-out is. Its
+  placement was checked at phone and desktop widths with injected markup; it has not
+  been seen rendered for a real signed-in player.
+- **Names are 2 to 20 characters:** migration `20261007180000_short_names.sql`
+  (applied), `NAME_PATTERN` in `store.ts`, and `SupabaseStore.setName` now turns the
+  database's constraint errors into "Someone already has that name." and the rule.
+- This branch is pushed but **not merged**; the owner merges when they say so.
+
 ## Played and confirmed (two browsers, two Google accounts)
 
 Name prompt and tent; each sees the other ("2 here", name tags); F at the café from
@@ -133,8 +145,11 @@ rejoined in 2 s and re-announced 30 s later.
   and `supabase.ts` at the owner's request, because Supabase's built-in mailer only
   reaches members of the Supabase org. The Email provider is still switched on in the
   Supabase dashboard; turning it off there is the owner's click.
-- **An inactive tab keeps its tent.** It stays connected and present; only closing the
-  tab or losing the connection frees the tent. There is no idle timeout.
+- **An idle tab gives its tent back** (added on `feat/idle-timeout-and-signed-in`):
+  `isAway()` in `net.ts`, five minutes hidden or fifteen untouched; `goAway`/`comeBack`
+  in `Game.tsx`, with presence state `"away"`. Seen working across two `?net=local`
+  tabs with the limit shortened and the hide/show events simulated. Not seen with a
+  really backgrounded tab or over Supabase.
 - **One account in two tabs** sends poses from both under one id, so others see that
   truck jump between them.
 - **`reopen()` was tested with a simulated close**, not a real rate-limit kick.

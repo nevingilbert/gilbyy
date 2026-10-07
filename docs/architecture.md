@@ -239,6 +239,11 @@ that repo's problem, not this one's.
     sends a burst as one. If the channel is closed anyway, `SupabaseNet` rejoins and
     announces again after a full window. Nothing that changes often belongs in
     presence.
+  - There are only thirty tents, so a player who isn't really there gives theirs back:
+    after five minutes with the tab out of sight, or fifteen without touching the game
+    (`isAway` in `net.ts`, checked on a timer in `Game.tsx` because a hidden tab draws
+    no frames). They take a tent again the moment they return. It also lets the
+    Realtime connection close.
   - A parked truck sends no poses, so a player who has just arrived asks for them
     (the `where` broadcast) and everyone answers once.
   - The first private-channel join on a new or just-restored project can be refused

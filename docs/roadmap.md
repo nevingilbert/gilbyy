@@ -15,8 +15,8 @@ subdomains." Update the **You are here** marker as you progress.
 > leaderboard (`decisions/0008`).
 > It is all on `main` and live at gilbyy.com since 2026-10-07.
 > **Next:** play it signed in on the live site. Still open:
-> an idle timeout so a forgotten tab gives up its tent, and the frame rate on a real
-> phone and laptop. Sign-in is Google only (the email link was removed).
+> the frame rate on a real phone and laptop. Sign-in is Google only (the email link was
+> removed), and an idle tab now gives its tent back.
 >
 > Phases A and B are complete: levels retired and auth removed (2026-08-28), the
 > Supabase project deleted, and all six hostnames live on gilbyy.com with Google

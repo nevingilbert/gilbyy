@@ -75,6 +75,12 @@ asked for each explicitly, so this records the change instead of working around 
   service of our own would be a new dependency. See `architecture.md`, *Free-tier
   limits*.
 
+- **2026-10-07: an idle player gives the tent back.** After five minutes with the tab
+  hidden, or fifteen without input, the client leaves the valley and rejoins when the
+  player returns. Like the cap itself this is a courtesy enforced in the client.
+- **2026-10-07: names are 2 to 20 characters** (they were 3 to 20), and a signed-in
+  player sees a small dot and their name in the top right corner.
+
 ## Consequences
 
 - New runtime dependency: `@supabase/supabase-js`. three.js is still the only rendering
