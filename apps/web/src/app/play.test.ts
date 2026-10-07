@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { currentGoal } from "./goals";
 import { COUNTDOWN, crossed, startRun, tick } from "./mission-run";
 import type { Mission } from "./missions";
-import { MAX_PLAYERS, PoseGate, chatTopic, settle, type Peer, type Pose } from "./net";
+import { MAX_PLAYERS, PoseGate, PresenceBudget, chatTopic, settle, type Peer, type Pose } from "./net";
 import { STOCK_LOADOUT } from "./shop";
 import { LocalStore } from "./store";
 
@@ -60,6 +60,41 @@ describe("pose sending", () => {
 
   it("names a chat channel the same from either side", () => {
     expect(chatTopic("b", "a")).toBe(chatTopic("a", "b"));
+  });
+});
+
+describe("presence updates", () => {
+  // Realtime closes the channel on a sixth update inside thirty seconds.
+  const SERVER_LIMIT = 5;
+
+  it("never sends more than the server allows in any thirty seconds", () => {
+    const budget = new PresenceBudget();
+    const sent: number[] = [];
+    // A player flicking through paints: something to announce twice a second for two minutes.
+    for (let now = 0; now < 120; now += 0.5) {
+      if (budget.wait(now) > 0) continue;
+      budget.spent(now);
+      sent.push(now);
+    }
+    for (const t of sent) expect(sent.filter((s) => s >= t && s < t + 30).length).toBeLessThanOrEqual(SERVER_LIMIT - 1);
+    expect(sent.length).toBeGreaterThan(8);
+  });
+
+  it("says how long to hold the next one", () => {
+    const budget = new PresenceBudget();
+    for (const now of [0, 1, 2, 3]) {
+      expect(budget.wait(now)).toBe(0);
+      budget.spent(now);
+    }
+    expect(budget.wait(10)).toBe(20);
+    expect(budget.wait(30)).toBe(0);
+  });
+
+  it("waits a whole window after the server closes the channel", () => {
+    const budget = new PresenceBudget();
+    budget.drain(100);
+    expect(budget.wait(101)).toBe(29);
+    expect(budget.wait(130)).toBe(0);
   });
 });
 

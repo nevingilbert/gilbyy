@@ -120,6 +120,36 @@ export class PoseGate {
   }
 }
 
+/** Realtime's limit is five presence updates in thirty seconds; one is kept spare. */
+const PRESENCE_LIMIT = 4;
+const PRESENCE_WINDOW = 30;
+/** How long a change waits to be announced, so a burst (trying paints) goes out as one. */
+const ANNOUNCE_PAUSE = 1.5;
+
+/**
+ * When the next presence update may go out. Realtime closes the channel of a client that
+ * announces itself too often, and presence is how the others know your tent, name and
+ * rig, so those announcements are rationed. Times are in seconds.
+ */
+export class PresenceBudget {
+  private sent: number[] = [];
+
+  /** Seconds until the next announcement fits; 0 if it can go now. */
+  wait(now: number) {
+    this.sent = this.sent.filter((t) => now - t < PRESENCE_WINDOW);
+    return this.sent.length < PRESENCE_LIMIT ? 0 : this.sent[0] + PRESENCE_WINDOW - now;
+  }
+
+  spent(now: number) {
+    this.sent.push(now);
+  }
+
+  /** The server just closed the channel on us: assume there is nothing left to spend. */
+  drain(now: number) {
+    this.sent = Array.from({ length: PRESENCE_LIMIT }, () => now);
+  }
+}
+
 const round = (n: number, k = 100) => Math.round(n * k) / k;
 const packPose = (p: Pose) => [round(p.x), round(p.y), round(p.z), round(p.heading, 1000), round(p.pitch, 1000), round(p.roll, 1000), round(p.speed), round(p.steer, 1000)];
 const unpackPose = (a: number[]): Pose => ({ x: a[0], y: a[1], z: a[2], heading: a[3], pitch: a[4], roll: a[5], speed: a[6], steer: a[7] });
@@ -128,6 +158,7 @@ const unpackPose = (a: number[]): Pose => ({ x: a[0], y: a[1], z: a[2], heading:
 export const chatTopic = (a: string, b: string) => (a < b ? `chat:${a}:${b}` : `chat:${b}:${a}`);
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const seconds = () => Date.now() / 1000;
 /** How many times to try joining the valley before driving alone. */
 const OPEN_TRIES = 3;
 
@@ -135,6 +166,8 @@ const OPEN_TRIES = 3;
 abstract class Base implements Net {
   protected me: Peer | null = null;
   protected others = new Map<string, Peer>();
+  protected budget = new PresenceBudget();
+  private announcing: ReturnType<typeof setTimeout> | null = null;
   constructor(protected on: NetHandlers) {}
 
   protected abstract present(): Peer[];
@@ -156,10 +189,11 @@ abstract class Base implements Net {
       return { full: true };
     }
     let me: Peer = { ...info, tent: pickTent(others), joined: Date.now() };
-    // Claim, look again, and move if someone earlier got there first.
-    for (let tries = 0; tries < 4; tries++) {
+    // Claim, look again, and move if someone earlier got there first. Each claim is a
+    // presence update, so this stays inside the budget.
+    for (let tries = 0; tries < PRESENCE_LIMIT - 1; tries++) {
       this.me = me;
-      await this.announce(me);
+      await this.tell(me);
       await wait(700);
       const result = settle([...this.present().filter((p) => p.id !== me.id), me], me);
       if ("full" in result) {
@@ -175,7 +209,27 @@ abstract class Base implements Net {
   update(patch: Partial<Pick<Peer, "name" | "vehicle" | "loadout">>) {
     if (!this.me) return;
     this.me = { ...this.me, ...patch };
-    void this.announce(this.me);
+    this.announceSoon();
+  }
+
+  /** Announces how I look now: after a pause so changes go out together, and later still if the budget is spent. */
+  protected announceSoon() {
+    if (this.announcing !== null) return;
+    const delay = Math.max(ANNOUNCE_PAUSE, this.budget.wait(seconds()));
+    this.announcing = setTimeout(() => {
+      this.announcing = null;
+      if (this.me) void this.tell(this.me);
+    }, delay * 1000);
+  }
+
+  protected hush() {
+    if (this.announcing !== null) clearTimeout(this.announcing);
+    this.announcing = null;
+  }
+
+  private async tell(me: Peer) {
+    this.budget.spent(seconds());
+    await this.announce(me);
   }
 
   ask(to: string) {
@@ -211,6 +265,9 @@ const isPeer = (p: unknown): p is Peer => {
 export class SupabaseNet extends Base {
   private world: RealtimeChannel | null = null;
   private chats = new Map<string, RealtimeChannel>();
+  /** Set by `leave()`, so a join or a return still in flight knows to stop. */
+  private left = false;
+  private reopening = false;
 
   constructor(private sb: SupabaseClient, private myId: string, on: NetHandlers) {
     super(on);
@@ -223,16 +280,18 @@ export class SupabaseNet extends Base {
   }
 
   protected async open() {
+    this.left = false;
     await this.sb.realtime.setAuth();
     // The first join after the project has sat idle can be refused while Realtime sets
     // itself up (seen as "MissingPartition" on a brand-new project), so ask a few times.
     let error: string | null = null;
     for (let attempt = 0; attempt < OPEN_TRIES; attempt++) {
       if (attempt) await wait(1500 * attempt);
+      if (this.left) break;
       error = await this.subscribe();
       if (!error) return null;
     }
-    return error;
+    return error ?? "Left the valley.";
   }
 
   /** One attempt at joining the valley's channel. Leaves no channel behind if it fails. */
@@ -246,25 +305,58 @@ export class SupabaseNet extends Base {
       .on("broadcast", { event: "ask" }, ({ payload }) => this.heard("ask", payload))
       .on("broadcast", { event: "friended" }, ({ payload }) => this.heard("friended", payload));
     this.world = channel;
+    let joined = false;
     const error = await new Promise<string | null>((resolve) => {
+      // This keeps being called for as long as the channel lives, not only for the first join.
       channel.subscribe((status, err) => {
-        if (status === "SUBSCRIBED") resolve(null);
-        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") resolve(err?.message ?? "Couldn't reach the valley.");
+        if (status === "SUBSCRIBED") {
+          // Back after a dropped connection: the server has forgotten who we are.
+          if (joined) this.announceSoon();
+          joined = true;
+          resolve(null);
+        } else if (status === "CLOSED" && joined) {
+          if (this.world === channel) void this.reopen();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          resolve(err?.message ?? "Couldn't reach the valley.");
+        }
       });
     });
     if (error) {
-      this.world = null;
+      if (this.world === channel) this.world = null;
       await this.sb.removeChannel(channel);
     }
     return error;
   }
 
+  /**
+   * The server closed the valley's channel on us, which it does to a client that sends
+   * presence updates too often. Nothing rejoins a closed channel by itself, so come back,
+   * and hold the next announcement for a whole window.
+   */
+  private async reopen() {
+    if (this.reopening) return;
+    this.reopening = true;
+    this.world = null;
+    this.budget.drain(seconds());
+    for (let pause = 2000; !this.left; pause = Math.min(pause * 2, 60000)) {
+      await wait(pause);
+      if (this.left) break;
+      const error = await this.open();
+      if (this.left) this.leave();
+      else if (!error) this.announceSoon();
+      if (this.left || !error) break;
+    }
+    this.reopening = false;
+  }
+
   protected async announce(me: Peer) {
-    await this.world?.track(me);
+    if (this.world?.state === "joined") await this.world.track(me);
   }
 
   protected emit(event: string, payload: Record<string, unknown>) {
-    void this.world?.send({ type: "broadcast", event, payload });
+    // Only over the socket. While the channel is away, send() would quietly turn every
+    // pose into a REST call.
+    if (this.world?.state === "joined") void this.world.send({ type: "broadcast", event, payload });
   }
 
   sendPose(pose: Pose) {
@@ -292,16 +384,23 @@ export class SupabaseNet extends Base {
   }
 
   say(to: string[], text: string) {
+    const payload = { from: this.myId, text: text.slice(0, MAX_CHAT) };
     for (const friend of to) {
-      void this.chats.get(chatTopic(this.myId, friend))?.send({ type: "broadcast", event: "say", payload: { from: this.myId, text: text.slice(0, MAX_CHAT) } });
+      const ch = this.chats.get(chatTopic(this.myId, friend));
+      // A line said while the channel is still joining goes by REST instead of being lost.
+      if (ch?.state === "joined") void ch.send({ type: "broadcast", event: "say", payload });
+      else void ch?.httpSend("say", payload).catch(() => {});
     }
   }
 
   leave() {
+    this.left = true;
     this.me = null;
-    if (this.world) void this.sb.removeChannel(this.world);
-    for (const ch of this.chats.values()) void this.sb.removeChannel(ch);
+    this.hush();
+    const world = this.world;
     this.world = null;
+    if (world) void this.sb.removeChannel(world);
+    for (const ch of this.chats.values()) void this.sb.removeChannel(ch);
     this.chats.clear();
   }
 }
@@ -388,6 +487,7 @@ export class LocalNet extends Base {
   leave() {
     if (this.me) this.post("gone", { id: this.myId });
     this.me = null;
+    this.hush();
     window.clearInterval(this.beat);
     this.bus?.close();
     this.bus = null;

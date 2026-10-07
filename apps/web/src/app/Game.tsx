@@ -241,12 +241,13 @@ export function Game() {
       car.groundY = world.height(x, z);
     };
 
-    const fitRig = (v: VehicleId, l: Loadout) => {
+    /** `tell` is false for a look in the picker, which isn't a choice the others need to hear about. */
+    const fitRig = (v: VehicleId, l: Loadout, tell = true) => {
       rig = v;
       loadout = l;
       spec = specFor(v, l);
       view.setRig(v, l);
-      net?.update({ vehicle: v, loadout: l });
+      if (tell) net?.update({ vehicle: v, loadout: l });
     };
 
     // ——— Progress ———
@@ -399,7 +400,7 @@ export function Game() {
     // ——— What the UI can ask for ———
 
     actions.current.look = (v) => {
-      if (modeRef.current === "pick") fitRig(v, loadout);
+      if (modeRef.current === "pick") fitRig(v, loadout, false);
     };
     actions.current.pick = (v) => {
       void store.equip(v, loadout).then((err) => {
