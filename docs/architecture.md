@@ -48,15 +48,41 @@ that with levels in their own repos, "two places" now means two directories insi
 *this* repo, which is a high bar. A shared UI kit across levels would have to be a
 published package, and that is not worth it at this scale.
 
-The game itself is three files under `apps/web/src/app/`:
+The game lives under `apps/web/src/app/` (3D since 2026-10-06, see
+`decisions/0005-go-3d-with-threejs.md` and `0006-garages-and-quiet-progression.md`).
 
-- `world.ts` — world size, road segments, and a deterministic generator for houses,
-  trees and ponds. Pure data; no rendering.
-- `physics.ts` — a pure `step(car, input, dt)`. Unit-tested, because
-  `requestAnimationFrame` is throttled to nothing in a background tab and the game
-  therefore cannot be verified by screenshot alone.
-- `Game.tsx` — paints the static world to an offscreen canvas once, then each frame
-  blits the camera rectangle, draws the car, and draws the HUD.
+Pure modules, no three.js, all unit-tested:
+
+- `terrain.ts`: the valley as fields on a 400×400 grid over 4 km (heights, water surface
+  height, forest, distance to the railway, rivers, roads and garage yards). It lays the
+  railway loop with graded earthworks, runs two rivers downhill into the big lake, finds
+  bridges and level crossings, floods the grid from the spawn at stock and snorkel
+  wading depths to find the snorkel-only ground, and places six garage sites.
+  `sampleGrid()` interpolates any field with the same triangulation as the mesh.
+- `world.ts`: trees, rocks and bushes scattered over that, a bucketed obstacle lookup
+  (each obstacle has a height, so tyres can decide what to climb), and the `Ground`
+  interface the physics reads.
+- `physics.ts`: `step(car, input, dt, ground, spec)`. Springs for height, pitch and roll
+  chasing the four wheels; rocks under the tyres' clearance are bumps under the wheels.
+  `CarSpec` (wade depth, grip, lift, clearance) comes from the fitted upgrades.
+- `track.ts`: train positions and crossing state as pure functions of time.
+- `daylight.ts`: hour of day from elapsed time, and the sky at each hour from keyframes
+  in `palette.ts`.
+- `upgrades.ts`: the parts catalogue, mileage tiers, and `localStorage` progress.
+
+Rendering and UI:
+
+- `scene.ts` assembles the world and runs the chase camera; `terrain-mesh.ts` (chunked
+  terrain, lakes and rivers as one water mesh, grass near the car), `scenery.ts`
+  (instanced trees, bushes, rocks in culling tiles), `sky.ts`, `railway.ts`,
+  `car-model.ts`, `garages.ts`, `train-model.ts`, `crossing-model.ts`, `showroom.ts`.
+- `map.ts`: a parchment topo map drawn once at load, under a fog layer cleared as you
+  drive (in memory only, so it resets every visit).
+- `Game.tsx`: a fixed 120 Hz physics loop, the modes (driving, entering, garage,
+  leaving, map), the HUD. `GarageMenu.tsx`: the upgrade menu.
+
+three.js is the only runtime dependency beyond React (MIT, ~144 KB gzipped). There are
+no asset files: the whole world is generated at load (~0.5 s).
 
 The other apps (`friendlybets`, `wellness-planner`, `beeriokart-dashboard`) share the
 domain via subdomains and share nothing else. This repo does not reference them.

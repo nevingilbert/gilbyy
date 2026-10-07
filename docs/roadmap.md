@@ -3,19 +3,16 @@
 Path from where we are to "gilbyy.com live, with the apps hanging off it as
 subdomains." Update the **You are here** marker as you progress.
 
-> **You are here:** Levels retired and auth removed (2026-08-28). The `(bets)`,
-> `(karts)` and `(meals)` route groups, `lib/meals`, `docs/levels/`, the magic-link
-> login, the middleware and the Supabase client are all deleted. The app is now a
-> single static page at `/` that links out to the standalone apps. Design docs
-> rewritten to match — see `decisions/0003-levels-as-standalone-apps.md`.
+> **You are here:** Phase C, the game. 3D on three.js since 2026-10-06
+> (`decisions/0005`), and later that day a much bigger second pass (`decisions/0006`):
+> a 4 km valley with rivers, a railway and train, day and night, six garages with
+> mile-gated upgrades, and a map with fog of war.
+> **Next:** drive it on a real phone and laptop to check the frame rate (it got
+> heavier), then tune night lighting on real hardware.
 >
-> gilbyy.com bought at Cloudflare and all six hostnames attached to their Vercel
-> projects (Phase B). **Next:** add the six CNAME records at Cloudflare — all set to
-> "DNS only", never proxied — then keep improving the game (Phase C).
->
-> Phase A is complete: the Supabase project is deleted and the stale env vars are off
-> the Vercel project. Phase B is complete: all six hostnames are live on gilbyy.com and
-> Google sign-in works on all four apps.
+> Phases A and B are complete: levels retired and auth removed (2026-08-28), the
+> Supabase project deleted, and all six hostnames live on gilbyy.com with Google
+> sign-in working on all four apps.
 
 ## History (done)
 
@@ -138,31 +135,27 @@ No code changes are needed for any of this.
 **This is the product**, not a placeholder for one. See
 `decisions/0004-gilbyy-is-just-a-driving-game.md`.
 
-First pass done (2026-08-28): a 3200×2400 town on a road grid, deterministic houses,
-trees and ponds, a car with arcade handling, a following camera, a minimap and a speedo.
-Touch controls under `sm`. The static world is painted once to an offscreen canvas, so
-each frame is a blit plus the car.
+First pass (2026-08-28): a top-down 2D canvas town. Replaced on 2026-10-06 by a 3D
+rebuild on three.js after the 2D approach was judged unable to reach the Over the Hill
+look (see `decisions/0005-go-3d-with-threejs.md`).
 
-The visual target is a lightweight take on _Over the Hill_ — see `art-direction.md`,
-which is the standing brief for anything visual. A first palette pass (2026-08-28) moved
-off the initial saturated greens and primaries to muted earth tones and added a vignette.
-
-- `src/world.ts` — world data and the deterministic generator.
-- `src/palette.ts` — every colour, in one place. Tune here, not in render code.
-- `src/physics.ts` — pure `step()`, unit-tested in `physics.test.ts`.
-- `src/Game.tsx` — canvas, input, render loop, HUD.
+Now (2026-10-06, second pass): a 4 km valley with two lakes, two rivers that cut off the
+east side until you fit a snorkel, a railway loop (trestle bridges, four level crossings
+with barriers) with a train on it, day and night on a fifteen-minute clock, six garages
+in different styles with tiered upgrades (paint, tyres, lights, snorkel) unlocked by
+miles driven, and a map that starts greyed out and fills in as you drive. See
+`architecture.md` for the file-by-file layout.
 
 Not done, roughly in order of how much they'd add:
 
-- Collision with buildings and trees. Right now you drive through everything, which is
-  the single biggest thing making the world feel fake.
-- Atmosphere, which is where the Over the Hill feel actually lives: directional light
-  instead of flat fills, haze/depth falloff, softer and less geometric silhouettes, and
-  some ambient motion. `art-direction.md` lists the specific gaps.
-- Tyre marks, dust, an engine note.
-- More to look at — a coastline, hills, level crossings.
-- Something to do, as long as it stays calm — a delivery, a scenic route. No timers or
-  scores; those are ruled out by the art direction.
+- **Measure on real devices**, a phone especially. Levers if slow: grass radius, tree
+  count, pixel ratio, shadow map size, the number of spotlights.
+- Weather: rain, fog banks, a storm at night.
+- Dust, tyre tracks, an engine note.
+- Water that reads as water: shoreline foam, rivers that visibly flow.
+- Dirt trails between the garages.
+- Buildings that link to other gilbyy.com pages: floated by the owner, needs an ADR
+  superseding `0004` first.
 
 Note for whoever picks this up: `requestAnimationFrame` does not run while the tab is
 backgrounded, so the game looks frozen in a hidden preview pane and timed input does

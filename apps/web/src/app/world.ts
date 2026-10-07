@@ -1,81 +1,138 @@
-import { PALETTE } from "./palette";
+import { makeRandom } from "./noise";
+import {
+  buildTerrain, sampleGrid, START, WORLD, type Terrain,
+} from "./terrain";
 
-export const WORLD = { w: 3200, h: 2400 };
-export const START = { x: 600, y: 1250 };
+export {
+  CELL, HALF, ROW, START, WORLD, LAKES, STOCK_WADE, SNORKEL_WADE, gridX, gridZ, sampleGrid,
+  type Site, type SiteStyle, type Track, type River, type Terrain,
+} from "./terrain";
 
-export type Road = { x1: number; y1: number; x2: number; y2: number; width: number };
-export type Tree = { x: number; y: number; r: number };
-export type Building = { x: number; y: number; w: number; h: number; color: string };
-export type Pond = { x: number; y: number; rx: number; ry: number };
+/**
+ * The world: the valley from terrain.ts, plus everything scattered across it.
+ *
+ * Plain data and pure functions — no three.js — so physics and tests can use the same
+ * ground the renderer draws. Units are metres; y is up.
+ */
 
-/** A loose town grid. Roads are just line segments; the car may leave them freely. */
-export const ROADS: Road[] = [
-  { x1: 200, y1: 600, x2: 3000, y2: 600, width: 96 },
-  { x1: 200, y1: 1250, x2: 3000, y2: 1250, width: 110 },
-  { x1: 200, y1: 1900, x2: 3000, y2: 1900, width: 96 },
-  { x1: 600, y1: 300, x2: 600, y2: 2200, width: 96 },
-  { x1: 1600, y1: 300, x2: 1600, y2: 2200, width: 110 },
-  { x1: 2600, y1: 300, x2: 2600, y2: 2200, width: 96 },
-];
+/** Something the truck can hit. `h` is how far its top stands above the ground. */
+export type Obstacle = { x: number; z: number; r: number; h: number };
+export type TreeKind = "pine" | "broadleaf";
+export type Tree = { x: number; y: number; z: number; scale: number; rot: number; kind: TreeKind; tone: number };
+export type Bush = { x: number; y: number; z: number; scale: number; rot: number; tone: number };
+export type Rock = { x: number; y: number; z: number; sx: number; sy: number; sz: number; rot: number; tone: number };
 
+/** What the physics needs from the world, so tests can hand it a flat plane or a ramp. */
+export type Ground = {
+  height(x: number, z: number): number;
+  /** Height of the water surface here; the ground is wet wherever it is below this. */
+  waterAt(x: number, z: number): number;
+  obstaclesNear(x: number, z: number): readonly Obstacle[];
+  limit: number;
+};
 
-export function distToSegment(px: number, py: number, r: Road) {
-  const dx = r.x2 - r.x1;
-  const dy = r.y2 - r.y1;
-  const t = Math.max(0, Math.min(1, ((px - r.x1) * dx + (py - r.y1) * dy) / (dx * dx + dy * dy)));
-  return Math.hypot(px - (r.x1 + t * dx), py - (r.y1 + t * dy));
-}
+export type World = Ground & Terrain & {
+  trees: Tree[];
+  bushes: Bush[];
+  rocks: Rock[];
+  /** For things placed after the world is built, like buildings. */
+  addObstacles(list: readonly Obstacle[]): void;
+};
 
-const clearOfRoads = (x: number, y: number, pad: number) =>
-  ROADS.every((r) => distToSegment(x, y, r) > r.width / 2 + pad);
+/** Deterministic, so the valley looks the same on every load. */
+export function buildWorld(seed = 20261006): World {
+  const rand = makeRandom(seed + 20);
+  const terrain = buildTerrain(seed, rand);
+  const { heights, forest, trackDist, riverDist, roadDist, siteDist } = terrain;
+  const ground = (x: number, z: number) => sampleGrid(heights, x, z);
+  const waterAt = (x: number, z: number) => sampleGrid(terrain.water, x, z);
+  const field = (f: Float32Array, x: number, z: number) => sampleGrid(f, x, z);
+  const slope = (x: number, z: number) => {
+    const dx = ground(x + 2, z) - ground(x - 2, z);
+    const dz = ground(x, z + 2) - ground(x, z - 2);
+    return Math.hypot(dx, dz) / 4;
+  };
+  /** Clear of the railway, rivers, roads and yards, by at least these distances. */
+  const clear = (x: number, z: number, track: number, river: number, road: number, site: number) =>
+    field(trackDist, x, z) > track && field(riverDist, x, z) > river && field(roadDist, x, z) > road && field(siteDist, x, z) > site;
+  const nearStart = (x: number, z: number, r: number) => Math.hypot(x - START.x, z - START.z) < r;
+  const half = WORLD.size / 2;
 
-/** Deterministic, so the town looks the same on every load. */
-export function buildWorld() {
-  let seed = 20260828;
-  const rand = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
-  const between = (lo: number, hi: number) => lo + rand() * (hi - lo);
-
-  const ponds: Pond[] = [];
-  while (ponds.length < 3) {
-    const x = between(300, WORLD.w - 300);
-    const y = between(300, WORLD.h - 300);
-    const rx = between(110, 200);
-    const ry = between(80, 150);
-    if (clearOfRoads(x, y, Math.max(rx, ry) + 40)) ponds.push({ x, y, rx, ry });
-  }
-
-  const inPond = (x: number, y: number, pad: number) =>
-    ponds.some((p) => Math.hypot((x - p.x) / (p.rx + pad), (y - p.y) / (p.ry + pad)) < 1);
-
-  const buildings: Building[] = [];
-  for (let tries = 0; tries < 900 && buildings.length < 34; tries++) {
-    const w = between(90, 170);
-    const h = between(80, 150);
-    const x = between(200, WORLD.w - 200 - w);
-    const y = between(200, WORLD.h - 200 - h);
-    const cx = x + w / 2;
-    const cy = y + h / 2;
-    if (!clearOfRoads(cx, cy, Math.max(w, h) / 2 + 30)) continue;
-    if (inPond(cx, cy, 60)) continue;
-    const overlaps = buildings.some(
-      (b) => x < b.x + b.w + 50 && x + w + 50 > b.x && y < b.y + b.h + 50 && y + h + 50 > b.y
-    );
-    if (overlaps) continue;
-    buildings.push({ x, y, w, h, color: PALETTE.houses[Math.floor(rand() * PALETTE.houses.length)] });
-  }
-
+  // Trees on a jittered grid, thinned by forest density, kept off water, cliffs and clearings.
   const trees: Tree[] = [];
-  for (let tries = 0; tries < 3000 && trees.length < 220; tries++) {
-    const x = between(60, WORLD.w - 60);
-    const y = between(60, WORLD.h - 60);
-    if (!clearOfRoads(x, y, 30)) continue;
-    if (inPond(x, y, 30)) continue;
-    const nearHouse = buildings.some(
-      (b) => x > b.x - 45 && x < b.x + b.w + 45 && y > b.y - 45 && y < b.y + b.h + 45
-    );
-    if (nearHouse) continue;
-    trees.push({ x, y, r: between(13, 26) });
+  const step = 9;
+  for (let z = -half + step; z < half - step; z += step) {
+    for (let x = -half + step; x < half - step; x += step) {
+      const tx = x + (rand() - 0.5) * step;
+      const tz = z + (rand() - 0.5) * step;
+      const chance = field(forest, tx, tz) * 0.7 + 0.012;
+      if (rand() > chance) continue;
+      const y = ground(tx, tz);
+      if (y < waterAt(tx, tz) + 1.2 || y > 205) continue;
+      if (slope(tx, tz) > 0.75 || nearStart(tx, tz, 26)) continue;
+      if (!clear(tx, tz, 10, 32, 6, 30)) continue;
+      const kind = rand() < 0.14 ? "broadleaf" : "pine";
+      trees.push({ x: tx, y: y - 0.3, z: tz, scale: 0.75 + rand() * 0.6, rot: rand() * Math.PI * 2, kind, tone: rand() });
+    }
   }
 
-  return { ponds, buildings, trees };
+  // Boulders: a few everywhere, many more on steep and rocky ground.
+  const rocks: Rock[] = [];
+  for (let tries = 0; tries < 36000 && rocks.length < 4200; tries++) {
+    const x = (rand() - 0.5) * (WORLD.size - 40);
+    const z = (rand() - 0.5) * (WORLD.size - 40);
+    const y = ground(x, z);
+    if (y < waterAt(x, z) - 1.5) continue;
+    const s = slope(x, z);
+    if (rand() > 0.05 + Math.min(0.8, s * 0.9)) continue;
+    if (nearStart(x, z, 22) || !clear(x, z, 6, 16, 5, 26)) continue;
+    const size = 0.5 + Math.pow(rand(), 2.2) * 4.5;
+    rocks.push({
+      x, y: y - size * 0.25, z,
+      sx: size * (0.8 + rand() * 0.5), sy: size * (0.55 + rand() * 0.35), sz: size * (0.8 + rand() * 0.5),
+      rot: rand() * Math.PI * 2, tone: rand(),
+    });
+  }
+
+  // Bushes break up the open grass, thickening toward the forest edges. You drive through them.
+  const bushes: Bush[] = [];
+  for (let tries = 0; tries < 60000 && bushes.length < 6500; tries++) {
+    const x = (rand() - 0.5) * (WORLD.size - 60);
+    const z = (rand() - 0.5) * (WORLD.size - 60);
+    const y = ground(x, z);
+    if (y < waterAt(x, z) + 0.8 || y > 190 || slope(x, z) > 0.6) continue;
+    if (rand() > 0.12 + field(forest, x, z) * 0.6) continue;
+    if (nearStart(x, z, 12) || !clear(x, z, 7, 28, 5, 24)) continue;
+    bushes.push({ x, y: y - 0.25, z, scale: 0.6 + rand() * 0.9, rot: rand() * Math.PI * 2, tone: rand() });
+  }
+
+  // Bucketed so a lookup is a few cells.
+  const BUCKET = 16;
+  const buckets = new Map<number, Obstacle[]>();
+  const key = (bx: number, bz: number) => bx * 4096 + bz;
+  const add = (o: Obstacle) => {
+    const k = key(Math.floor(o.x / BUCKET), Math.floor(o.z / BUCKET));
+    (buckets.get(k) ?? buckets.set(k, []).get(k)!).push(o);
+  };
+  for (const t of trees) add({ x: t.x, z: t.z, r: (t.kind === "pine" ? 0.45 : 0.55) * t.scale, h: Infinity });
+  // A boulder's top is about its half-height above its centre, which sits partly buried.
+  for (const r of rocks) add({ x: r.x, z: r.z, r: Math.min(r.sx, r.sz) * 0.8, h: r.y + r.sy * 0.95 - ground(r.x, r.z) });
+
+  const obstaclesNear = (x: number, z: number) => {
+    const bx = Math.floor(x / BUCKET);
+    const bz = Math.floor(z / BUCKET);
+    const out: Obstacle[] = [];
+    for (let dz = -1; dz <= 1; dz++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const b = buckets.get(key(bx + dx, bz + dz));
+        if (b) out.push(...b);
+      }
+    return out;
+  };
+
+  return {
+    ...terrain, trees, bushes, rocks,
+    height: ground, waterAt, obstaclesNear, limit: WORLD.limit,
+    addObstacles: (list) => list.forEach(add),
+  };
 }
