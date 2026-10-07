@@ -70,12 +70,13 @@ Pure modules, no three.js, all unit-tested:
 
   `sampleGrid()` interpolates any field using the same triangulation as the mesh.
 - `missions.ts`: lays out the challenge courses on the real terrain at load (a forest
-  slalom, a ridge climb, a lake loop, an ice drift, and the convoy loop by the café).
+  slalom, a ridge climb, a lake loop, an ice drift, the convoy loop by the café and the
+  race loop by the camp; the last two come from one loop planner, `loopNear()`).
   `mission-run.ts`: the countdown, gates and finish of a run.
-- `convoy.ts`: a convoy of two to four friends, agreed among their clients over the
-  `world` channel: gathering at the arch, setting off, flag counts, and coming home
-  together. Every message is safe to hear twice and is repeated until answered
-  (`decisions/0009-convoys.md`).
+- `convoy.ts`: a convoy or race of two to four friends, agreed among their clients over
+  the `world` channel: gathering at the arch, setting off, flag counts, finish times,
+  places, and coming home. Every message is safe to hear twice and is repeated until
+  answered (`decisions/0009-convoys.md`, `0010-races.md`).
 - `world.ts`: trees, rocks and bushes scattered over all that, a bucketed obstacle
   lookup (each obstacle has a height, so tyres can decide what to climb), and the
   `Ground` interface the physics reads, including how slippery the ground is.
@@ -140,6 +141,7 @@ for sign-in (Google only), and Realtime for the shared valley. See
 - `20261007210000_convoy.sql` adds `missions.crew`, the convoy course, and
   `complete_convoy()`, which pays only when a friend is among the crew;
   `complete_mission()` now refuses courses that take a crew.
+- `20261007230000_race.sql` adds the race's row; `complete_convoy()` pays it.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
@@ -253,7 +255,7 @@ that repo's problem, not this one's.
     Realtime connection close.
   - A parked truck sends no poses, so a player who has just arrived asks for them
     (the `where` broadcast) and everyone answers once.
-  - Convoys (`convoy.ts`) are broadcasts too, received by everyone in the valley: while
+  - Convoys and races (`convoy.ts`) are broadcasts too, received by everyone in the valley: while
     gathering, a call every 3 s and a reply every 3 s from each joiner; while running,
     each driver's flag count on every flag and every 5 s. A two-minute convoy of two
     with four players in the valley is a few hundred messages, less than their poses.

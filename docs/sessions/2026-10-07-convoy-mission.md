@@ -70,11 +70,44 @@ course for two to four friends, on `feat/convoy-mission`.
   at 60 fps the test skipped WebGL draw calls except for screenshots; the script is not
   in the repo.
 
+## Added later the same session: a race
+
+The owner asked for a race too (`docs/decisions/0010-races.md`, amending 0009 and the
+"don't add pressure" line in `CLAUDE.md`).
+
+- **Course:** `race()` in `missions.ts`, a 2.35 km loop of 12 flags starting at
+  (-751, -326) heading north, about 175 m from `CAMP_GATE`. The convoy planner became
+  `loopNear(t, others, plan)` plus `loopCourse()`; both courses use it. A loop's line
+  now also has to stay 30 m from other courses (it was only its flags). The convoy course
+  didn't move. `Mission.race` marks it; the server doesn't need to know.
+- **Times and places:** a `pass` message carries `seconds` once through the finish;
+  `Convoys.place()` ranks by time once through, by flags before that; the `home` event
+  now has `times` (quickest first) and every event carries its `mission`.
+- **Payout:** every finisher gets the same (3 mi, then 1 mi), paid at their own finish
+  via `complete_convoy` (row in `20261007230000_race.sql`); winning pays nothing extra.
+  Results are a toast ("Race over: 1st you 1:32 · 2nd Ben 1:44"), stored nowhere.
+- **Game.tsx:** `crewCourses` replaces the single `convoyCourse`; prompts, toasts and
+  Esc messages say "race" or "convoy" (`noun()`); the top line shows your place in a
+  race; `raceOver` folds the results into the payout toast when you're last in.
+- **Checked:** 90 vitest tests (three new race tests, the course tests now cover both
+  courses), typecheck, lint, and the SQL tests with three race checks on local Postgres.
+  In the browser (two `?net=local` tabs) the race got as far as the arch prompt
+  ("Gather a race here … up to 3.0 mi for everyone who finishes"), gathering, and the
+  friend's "Ana is gathering a race" toast. Joining, the line-up, racing, the place
+  display, the finish toast and the results were **not seen in a browser**: the test
+  driver couldn't get a second truck through the boulders between the café and the race
+  arch. They share the convoy's code, which was seen end to end.
+
 ## Open questions
 
-- **The migration is not on the live project.** Apply it with `supabase db push` before
-  or with the merge. Until then a signed-in convoy finishes but its payout is refused,
+- **The migrations are not on the live project** (`20261007210000_convoy.sql` and
+  `20261007230000_race.sql`). Apply them with `supabase db push` before or with the
+  merge. Until then signed-in convoys and races finish but their payouts are refused,
   and a preview deploy (which uses the same project) would show that.
+- **A race hasn't been played to the finish in a browser** (see above).
+- **Race tuning is the owner's call:** equal pay for every finisher (vs a winner's
+  bonus), 3 mi, the course by the camp, four-truck line-ups that start the back row 9 m
+  behind.
 - **Not played over Supabase**, only over `?net=local`. Worth one real two-account run:
   gather, join, finish, and check both `mission_runs` rows.
 - Feel is the owner's call: 4 mi reward, 14 m flags, the loop's route, whether the
@@ -84,10 +117,11 @@ course for two to four friends, on `feat/convoy-mission`.
 
 ## Exact next step
 
-Ask the owner to try the convoy, then apply `supabase/migrations/20261007210000_convoy.sql`
-to the `gilbyy` project (`supabase db push`), run `supabase/tests/game.test.sql` against
-it as `supabase/tests/README.md` describes, and merge `feat/convoy-mission`. Then play
-one convoy signed in from two Google accounts and confirm both payouts persist.
+Ask the owner to try the convoy and the race, then apply both new migrations to the
+`gilbyy` project (`supabase db push`), run `supabase/tests/game.test.sql` against it as
+`supabase/tests/README.md` describes, and merge `feat/convoy-mission`. Then play one
+convoy and one race signed in from two Google accounts and confirm the payouts persist
+and the race's results line is right.
 
 ## Tokens advisory
 

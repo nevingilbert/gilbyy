@@ -10,7 +10,7 @@ rigs and parts for the miles you drive, optional missions, and a map you uncover
 go. With no sign-in it is single player and nothing is saved. Signed in, progress
 persists and everyone shares the valley: you spawn at a 30-tent campground, make friends
 by meeting at the café, chat with friends nearby (ADR 0007), and drive a convoy course
-together (ADR 0009). That is the entire product.
+together (ADR 0009) or race each other (ADR 0010). That is the entire product.
 
 It is not a hub, a menu, or a launcher, and it **must not link to any other app**. See
 `docs/vision.md` and `docs/decisions/0004-gilbyy-is-just-a-driving-game.md` — this has
@@ -42,7 +42,7 @@ apps, you are in the wrong repo.
       `missions.ts` and `mission-run.ts` (courses and runs), `goals.ts` (first-time
       guidance).
     - `convoy.ts`: how friends gather, set off and come home together on the convoy
-      course, agreed over broadcasts (ADR 0009).
+      course, or race, agreed over broadcasts (ADR 0009, ADR 0010).
     - `track.ts` (train and crossings), `daylight.ts` (time of day), `noise.ts`.
     - `places.ts`: the garages and the café as things to find, and how they're counted
       (ADR 0008).
@@ -112,7 +112,7 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't make sign-in required. Single player with no account must keep working, and say clearly that nothing is saved.
 - Don't reach for a game engine, a physics engine, react-three-fiber or a post-processing stack. three.js is the one rendering dependency (ADR 0005); the physics is ours and stays a pure, tested function. Anything more needs its own ADR.
 - Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
-- Don't add pressure. Miles are the one currency, missions are optional and never fail beyond giving up, and the leaderboard is you and your friends only (ADR 0007). The multiplayer mission is a convoy, not a race: friends finish together and nobody wins (ADR 0009). It also says how many garages and cafés each of you has found (ADR 0008); finding them pays nothing and must stay that way. The game is meant to be calm; see `docs/art-direction.md`.
+- Don't add pressure. Miles are the one currency, missions are optional and never fail beyond giving up, and the leaderboard is you and your friends only (ADR 0007). Friends can drive a convoy together (ADR 0009) or race (ADR 0010), but every finisher is paid the same, winning pays nothing extra, and race results are a line on screen that isn't stored or ranked anywhere. Keep it that way unless a new ADR says otherwise. It also says how many garages and cafés each of you has found (ADR 0008); finding them pays nothing and must stay that way. The game is meant to be calm; see `docs/art-direction.md`.
 - Don't spend the Realtime budget carelessly. Supabase's free plan counts every broadcast once per receiver; poses go through `PoseGate` in `net.ts` for that reason. Presence is stricter still: Realtime closes a client's channel after five presence updates in thirty seconds, so announcements go through `PresenceBudget`, and nothing that changes often goes in presence. See the free-tier notes in `docs/architecture.md`.
 - Don't add buildings that link to the other gilbyy.com apps without a new ADR superseding 0004. The owner has floated it for later; it is not built.
 - Don't judge frame rate from headless screenshots. Headless Chromium renders WebGL in software at ~3 fps; screenshots are fine for looks, nothing else.
@@ -141,7 +141,7 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - day and night;
 - a 30-tent campground spawn and a café;
 - eight rigs, and eight garages that sell rigs and parts for miles;
-- four missions, a convoy course for two to four friends (ADR 0009), and first-time guidance;
+- four missions, a convoy and a race for two to four friends (ADR 0009, 0010), and first-time guidance;
 - a map with fog of war, where the garages and café you've found stay marked and are counted (ADR 0008);
 - optional sign-in for saved progress, a shared valley, friends, chat and a leaderboard (ADR 0007).
 
