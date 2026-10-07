@@ -69,6 +69,30 @@ from two browsers, and fix what broke.
 - **`supabase/.temp` is no longer tracked** (it pointed at a deleted project), and
   `.claude/launch.json` starts `pnpm dev` for the preview pane.
 
+## Added after the first checkpoint (same day)
+
+- **Found places (ADR 0008).** The owner settled the open question: "barn" meant
+  garage, friends as dots are fine, and garages and cafés should always show once
+  found. Built: `places.ts` (keys `garage:<style>` and `cafe:camp`, `countFound`,
+  `foundLine`), `Store.discover()`, `createMap(world, onFound)` with `setFound()`,
+  the count under the full map and under each leaderboard name, and migration
+  `20261007120000_found_places.sql` (`places`, `profiles.discovered`, `discover()`,
+  `leaderboard()` now returns `garages` and `cafes`). The column is `discovered`
+  because `found` is a special variable inside a database function.
+- **The café is no longer on the map until found.**
+- **Frame time-steps can't be negative** (`Game.tsx`, `frame`). The first frame's
+  timestamp can precede the moment the effect stored, and the opening's fade, started
+  at zero, went below zero on that frame and never ran: a black screen. This was live
+  in the first push of the opening and is fixed.
+- **`game.test.sql` counts only its own three accounts** in its first check, so it
+  still runs against the project now that it has real players.
+- **The stale `SUPABASE_SERVICE_ROLE_KEY` was removed** from Vercel `gilbyy-web` with
+  `vercel env rm`, at the owner's request.
+- Seen working in the browser: the opening (over the camp, then down to the truck)
+  signed out, and the single-player map ("1/8 garages · 0/1 café found", café hidden
+  until found). **Not seen:** the signed-in path of `discover()` from a browser (the
+  pane had been signed out); the SQL checks for it pass on the live project.
+
 ## Played and confirmed (two browsers, two Google accounts)
 
 Name prompt and tent; each sees the other ("2 here", name tags); F at the café from
@@ -95,11 +119,9 @@ rejoined in 2 s and re-announced 30 s later.
 
 ## Open questions
 
-- **The final opening (hover, then glide) has not been looked at.** The browser pane
-  was hidden when it was finished, and a hidden page draws no frames. An earlier
-  glide-only version was seen working. The owner should load http://localhost:3000 and
-  judge it; the numbers to tune are `GLIDE_BACK`, `GLIDE_UP`, `HOVER_DRIFT` and
-  `GLIDE_TIME` in `scene.ts`.
+- **The opening's feel is the owner's to judge.** It has been seen running signed out
+  (see above), not signed in. The numbers to tune are `GLIDE_BACK`, `GLIDE_UP`,
+  `HOVER_DRIFT` and `GLIDE_TIME` in `scene.ts`.
 - **The `where` fix is only half observed:** a newcomer was seen sending it. The reply
   was not watched arriving in a second client.
 - **`feat/multiplayer` is not merged**, so gilbyy.com is still single player. The owner
@@ -108,8 +130,6 @@ rejoined in 2 s and re-announced 30 s later.
 - **Magic links only reach members of the Supabase org** (built-in mailer). Google is
   the only sign-in that works for the public. A custom SMTP sender is a new service:
   ask first.
-- **Vercel `gilbyy-web` still has a `SUPABASE_SERVICE_ROLE_KEY`** from the old setup.
-  Nothing reads it. Recommended: delete it. Not touched.
 - **An inactive tab keeps its tent.** It stays connected and present; only closing the
   tab or losing the connection frees the tent. There is no idle timeout.
 - **One account in two tabs** sends poses from both under one id, so others see that
@@ -121,10 +141,10 @@ rejoined in 2 s and re-announced 30 s later.
 
 First ask the owner to look at the opening and say whether to merge `feat/multiplayer`.
 
-Then the owner's requests from the end of this session, which need a design answer
-before code: **what counts as a "barn" and a "café"?** The world has eight garages
-(`world.sites`, one of them barn-styled) and one café; the owner's "1/5 barns, 1/20
-cafés" were examples.
+The four requests below were built later the same day (see *Added after the first
+checkpoint*), so what is left of them is one check: sign in, drive to the café and a
+garage, reload, and confirm both are still on the map and counted on the leaderboard.
+The original notes are kept for the reasoning.
 
 1. *Friends on the map.* `map.ts` already draws every online player as a dot, friends
    in `PALETTE.map.friend`. Ask whether that is enough or friends should stand out

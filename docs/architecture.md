@@ -102,7 +102,9 @@ Rendering and UI:
   - other players' trucks: `remote.ts`, interpolated between poses;
   - the garage interior: `showroom.ts`.
 - `map.ts`: a parchment topo map drawn once at load, under a fog layer cleared as you
-  drive. The fog is kept in memory only, so it resets every visit.
+  drive. The fog is kept in memory only, so it resets every visit. The garages and
+  café you've found (`places.ts`) are drawn over it regardless, and signed in they are
+  saved (`decisions/0008-found-places.md`).
 - `Game.tsx`: a fixed 120 Hz physics loop, the modes (picking a rig, driving, garage,
   map) and the HUD. `GarageMenu.tsx` is the shop. `Panels.tsx` holds the starter
   picker, the single-player banner, sign-in, the name prompt and the leaderboard.
@@ -129,6 +131,8 @@ for sign-in (Google, or an email magic link), and Realtime for the shared valley
   project: it takes `handle_new_user()` and `is_chat_member()` out of the public API
   and indexes the friend tables from both sides. The advisor still warns that
   signed-in users can execute the nine game functions; that is the design.
+- `20261007120000_found_places.sql` adds the `places` list, `profiles.discovered`,
+  `discover()`, and the found counts on `leaderboard()`.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
@@ -138,7 +142,7 @@ for sign-in (Google, or an email magic link), and Realtime for the shared valley
 ### Online setup
 
 **Done on 2026-10-07.** The project is `gilbyy`, ref `apqlumghzqkklmpwizex`, in the
-Gilbyy org (free plan), region `us-west-1`. Both migrations are applied, and it was
+Gilbyy org (free plan), region `us-west-1`. All three migrations are applied, and it was
 played signed in from two browsers; see `sessions/2026-10-07-connect-supabase.md`.
 To do it again from nothing:
 
