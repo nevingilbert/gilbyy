@@ -771,7 +771,6 @@ export function Game() {
         target =
           !g || running ? null
           : g.target === "garage" ? nearest(view.garages.map((x) => x.approach))
-          : g.target === "mission" ? nearest(world.missions.map((m) => m.start))
           : g.target === "cafe" ? view.cafe
           : null;
         if (g?.id === "cafe" && Math.hypot(view.cafe.x - car.x, view.cafe.z - car.z) < view.cafe.r + CAFE_SLACK) goal("cafe");
