@@ -157,6 +157,10 @@ for sign-in (Google only), and Realtime for the shared valley. See
 Gilbyy org (free plan), region `us-west-1`. Every migration is applied (the convoy and
 race ones on 2026-10-08), and it was played signed in from two browsers; see
 `sessions/2026-10-07-connect-supabase.md`.
+The convoy and the race were merged to `main` and deployed on 2026-10-08, after the
+database tests passed against the live project (`supabase/tests/README.md`). Neither
+has been played from two accounts over Supabase yet; see
+`sessions/2026-10-08-convoy-race-deploy.md`.
 To do it again from nothing:
 
 1. Create a project on the free plan: `supabase projects create gilbyy --org-id <org>
