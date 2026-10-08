@@ -1,6 +1,7 @@
 import { planMissions, type Mission } from "./missions";
 import { makeRandom } from "./noise";
 import { buildTerrain, sampleGrid, WORLD, type Terrain } from "./terrain";
+import { bridgeObstacles } from "./track";
 
 export {
   CELL, HALF, ROW, START, WORLD, LAKES, FROZEN, STOCK_WADE, SNORKEL_WADE, CAMP, CAMP_CENTRE, CAMP_GATE, CAFE,
@@ -125,6 +126,8 @@ export function buildWorld(seed = 20261006): World {
   for (const t of trees) add({ x: t.x, z: t.z, r: (t.kind === "pine" ? 0.45 : 0.55) * t.scale, h: Infinity });
   // A boulder's top is about its half-height above its centre, which sits partly buried.
   for (const r of rocks) add({ x: r.x, z: r.z, r: Math.min(r.sx, r.sz) * 0.8, h: r.y + r.sy * 0.95 - ground(r.x, r.z) });
+  // The bridges' guards, abutments and legs: you can't drive onto a bridge, or in under its ends.
+  for (const o of bridgeObstacles(terrain.track, ground)) add(o);
 
   const obstaclesNear = (x: number, z: number) => {
     const bx = Math.floor(x / BUCKET);

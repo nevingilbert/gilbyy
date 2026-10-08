@@ -1,14 +1,19 @@
 import * as THREE from "three";
 import { buildCrossing } from "./crossing-model";
+import { Kit } from "./garages";
 import { PALETTE } from "./palette";
 import { tiled } from "./scenery";
-import { crossingClosed, trackPoint, trainCars, type TrainCar } from "./track";
+import {
+  ABUTMENT_HALF, DECK_UNDERSIDE, GUARD_LENGTH, POST_SET, POST_SIDE,
+  bridgeEnds, crossingClosed, trackFrame, trackPoint, trainCars, trestleLegs, type BridgeEnd, type TrainCar,
+} from "./track";
 import { LOCO_LAMP, buildTrainCar } from "./train-model";
 import type { Obstacle, Track, World } from "./world";
 
 /**
- * Everything on the railway: rails, sleepers, ballast, timber trestles where it crosses
- * the rivers, the level crossings with their dirt roads, and the train itself.
+ * Everything on the railway: rails, sleepers, ballast, timber trestles on concrete
+ * abutments where it crosses the rivers, the level crossings with their dirt roads, and
+ * the train itself.
  */
 const GAUGE = 1.5;
 
@@ -28,21 +33,26 @@ function frames(track: Track): Frame[] {
   });
 }
 
-/** A box-section ribbon (top and both sides) following the loop, offset sideways. */
+/**
+ * A box-section ribbon following the loop, offset sideways, over the segments `keep` picks.
+ * Closed top to bottom, so it casts a full shadow (the shadow pass draws back faces) and
+ * the deck is solid seen from under a bridge.
+ */
 function ribbon(fr: Frame[], offset: number, width: number, top: number, bottom: number, keep: (i: number) => boolean) {
   const pos: number[] = [];
   const n = fr.length;
   for (let i = 0; i < n; i++) {
-    if (!keep(i) || !keep((i + 1) % n)) continue;
+    if (!keep(i)) continue;
     const a = fr[i];
     const b = fr[(i + 1) % n];
     const corner = (f: Frame, side: number, y: number) => [f.x + f.lx * (offset + side * width / 2), f.y + y, f.z + f.lz * (offset + side * width / 2)];
     const [al, ar, bl, br] = [corner(a, 1, top), corner(a, -1, top), corner(b, 1, top), corner(b, -1, top)];
     const [alb, arb, blb, brb] = [corner(a, 1, bottom), corner(a, -1, bottom), corner(b, 1, bottom), corner(b, -1, bottom)];
-    // Top, then the left and right faces, each as two triangles.
-    pos.push(...al, ...bl, ...ar, ...ar, ...bl, ...br);
-    pos.push(...alb, ...blb, ...al, ...al, ...blb, ...bl);
-    pos.push(...ar, ...br, ...arb, ...arb, ...br, ...brb);
+    // Top, left, right and bottom, each as two triangles wound to face outward.
+    pos.push(...al, ...ar, ...bl, ...ar, ...br, ...bl);
+    pos.push(...alb, ...al, ...blb, ...al, ...bl, ...blb);
+    pos.push(...ar, ...arb, ...br, ...arb, ...brb, ...br);
+    pos.push(...alb, ...blb, ...arb, ...arb, ...blb, ...brb);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -70,7 +80,7 @@ function buildRoads(world: World) {
     // Overlap the ends a little so joined segments leave no gap at the corner.
     for (let d = -half; d < len + half; d += 3) {
       const [a, b, c, e] = [at(d, -1), at(d, 1), at(d + 3, -1), at(d + 3, 1)];
-      pos.push(...a, ...c, ...b, ...b, ...c, ...e);
+      pos.push(...a, ...b, ...c, ...b, ...e, ...c);
     }
   };
   for (const s of track.crossings) {
@@ -95,47 +105,89 @@ function buildRoads(world: World) {
   return mesh;
 }
 
+const lambert = (color: string) => new THREE.MeshLambertMaterial({ color, flatShading: true });
+
+/**
+ * Across the guard, where its pyramids stand: between the rails, low enough for the axles
+ * (0.38 m up) to clear; outside them, a little taller, under the loco's fuel tank (0.33 m).
+ */
+const TEETH_INSIDE = [-0.45, 0, 0.45];
+const TEETH_OUTSIDE = [1.05, 1.5, 1.95, 2.4];
+
+/**
+ * One end of a bridge. A concrete abutment under the deck from the bank out to where a
+ * truck fits beneath it, a post with a no-vehicles sign either side at its head, and a
+ * trespass guard across the approach: rows of low pyramids, between and beside the rails,
+ * that the train rolls over and a truck can't.
+ */
+function bridgeEnd(kit: Kit, world: World, end: BridgeEnd, spacing: number, mats: Record<"body" | "cap" | "guard" | "ring" | "face", THREE.Material>) {
+  const { track } = world;
+  // From under the last stretch of deck before the bank, out to the face, and down below the lowest ground under it.
+  const from = end.bank - end.dir * spacing;
+  const a = trackPoint(track, from);
+  const b = trackPoint(track, end.deep);
+  const len = Math.hypot(b.x - a.x, b.z - a.z);
+  let low = Infinity;
+  for (let k = 0; k <= 10; k++) {
+    const f = trackFrame(track, from + ((end.deep - from) * k) / 10);
+    for (const side of [-1, 0, 1]) low = Math.min(low, world.height(f.x + f.lx * side * ABUTMENT_HALF, f.z + f.lz * side * ABUTMENT_HALF));
+  }
+  const top = (a.y + b.y) / 2 - DECK_UNDERSIDE;
+  const tall = top - low + 1.5;
+  // Tilted to the grade, so the deck sits on it all the way along.
+  const pitch = -Math.atan2(b.y - a.y, len);
+  const slab = kit.at((a.x + b.x) / 2, top, (a.z + b.z) / 2, Math.atan2(b.x - a.x, b.z - a.z));
+  slab.box(mats.body, ABUTMENT_HALF * 2, tall, len, 0, -tall / 2, 0, pitch);
+  slab.box(mats.cap, ABUTMENT_HALF * 2 + 0.3, 0.4, len + 0.3, 0, -0.2, 0, pitch);
+
+  // The guard and the posts, facing the approach: local +z runs out onto the bridge.
+  const f = trackFrame(track, end.bank);
+  const head = kit.at(f.x, f.y, f.z, Math.atan2(f.fx * end.dir, f.fz * end.dir));
+  for (let z = -GUARD_LENGTH + 0.25; z < 0; z += 0.5) {
+    // Square pyramids standing on the deck (0.28 m below the rail tops), their bases square to the rails.
+    for (const x of TEETH_INSIDE) head.add(mats.guard, new THREE.ConeGeometry(0.25, 0.43, 4), x, -0.065, z, 0, Math.PI / 4);
+    for (const x of TEETH_OUTSIDE) for (const s of [1, -1]) head.add(mats.guard, new THREE.ConeGeometry(0.25, 0.53, 4), s * x, -0.015, z, 0, Math.PI / 4);
+  }
+  for (const s of [1, -1]) {
+    const post = head.at(s * POST_SIDE, 0, POST_SET);
+    post.box(mats.cap, 0.5, 2.1, 0.5, 0, 0.35, 0);
+    post.box(mats.body, 0.6, 0.16, 0.6, 0, 1.45, 0);
+    post.cyl(mats.ring, 0.3, 0.04, 0, 0.95, -0.27, Math.PI / 2, 0, 16);
+    post.cyl(mats.face, 0.22, 0.04, 0, 0.95, -0.29, Math.PI / 2, 0, 16);
+  }
+}
+
 export function buildRailway(world: World, lampMaterial: THREE.MeshLambertMaterial) {
   const { track } = world;
   const fr = frames(track);
   const spacing = track.length / fr.length;
   const group = new THREE.Group();
-  const bridged = (i: number) => onBridge(track, i * spacing);
+  const n = fr.length;
+  const bridged = (i: number) => onBridge(track, (i % n) * spacing);
 
-  const lambert = (color: string) => new THREE.MeshLambertMaterial({ color, flatShading: true });
   const railMat = lambert(PALETTE.rail);
   const ballastMat = lambert(PALETTE.ballast);
   const timberMat = lambert(PALETTE.timber);
 
-  // Ballast on the ground; a timber deck on the bridges.
-  const ballast = new THREE.Mesh(ribbon(fr, 0, 3.6, -0.28, -0.42, (i) => !bridged(i)), ballastMat);
+  // Ballast on the ground; a timber deck on the bridges, from the last stretch before each.
+  const ballast = new THREE.Mesh(ribbon(fr, 0, 3.6, -0.28, -0.42, (i) => !bridged(i) && !bridged(i + 1)), ballastMat);
   ballast.receiveShadow = true;
-  const deck = new THREE.Mesh(ribbon(fr, 0, 4.2, -0.28, -0.7, bridged), timberMat);
+  const deck = new THREE.Mesh(ribbon(fr, 0, 4.2, -0.28, -DECK_UNDERSIDE, (i) => bridged(i) || bridged(i + 1)), timberMat);
   deck.castShadow = deck.receiveShadow = true;
   group.add(ballast, deck);
   for (const side of [1, -1]) {
     const rail = new THREE.Mesh(ribbon(fr, (side * GAUGE) / 2, 0.12, 0, -0.16, () => true), railMat);
     rail.receiveShadow = true;
-    const guard = new THREE.Mesh(ribbon(fr, side * 2.05, 0.1, 0.9, 0.78, bridged), timberMat);
+    const guard = new THREE.Mesh(ribbon(fr, side * 2.05, 0.1, 0.9, 0.78, (i) => bridged(i) && bridged(i + 1)), timberMat);
     group.add(rail, guard);
   }
 
-  // Sleepers every metre, and trestle legs every ten down to the ground under a bridge.
+  // Sleepers every metre.
   const sleepers: { x: number; z: number; y: number; yaw: number }[] = [];
-  const legs: { x: number; z: number; y: number; yaw: number; h: number }[] = [];
   for (let s = 0; s < track.length; s += 1) {
     const p = trackPoint(track, s);
     const q = trackPoint(track, s + 1);
-    const yaw = Math.atan2(q.x - p.x, q.z - p.z);
-    sleepers.push({ x: p.x, z: p.z, y: p.y - 0.22, yaw });
-    if (onBridge(track, s) && Math.round(s) % 10 === 0) {
-      for (const side of [1, -1]) {
-        const lx = Math.cos(yaw) * side * 1.7;
-        const lz = -Math.sin(yaw) * side * 1.7;
-        const ground = world.height(p.x + lx, p.z + lz);
-        if (p.y - 0.7 - ground > 0.5) legs.push({ x: p.x + lx, z: p.z + lz, y: (p.y - 0.7 + ground) / 2 - 1, yaw, h: p.y - 0.7 - ground + 2 });
-      }
-    }
+    sleepers.push({ x: p.x, z: p.z, y: p.y - 0.22, yaw: Math.atan2(q.x - p.x, q.z - p.z) });
   }
   const sleeperColour = new THREE.Color(PALETTE.sleeper);
   const q = new THREE.Quaternion();
@@ -148,11 +200,20 @@ export function buildRailway(world: World, lampMaterial: THREE.MeshLambertMateri
     mm.compose(v.set(sl.x, sl.y, sl.z), q.setFromAxisAngle(up, sl.yaw), one);
     c.copy(sleeperColour);
   }));
+  // Trestle legs every ten metres between the abutments, set two metres into the ground.
+  const ends = bridgeEnds(track, world.height);
   const timberColour = new THREE.Color(PALETTE.timber);
-  group.add(tiled(legs, new THREE.BoxGeometry(0.35, 1, 0.35), tinted, (leg, mm, c) => {
-    mm.compose(v.set(leg.x, leg.y, leg.z), q.setFromAxisAngle(up, leg.yaw), new THREE.Vector3(1, leg.h, 1));
+  group.add(tiled(trestleLegs(track, world.height, ends), new THREE.BoxGeometry(0.35, 1, 0.35), tinted, (leg, mm, c) => {
+    mm.compose(v.set(leg.x, (leg.top + leg.ground) / 2 - 1, leg.z), q.setFromAxisAngle(up, leg.yaw), new THREE.Vector3(1, leg.top - leg.ground + 2, 1));
     c.copy(timberColour);
   }));
+  const abutments = new Kit();
+  const mats = {
+    body: lambert(PALETTE.concreteDark), cap: lambert(PALETTE.concrete), guard: lambert(PALETTE.rail),
+    ring: lambert(PALETTE.barrierRed), face: lambert(PALETTE.barrierWhite),
+  };
+  for (const end of ends) bridgeEnd(abutments, world, end, spacing, mats);
+  abutments.build(group);
 
   group.add(buildRoads(world));
 

@@ -44,7 +44,8 @@ apps, you are in the wrong repo.
       (those two steps as achievements, ADR 0009).
     - `convoy.ts`: how friends gather, set off and come home together on the convoy
       course, or race, agreed over broadcasts (ADR 0010, ADR 0011).
-    - `track.ts` (train and crossings), `daylight.ts` (time of day), `noise.ts`.
+    - `track.ts` (train, crossings, and the bridges' guards, abutments and legs), `daylight.ts`
+      (time of day), `noise.ts`.
     - `places.ts`: the garages and the café as things to find, and how they're counted
       (ADR 0008).
   - Online, also unit-tested:

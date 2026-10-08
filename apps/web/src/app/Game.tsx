@@ -1073,7 +1073,7 @@ export function Game() {
         }
       } else {
         if (m === "drive") {
-          moving = [...trainObstacles(view.trainCars()), ...view.remotes.obstacles()];
+          moving = [...trainObstacles(view.trainCars(), world.height), ...view.remotes.obstacles()];
           lastPose = { x: car.x, z: car.z };
           acc += dt;
           // Held at a start line until "go": the suspension settles, the truck doesn't roll.
