@@ -900,7 +900,7 @@ export function Game() {
         }
       } else {
         if (m === "drive") {
-          moving = [...trainObstacles(view.trainCars()), ...view.remotes.obstacles()];
+          moving = [...trainObstacles(view.trainCars(), world.height), ...view.remotes.obstacles()];
           lastPose = { x: car.x, z: car.z };
           acc += dt;
           // Held on the brakes at a start line until "go".

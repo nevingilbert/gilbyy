@@ -42,7 +42,8 @@ apps, you are in the wrong repo.
       `missions.ts` and `mission-run.ts` (courses and runs), `goals.ts` (first-time
       guidance: the compass mark leads to a garage, then the café), `achievements.ts`
       (those two steps as achievements, ADR 0009).
-    - `track.ts` (train and crossings), `daylight.ts` (time of day), `noise.ts`.
+    - `track.ts` (train, crossings, and the bridges' guards, abutments and legs), `daylight.ts`
+      (time of day), `noise.ts`.
     - `places.ts`: the garages and the café as things to find, and how they're counted
       (ADR 0008).
   - Online, also unit-tested:
