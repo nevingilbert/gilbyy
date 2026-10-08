@@ -135,8 +135,8 @@ export function LandmarkCard({ kind, onClose }: { kind: LandmarkKind; onClose: (
         <h2 className="mt-2 text-xl font-semibold tracking-tight">{title}</h2>
         <p className="mt-1 text-sm text-[rgba(255,246,232,0.6)]">{blurb}</p>
         <p className="mt-3 text-xs text-[rgba(255,246,232,0.45)]">Something else I made. It opens in a new tab, and the valley stays where it is.</p>
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <button className="text-xs text-[rgba(255,246,232,0.45)] hover:text-[rgba(255,246,232,0.8)]" onClick={onClose}>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <button className="min-h-11 pr-3 text-xs text-[rgba(255,246,232,0.45)] hover:text-[rgba(255,246,232,0.8)]" onClick={onClose}>
             Keep driving <span className="hidden sm:inline">· Esc</span>
           </button>
           <a
@@ -144,7 +144,7 @@ export function LandmarkCard({ kind, onClose }: { kind: LandmarkKind; onClose: (
             target="_blank"
             rel="noopener noreferrer"
             onClick={onClose}
-            className={`${button} bg-white/10 outline-none focus-visible:border-white/60`}
+            className={`${button} inline-flex min-h-11 items-center bg-white/10 outline-none focus-visible:border-white/60`}
           >
             Open {host} ↗
           </a>

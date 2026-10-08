@@ -110,7 +110,7 @@ function buildChurch(windows: THREE.Material, glow: THREE.Material): LandmarkMod
     if (i % 3 !== 1) k.cyl(stones[i % 2], 0.3, 0.16, x + Math.sin(lean) * -0.42, 0.82, z, Math.PI / 2, 0, 8);
   });
 
-  const colliders = ring(ring([], -W / 2, W / 2, -F, F), -T / 2, T / 2, F, front + 0.4);
+  const colliders = ring(ring([], -W / 2, W / 2, -F, F), -T / 2, T / 2, F, front + 1.5);
   for (const [x, z] of graves) colliders.push({ x, z, r: 0.35 });
   return { object: k.build(new THREE.Group()), colliders, stopZ: front + 8 };
 }
@@ -165,7 +165,7 @@ function buildSchool(windows: THREE.Material): LandmarkModel {
   for (const r of [0, 1]) sign.box(chalk, 0.5, 0.09, 0.04, 0, 0, 0.07, 0, 0, (r * Math.PI) / 2);
   for (const y of [0.12, -0.12]) sign.box(chalk, 0.45, 0.09, 0.04, 0.75, y, 0.07);
 
-  const colliders = ring([], -W / 2, W / 2, -F, F + 0.4);
+  const colliders = ring(ring([], -W / 2, W / 2, -F, F + 0.4), -1.2, 1.2, F + 0.4, F + 1.2);
   colliders.push({ x: fx, z: fz, r: 0.3 }, { x: bx - 1.3, z: bz, r: 0.3 }, { x: bx + 1.3, z: bz, r: 0.3 }, { x: bx, z: bz, r: 0.3 });
   return { object: k.build(new THREE.Group()), colliders, stopZ: F + 9 };
 }
