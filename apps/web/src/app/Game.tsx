@@ -865,7 +865,7 @@ export function Game() {
         let el = tags.get(t.id);
         if (!el) {
           el = document.createElement("div");
-          el.className = "absolute left-0 top-0 flex -translate-x-1/2 -translate-y-full flex-col items-center gap-1 whitespace-nowrap will-change-transform";
+          el.className = "absolute left-0 top-0 flex flex-col items-center gap-1 whitespace-nowrap will-change-transform";
           el.innerHTML = '<span data-say class="max-w-[14rem] whitespace-normal rounded-xl bg-black/45 px-2.5 py-1 text-center text-xs text-[rgba(255,246,232,0.95)] backdrop-blur"></span><span data-name class="text-[11px] font-semibold tracking-wide text-[rgba(255,246,232,0.85)] drop-shadow"></span>';
           layer.appendChild(el);
           tags.set(t.id, el);
@@ -886,6 +886,8 @@ export function Game() {
         el.style.opacity = String(1 - smooth(160, 260, at.far));
         // Kept clear of the screen's edges, so a bubble is never cut off.
         const x = Math.max(120, Math.min(layer.clientWidth - 120, at.x));
+        // Centred here and only here: a Tailwind `translate-*` class is the CSS `translate`
+        // property, which would shift the tag a second time on top of this transform.
         el.style.transform = `translate(${x}px, ${Math.max(40, at.y)}px) translate(-50%, -100%)`;
       }
       for (const [id, el] of tags) {

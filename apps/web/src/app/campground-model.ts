@@ -230,8 +230,12 @@ export function buildCampCentre(glow: THREE.Material): { object: THREE.Group; co
   return { object: k.build(object), colliders };
 }
 
-/** A log entrance arch with a blank wooden sign board, spanning a 7 m road along z. Origin at the road centre. */
-export function buildCampGate(): { object: THREE.Group; colliders: Circle[] } {
+/**
+ * A log entrance arch with a blank wooden sign board, spanning a 7 m road along z. Origin at the road centre.
+ * `ground(x)` is the ground's height at local x, relative to the origin: the posts, their stones and the wings stand
+ * on it, so the arch can sit across a slope with its beam level.
+ */
+export function buildCampGate(ground: (x: number) => number): { object: THREE.Group; colliders: Circle[] } {
   const object = new THREE.Group();
   const k = new Kit();
   const logs = [lambert(PALETTE.logWood), lambert(tone(PALETTE.logWood, 0.8))];
@@ -240,17 +244,20 @@ export function buildCampGate(): { object: THREE.Group; colliders: Circle[] } {
   const X = 4.3, TOP = 5.9;
   const colliders: Circle[] = [];
   for (const s of [1, -1]) {
-    k.cyl(logs[0], 0.3, TOP + 0.35, s * X, (TOP + 0.35) / 2, 0, 0, 0, 9);
+    // Each post runs from a little below its own footing up to the beam.
+    const foot = ground(s * X) - 0.2;
+    k.cyl(logs[0], 0.3, TOP + 0.35 - foot, s * X, (TOP + 0.35 + foot) / 2, 0, 0, 0, 9);
     // Knee brace from post to beam, well above the road.
     const [run, rise] = [1.3, 1.05];
     k.cyl(logs[1], 0.13, Math.hypot(run, rise), s * (X - run / 2), TOP - 0.25 - rise / 2, 0, 0, s * Math.atan2(run, rise), 7);
     for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2;
-      stone(k, stones[i % 2], 0.24 + (i % 3) * 0.05, s * X + Math.cos(a) * 0.45, Math.sin(a) * 0.45, a * 2);
+      const a = (i / 7) * Math.PI * 2, x = s * X + Math.cos(a) * 0.45;
+      stone(k.at(0, ground(x), 0), stones[i % 2], 0.24 + (i % 3) * 0.05, x, Math.sin(a) * 0.45, a * 2);
     }
-    // A split-rail wing running out from each post.
-    for (const y of [0.55, 1.05]) k.box(logs[1], 4.3, 0.14, 0.12, s * (X + 2.35), y, 0);
-    for (const d of [2.3, 4.4]) k.box(woodDark, 0.16, 1.3, 0.16, s * (X + d), 0.65, 0);
+    // A split-rail wing running out from each post, its rails following the ground.
+    const [near, far] = [s * (X + 0.2), s * (X + 4.5)];
+    for (const y of [0.55, 1.05]) k.strut(logs[1], [near, ground(near) + y, 0], [far, ground(far) + y, 0], 0.13);
+    for (const d of [2.3, 4.4]) k.box(woodDark, 0.16, 1.5, 0.16, s * (X + d), ground(s * (X + d)) + 0.55, 0);
     colliders.push({ x: s * X, z: 0, r: 0.55 });
     for (const d of [1.2, 2.3, 3.4, 4.4]) colliders.push({ x: s * (X + d), z: 0, r: 0.4 });
   }
