@@ -3,6 +3,7 @@ import { buildCampCentre, buildCampGate, buildTentSite, mergeByMaterial } from "
 import { buildCar, type CarModel } from "./car-model";
 import { buildCoffeeShop } from "./coffee-shop-model";
 import { hourAt, skyAt } from "./daylight";
+import { buildLandmark } from "./landmark-models";
 import { buildGarage, type Circle, type GarageModel } from "./garages";
 import { buildFinishArch, buildGate, buildStartArch, type GateState } from "./mission-models";
 import { PALETTE } from "./palette";
@@ -93,6 +94,19 @@ function placeCamp(world: World, windows: THREE.Material, glow: THREE.Material) 
   const at = place(cafe.object, cafe.colliders, CAFE.x, CAFE.z, CAFE.rot);
   world.addObstacles(colliders);
   return { group, cafe: { ...at(cafe.meet.x, cafe.meet.z), r: cafe.meet.r } };
+}
+
+/** The bank, the church, the schoolhouse and the casino, and where to stop in front of each (ADR 0012). */
+function placeLandmarks(world: World, windows: THREE.Material, glow: THREE.Material) {
+  const group = new THREE.Group();
+  const colliders: Obstacle[] = [];
+  const place = placer(world, group, colliders);
+  const doors = world.landmarks.map((l) => {
+    const model = buildLandmark(l.kind, windows, glow);
+    return { kind: l.kind, ...place(model.object, model.colliders, l.x, l.z, l.rot, l.y)(0, model.stopZ) };
+  });
+  world.addObstacles(colliders);
+  return { group, doors };
 }
 
 /**
@@ -189,10 +203,11 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
   const sites = placeGarages(world, windows);
   const camp = placeCamp(world, windows, embers);
   const courses = placeMissions(world, lamps);
+  const landmarks = placeLandmarks(world, windows, embers);
   scene.add(
     sky.object, buildTerrainMesh(world, surface), grass.object, water.object,
     buildTrees(world.trees, (x, z) => sampleGrid(world.snow, x, z)), buildBushes(world.bushes), buildRocks(world.rocks),
-    railway.object, sites.group, camp.group, courses.group,
+    railway.object, sites.group, camp.group, courses.group, landmarks.group,
   );
 
   let car: CarModel = buildCar(vehicle);
@@ -380,6 +395,7 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
     showRun: courses.show,
     garages: sites.garages,
     cafe: camp.cafe,
+    landmarks: landmarks.doors,
     remotes,
     trainCars: () => railway.cars(),
     hour: () => hour,

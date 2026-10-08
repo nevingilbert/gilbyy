@@ -11,8 +11,9 @@ This document captures the technical decisions and the constraints that drove th
   each level gets a subdomain.
 - **CI:** GitHub Actions (free tier).
 
-This repo builds **gilbyy.com**, which is a driving game and nothing else, with no
-links to any other app (see `decisions/0004-gilbyy-is-just-a-driving-game.md`). Since
+This repo builds **gilbyy.com**, which is a driving game and nothing else (see
+`decisions/0004-gilbyy-is-just-a-driving-game.md`). Its only links out are four
+easter-egg buildings (`decisions/0012-easter-egg-buildings.md`). Since
 2026-10-07 it can also sign you in, to save progress and share the valley with other
 players, on one free Supabase project (see
 `decisions/0007-accounts-multiplayer-and-a-shop.md`). With no session it's single
@@ -120,7 +121,9 @@ Runtime dependencies beyond React: three.js (MIT, ~144 KB gzipped) and
 at load (~1.5 s).
 
 The other apps (`friendlybets`, `wellness-planner`, `beeriokart-dashboard`) share the
-domain via subdomains and share nothing else. This repo does not reference them.
+domain via subdomains and share nothing else. This repo references other projects in
+one place: the four hostnames in `apps/web/src/app/landmarks.ts`, shown on the
+easter-egg cards (`decisions/0012-easter-egg-buildings.md`).
 
 ## Auth and the database
 
@@ -298,5 +301,6 @@ that repo's problem, not this one's.
 4. Add `<name>.gilbyy.com` in that project's Settings → Domains.
 5. Add a row to the hosting table above.
 
-Do **not** add it to the game. gilbyy.com is not a menu — see
-`decisions/0004-gilbyy-is-just-a-driving-game.md`.
+Do **not** add it to the game as a menu entry or a marked destination. gilbyy.com is
+not a menu — see `decisions/0004-gilbyy-is-just-a-driving-game.md`. A hidden building
+with a card is allowed, under the rules in `decisions/0012-easter-egg-buildings.md`.

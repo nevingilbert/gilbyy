@@ -45,6 +45,9 @@ unhurried exploration in a classic 4x4.
   failure beyond giving up. Their timer shows only while you're on one. Friends can
   drive a convoy that comes home together (ADR 0010) or race (ADR 0011); a race pays
   every finisher the same, and its result is one line on screen, kept nowhere.
+- Four buildings that aren't about driving (a bank, a church, a schoolhouse, a casino)
+  are easter eggs (ADR 0012). They keep to the palette and add nothing to the HUD but
+  the usual prompt at the door.
 - Driving together, as in the trailer's co-op shots: other players' trucks share the
   valley, name tags float over them, and chat appears as small speech bubbles.
 

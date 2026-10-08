@@ -6,10 +6,11 @@ import { CONVOY_MAX, Convoys, GATHER_REACH, lineUp, type ConvoyEvent } from "./c
 import { secondsUntil } from "./daylight";
 import { GarageMenu, fmtMiles } from "./GarageMenu";
 import { currentGoal } from "./goals";
+import { LANDMARKS, type LandmarkKind } from "./landmarks";
 import { createMap } from "./map";
 import { fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, type Net, type NetHandlers, type Peer } from "./net";
-import { Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
+import { LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
 import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
 import { countFound, foundLine } from "./places";
 import { createView, type Garage } from "./scene";
@@ -51,6 +52,8 @@ type Prompt =
   | { kind: "garage"; style: SiteStyle }
   | { kind: "mission"; mission: Mission }
   | { kind: "friend"; id: string; name: string; asked: boolean }
+  /** At the door of the bank, church, school or casino (ADR 0012). */
+  | { kind: "landmark"; id: LandmarkKind }
   /** At the convoy's arch, or gathering one: `lead` in bold, then `rest`. `act` if E does something. */
   | { kind: "convoy"; lead: string; rest: string; act: boolean }
   | null;
@@ -123,6 +126,7 @@ export function Game() {
   const [naming, setNaming] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [board, setBoard] = useState(false);
+  const [visiting, setVisiting] = useState<LandmarkKind | null>(null);
   const [run, setRun] = useState<RunHud>(null);
   const [count, setCount] = useState<number | null>(null);
   const [typing, setTyping] = useState(false);
@@ -132,8 +136,8 @@ export function Game() {
 
   useEffect(() => {
     typingRef.current = typing;
-    panelRef.current = naming || signingIn || board;
-  }, [typing, naming, signingIn, board]);
+    panelRef.current = naming || signingIn || board || visiting !== null;
+  }, [typing, naming, signingIn, board, visiting]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -221,6 +225,7 @@ export function Game() {
     let gauge = 0;
     let flushClock = 0;
     let nearGarage = -1;
+    let landmarkHere: LandmarkKind | null = null;
     let cut = { garage: -1, t: 0, from: { x: 0, z: 0, heading: 0 } };
     let toastTimer = 0;
     let running: Run | null = null;
@@ -590,6 +595,11 @@ export function Game() {
         shownPrompt = "";
         return;
       }
+      if (landmarkHere && !running && !convoys.state) {
+        inputRef.current = noInput();
+        setVisiting(landmarkHere);
+        return;
+      }
       if (friendHere) befriend(friendHere.id);
     };
 
@@ -946,6 +956,9 @@ export function Game() {
       convoyAct = null;
       const together = found < 0 && !m ? convoyPrompt() : null;
 
+      const still = !running && !convoys.state && found < 0 && !m && !together && Math.abs(car.speed) < 5;
+      landmarkHere = (still && view.landmarks.find((l) => Math.hypot(car.x - l.x, car.z - l.z) < 7)?.kind) || null;
+
       friendHere = null;
       const cafe = view.cafe;
       if (!running && found < 0 && !m && !together && net && Math.hypot(car.x - cafe.x, car.z - cafe.z) < cafe.r + CAFE_SLACK) {
@@ -963,12 +976,14 @@ export function Game() {
         found >= 0 ? { kind: "garage", style: view.garages[found].style }
         : m ? { kind: "mission", mission: m }
         : together ? together
+        : landmarkHere ? { kind: "landmark", id: landmarkHere }
         : friendHere ? { kind: "friend", id: friendHere.id, name: friendHere.name, asked: askedBy.has(friendHere.id) }
         : null;
       const key = !next ? ""
         : next.kind === "garage" ? `garage:${next.style}`
         : next.kind === "mission" ? `mission:${next.mission.id}`
         : next.kind === "convoy" ? `convoy:${next.lead}${next.rest}${next.act}`
+        : next.kind === "landmark" ? `landmark:${next.id}`
         : `friend:${next.id}${next.asked}`;
       if (key !== shownPrompt) {
         shownPrompt = key;
@@ -1396,6 +1411,7 @@ export function Game() {
               </>
             )}
             {prompt.kind === "friend" && (prompt.asked ? <>Accept {prompt.name}&apos;s friend request</> : <>Ask {prompt.name} to be friends</>)}
+            {prompt.kind === "landmark" && <>Look in at {LANDMARKS[prompt.id].place}</>}
             {prompt.kind === "convoy" && (
               <>
                 <b className="font-semibold">{prompt.lead}</b>
@@ -1431,6 +1447,7 @@ export function Game() {
       {mode === "pick" && !naming && <StarterPicker onLook={look} onPick={pick} />}
       {naming && <NamePanel onSave={(name) => actions.current.setName(name)} />}
       {signingIn && <SignInPanel onGoogle={signInWithGoogle} onClose={() => setSigningIn(false)} />}
+      {visiting && <LandmarkCard kind={visiting} onClose={() => setVisiting(null)} />}
       {board && (
         <Leaderboard
           online={online || presence === "local"}

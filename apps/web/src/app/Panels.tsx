@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { achievementsOf } from "./achievements";
 import { fmtMiles } from "./GarageMenu";
+import { LANDMARKS, landmarkUrl, type LandmarkKind } from "./landmarks";
 import { foundLine } from "./places";
 import type { Standing } from "./store";
 import { STARTERS, type VehicleId } from "./vehicles";
@@ -106,6 +107,48 @@ export function SignInPanel({ onGoogle, onClose }: { onGoogle: () => Promise<str
         <button className="mt-4 text-xs text-[rgba(255,246,232,0.45)] hover:text-[rgba(255,246,232,0.8)]" onClick={onClose}>
           Keep driving solo
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What's behind the door of the bank, the church, the school or the casino: one of the
+ * owner's other projects, and a link to it that opens in a new tab. The only way out of
+ * the game there is (ADR 0012).
+ */
+export function LandmarkCard({ kind, onClose }: { kind: LandmarkKind; onClose: () => void }) {
+  const { place, title, blurb, host } = LANDMARKS[kind];
+  // The game ignores keys while a panel is up, so this one closes itself.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.repeat && e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm" onClick={onClose}>
+      <div role="dialog" aria-label={title} className={`${panel} w-full max-w-sm`} onClick={(e) => e.stopPropagation()}>
+        <p className="text-xs uppercase tracking-[0.18em] text-[rgba(255,246,232,0.5)]">Inside {place}</p>
+        <h2 className="mt-2 text-xl font-semibold tracking-tight">{title}</h2>
+        <p className="mt-1 text-sm text-[rgba(255,246,232,0.6)]">{blurb}</p>
+        <p className="mt-3 text-xs text-[rgba(255,246,232,0.45)]">Something else I made. It opens in a new tab, and the valley stays where it is.</p>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <button className="text-xs text-[rgba(255,246,232,0.45)] hover:text-[rgba(255,246,232,0.8)]" onClick={onClose}>
+            Keep driving <span className="hidden sm:inline">· Esc</span>
+          </button>
+          <a
+            href={landmarkUrl(kind)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
+            className={`${button} bg-white/10 outline-none focus-visible:border-white/60`}
+          >
+            Open {host} ↗
+          </a>
+        </div>
       </div>
     </div>
   );

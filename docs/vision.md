@@ -50,7 +50,10 @@ HUD that is nearly absent.
 
 ## What it is not
 
-- Not a hub. It contains no links to any other app.
+- Not a hub. The only links out are four easter eggs: a bank, a church, a school and a
+  casino hidden in the valley, each with a card pointing at one of the owner's other
+  projects. They are not on the map and count for nothing. See
+  `decisions/0012-easter-egg-buildings.md`.
 - Not gated. It is public and fully playable with no login. Signing in only adds saving
   and company. See `decisions/0007-accounts-multiplayer-and-a-shop.md`.
 - Not built on a game engine. It is three.js for rendering plus a few hundred lines of
@@ -66,8 +69,6 @@ Rough order of appeal:
 - Dust, tyre tracks, an engine note.
 - Water that looks like water: shoreline foam, rivers that flow.
 - More ground variety: wildflowers, dirt trails between the garages.
-- Buildings that take you to other gilbyy.com pages. The owner has floated this. It
-  would reverse `decisions/0004` and needs its own ADR first.
 
 None of that is committed. The only rule is that it stays free to run and stays
 pleasant to drive.
@@ -78,5 +79,7 @@ pleasant to drive.
 separate Vercel projects. They get `bets.gilbyy.com`, `meals.gilbyy.com` and
 `karts.gilbyy.com` because a shared domain is tidy and costs nothing extra.
 
-That is a DNS arrangement and nothing more. **gilbyy.com does not link to them and does
-not know they exist.** Do not reintroduce a relationship between them.
+That is a DNS arrangement and nothing more. The game shares no auth, data or deploys
+with any of them. Since 2026-10-08 four hidden buildings each link to one of the owner's
+projects (`decisions/0012-easter-egg-buildings.md`); that is a static link on a card and
+the whole of the relationship. Do not grow it into a menu.

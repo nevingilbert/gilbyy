@@ -1,6 +1,7 @@
+import { LANDMARK_BLEND, LANDMARK_CLEAR, LANDMARK_FLAT, chooseLandmarks, type Landmark } from "./landmarks";
 import { planMissions, type Mission } from "./missions";
 import { makeRandom } from "./noise";
-import { buildTerrain, sampleGrid, WORLD, type Terrain } from "./terrain";
+import { buildTerrain, CELL, level, sampleGrid, WORLD, type Terrain } from "./terrain";
 
 export {
   CELL, HALF, ROW, START, WORLD, LAKES, FROZEN, STOCK_WADE, SNORKEL_WADE, CAMP, CAMP_CENTRE, CAMP_GATE, CAFE,
@@ -8,6 +9,7 @@ export {
   type Pitch, type Site, type SiteStyle, type Track, type River, type Terrain,
 } from "./terrain";
 export type { Mission, Gate } from "./missions";
+export type { Landmark, LandmarkKind } from "./landmarks";
 
 /**
  * The world: the valley from terrain.ts, plus everything scattered across it.
@@ -39,6 +41,8 @@ export type World = Ground & Terrain & {
   bushes: Bush[];
   rocks: Rock[];
   missions: Mission[];
+  /** The bank, church, school and casino: easter eggs, not on the map (ADR 0012). */
+  landmarks: Landmark[];
   /** Distance to a mission course's driving line, kept clear of trees and rocks. */
   courseDist: Float32Array;
   /** For things placed after the world is built, like buildings. */
@@ -67,7 +71,7 @@ export function buildWorld(seed = 20261006): World {
   const half = WORLD.size / 2;
 
   // Trees on a jittered grid, thinned by forest density, kept off water, cliffs and clearings.
-  const trees: Tree[] = [];
+  let trees: Tree[] = [];
   const step = 9;
   for (let z = -half + step; z < half - step; z += step) {
     for (let x = -half + step; x < half - step; x += step) {
@@ -85,7 +89,7 @@ export function buildWorld(seed = 20261006): World {
   }
 
   // Boulders: a few everywhere, many more on steep and rocky ground.
-  const rocks: Rock[] = [];
+  let rocks: Rock[] = [];
   for (let tries = 0; tries < 80000 && rocks.length < 9000; tries++) {
     const x = (rand() - 0.5) * (WORLD.size - 40);
     const z = (rand() - 0.5) * (WORLD.size - 40);
@@ -103,7 +107,7 @@ export function buildWorld(seed = 20261006): World {
   }
 
   // Bushes break up the open grass, thickening toward the forest edges. You drive through them.
-  const bushes: Bush[] = [];
+  let bushes: Bush[] = [];
   for (let tries = 0; tries < 130000 && bushes.length < 13000; tries++) {
     const x = (rand() - 0.5) * (WORLD.size - 60);
     const z = (rand() - 0.5) * (WORLD.size - 60);
@@ -113,6 +117,25 @@ export function buildWorld(seed = 20261006): World {
     if (!clear(x, z, 7, 28, 5, 24)) continue;
     bushes.push({ x, y: y - 0.25, z, scale: 0.6 + rand() * 0.9, rot: rand() * Math.PI * 2, tone: rand() });
   }
+
+  // The easter-egg buildings go in last, so the scatter above is what it always was: each
+  // gets a levelled yard, and whatever stood there is cleared or settled onto the new ground.
+  const landmarks = chooseLandmarks(terrain, missions, seed);
+  const toLandmark = (x: number, z: number) => landmarks.reduce((d, l) => Math.min(d, Math.hypot(l.x - x, l.z - z)), Infinity);
+  // A levelled vertex moves the ground up to a cell beyond the blend.
+  const reach = LANDMARK_FLAT + LANDMARK_BLEND + 2 * CELL;
+  const was = new Map<object, number>();
+  for (const s of [...trees, ...bushes, ...rocks]) if (toLandmark(s.x, s.z) < reach) was.set(s, ground(s.x, s.z));
+  for (const l of landmarks) level(heights, { x0: l.x, x1: l.x, z0: l.z, z1: l.z }, l.y, LANDMARK_FLAT, LANDMARK_BLEND, siteDist);
+  const settle = <T extends { x: number; y: number; z: number }>(list: T[]) =>
+    list.filter((s) => {
+      const before = was.get(s);
+      if (before === undefined) return true;
+      if (toLandmark(s.x, s.z) < LANDMARK_CLEAR) return false;
+      s.y += ground(s.x, s.z) - before;
+      return true;
+    });
+  [trees, bushes, rocks] = [settle(trees), settle(bushes), settle(rocks)];
 
   // Bucketed so a lookup is a few cells.
   const BUCKET = 16;
@@ -139,7 +162,7 @@ export function buildWorld(seed = 20261006): World {
   };
 
   return {
-    ...terrain, trees, bushes, rocks, missions, courseDist,
+    ...terrain, trees, bushes, rocks, missions, landmarks, courseDist,
     height: ground, waterAt, obstaclesNear, limit: WORLD.limit,
     slipAt: (x, z) => Math.min(1, field(terrain.snow, x, z)) + field(terrain.ice, x, z),
     addObstacles: (list) => list.forEach(add),
