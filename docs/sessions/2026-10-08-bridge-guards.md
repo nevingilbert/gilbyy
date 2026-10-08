@@ -4,7 +4,8 @@
 
 Trucks could drive along the rails onto a trestle bridge and seemed to fall through it.
 They must stay off the bridges (the rivers are gated by the snorkel), and they shouldn't
-fall through.
+fall through. A second task in the same session fixed the inside-out railway geometry
+found along the way.
 
 ## Decisions made
 
@@ -52,6 +53,20 @@ fall through.
   stretch just before a bridge had neither ballast nor deck. `ribbon()` in `railway.ts`
   now takes a per-segment predicate: ballast where neither end is bridged, deck where
   either is, guard rails where both are. The abutment starts under that stretch.
+- **The railway's strips were inside-out, and are now fixed (second task, owner asked
+  for it).**
+  - `ribbon()` (ballast, rails, deck, bridge guard rails) and the road strips in
+    `buildRoads()` had every top facing down, so three.js culled them from above. You saw
+    sleepers on bare ground, the river through the bridges, and no dirt roads at the camp
+    or the crossings at all. Nobody had relied on that.
+  - The winding is flipped. `ribbon()` also gained a bottom face: three.js draws *back*
+    faces into the shadow map, so without one the fixed deck would stop casting its
+    shadow, and it would look see-through from under a bridge.
+  - The guard pyramids now stand on the deck (rail − 0.28) instead of on the sleepers,
+    which left them floating over the gaps. They are taller (0.43 and 0.53 m) so their
+    peaks stay where they were, and the train still clears them.
+  - `apps/web/src/app/railway.test.ts` checks that the strips face up. It fails on the
+    old winding.
 
 ## Files changed
 
@@ -63,6 +78,8 @@ fall through.
 | `apps/web/src/app/Game.tsx` | `trainObstacles(view.trainCars(), world.height)` |
 | `apps/web/src/app/systems.test.ts` | New `describe("the bridges")`, five tests, below. Shared `when(s)` helper |
 | `CLAUDE.md`, `docs/architecture.md` | `track.ts` description mentions the bridges' solid parts |
+| `apps/web/src/app/railway.ts` (2nd task) | `ribbon()` and `buildRoads()` wound outward; `ribbon()` closed with a bottom; pyramids stand on the deck |
+| `apps/web/src/app/railway.test.ts` | **Created**: the hand-built strips face up |
 
 The five tests drive the widest rig on 37" crawlers with a snorkel:
 
@@ -81,48 +98,43 @@ Verified: typecheck, lint, 78 vitest tests, `pnpm build`. In headless Chromium
 0 mph. I also looked at side and far-end views
 (`?at=1743.4,1225.7,-2.276`, `?at=1604.6,-1337.2,-2.601&hour=9`).
 
-Code commit: `2028d16 fix(railway): keep trucks off the bridges instead of falling
-through` on branch `claude/friendly-newton-5j6ib5`. It is not merged to `main` and has
-no PR.
+Commits on branch `claude/friendly-newton-5j6ib5`, none merged to `main` and no PR:
+
+- `2028d16 fix(railway): keep trucks off the bridges instead of falling through`;
+- `44607c6`, a merge of `origin/main` (convoy and race). The only conflict was the
+  `CLAUDE.md` layout list, and both sides were kept;
+- `1d4bce0 fix(railway): face the ballast, deck and dirt roads outward`.
+
+After the second task: typecheck, lint, 100 vitest tests, `pnpm build`. Headless
+before/after screenshots show a grey ballast strip, a brown deck, and dirt roads at the
+camp (default spawn) and at the crossing at `?at=-412.8,2077.4,-3.135&hour=13`. The
+deck's shadow shows on the slope at `?at=1743.4,1225.7,-2.276&hour=13`.
 
 ## Open questions
 
-- **Pre-existing, not fixed: `ribbon()` in `railway.ts` is wound inside-out.**
-  - The top faces point down and the side faces inward, so from the chase camera the
-    ballast strip and the timber bridge deck are culled. You see sleepers on bare ground,
-    and the river through the bridge.
-  - A temporary flip (top: `al, ar, bl, ar, br, bl`; left side: `alb, al, blb, al, bl,
-    blb`; right side: `ar, arb, br, arb, brb, br`) made both appear, as the code
-    intends. It was reverted because it changes the look of the whole railway.
-  - An open-deck look arguably suits "trucks can't use this", so it's the owner's call.
-    Over the abutments, the concrete cap shows between the sleepers for now.
+- **Grass grows on the crossing roads in places**, now that the roads are visible. The
+  grass in `terrain-mesh.ts` skips `sampleGrid(world.roadDist, …) < 3.5`, but a distance
+  field interpolated over 10 m cells overestimates near a road that runs diagonally
+  across them. It reads as a grassy two-track, so it was left alone. A real fix would
+  measure the exact distance to the nearby road segments (the crossing roads aren't in
+  `world.roads`; `buildRoads()` derives them from `track.crossings`).
 - The train rolling over a guard hasn't been seen in a browser. The clearances were
   checked against `train-model.ts` by hand: the lowest parts are the loco fuel tank at
   0.325 m and the axles at 0.38 m.
 - If a train arrives while a truck sits at a guard, the truck is squeezed between the
   train's circles and the guard's. Same behaviour as at level-crossing posts. Untested.
-- Still open from 2026-10-07: `supabase/migrations/20261007200000_achievements.sql` is not
-  applied to the live project `apqlumghzqkklmpwizex`. See
-  `docs/sessions/2026-10-07-compass-mark-and-achievements.md`.
 
 ## Exact next step
 
-Ask the owner whether to merge `claude/friendly-newton-5j6ib5` (commit `2028d16`) to
-`main`, and whether they want the ballast and timber deck visible.
+Ask the owner whether to open a PR from `claude/friendly-newton-5j6ib5` to `main` (the
+bridge guards plus the visible ballast, deck and roads). Once merged, play it on
+gilbyy.com and check three things:
 
-If they want them visible, in `apps/web/src/app/railway.ts` `ribbon()`, swap the
-triangle order of all three `pos.push(...)` lines as listed under Open questions, so the
-faces point out. Then check by headless screenshot at
-`?at=1736.3,1199.9,-0.702&hour=13`:
-
-- a grey ballast strip along the track;
-- a brown deck on the bridges;
-- no z-fighting between the deck and the abutment cap (cap top is at rail − 0.7, deck
-  top at rail − 0.28).
-
-If they prefer the open look, delete the ballast and deck ribbons instead, and keep the
-abutments.
+1. Drive along the rails to a bridge and stop at the guard.
+2. Watch the train roll over a guard. This hasn't been seen yet.
+3. Look at the new grey ballast strip and the dirt roads at the camp on a real screen.
 
 ## Tokens advisory
 
-Natural break: the fix is built, tested and committed. No token limit was hit.
+Natural break: both fixes are built, tested, committed and pushed. No token limit was
+hit.
