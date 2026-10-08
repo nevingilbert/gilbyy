@@ -93,7 +93,9 @@ Pure modules, no three.js, all unit-tested:
   Supabase Realtime; `LocalNet` runs over a `BroadcastChannel`, for testing across
   tabs.
 - `goals.ts` (first-time guidance), `achievements.ts` (which goals are achievements), `track.ts` (train and crossings as functions of
-  time), `daylight.ts` (hour and sky).
+  time, and the bridges' solid parts: a trespass guard on each approach that the train
+  rolls over and no truck can cross, concrete abutments under the ends too low to drive
+  beneath, and the trestle legs), `daylight.ts` (hour and sky).
 
 Rendering and UI:
 
