@@ -98,12 +98,41 @@ The owner asked for a race too (`docs/decisions/0011-races.md`, amending 0010 an
   driver couldn't get a second truck through the boulders between the café and the race
   arch. They share the convoy's code, which was seen end to end.
 
+## Deployment, 2026-10-08: half done, parked
+
+The owner asked to apply the migrations and merge. Done so far, from the cloud session:
+
+- **`main` was merged into `feat/convoy-mission`** (commit "Merge main into
+  feat/convoy-mission"). Main had moved on: compass mark fix, guidance, achievements
+  (ADR 0009, migration `20261007200000_achievements.sql`, already live) and smoother
+  remote trucks (`guessPose`, fading offsets in `remote.ts`). Conflicts in `Game.tsx`,
+  `CLAUDE.md` and `docs/architecture.md` were resolved. Because main took ADR 0009, **the
+  convoy ADR is now `0010-convoys.md` and the race ADR `0011-races.md`**, and every
+  reference was renumbered. `remotes.jump()` now also clears the fading offset, so a
+  convoy-mate snapped into the line-up stays put. After the merge: 94 vitest tests,
+  typecheck, lint and `pnpm build` clean; the SQL tests pass on a local Postgres with all
+  seven migrations (68 checks).
+- **Both migrations are applied to the live `gilbyy` project** (via the Supabase MCP's
+  `apply_migration`). The MCP records its own timestamp as the version, so the two rows
+  in `supabase_migrations.schema_migrations` were renamed to match the files:
+  `20261007210000` (convoy) and `20261007230000` (race). `supabase db push --dry-run`
+  should therefore find nothing to push. Checked live: `public.missions` has `convoy`
+  (4, 1.2, 600, 66, crew 2) and `race` (3, 1, 600, 102, crew 2); `complete_convoy` is
+  executable by `authenticated` and not by `anon`.
+- **The live SQL test run did not finish**: through the MCP it timed out after 60 s. It
+  runs as one transaction ending in a deliberate error, and afterwards there were no
+  test users, no test profiles and no convoy or race runs, and nothing still running. It
+  still needs a clean run, from the CLI.
+- **Not merged to `main`, not deployed.** The live site still runs the old client, which
+  is unaffected by the new schema (an extra column with a default, two new mission
+  rows, and `complete_mission` refusing only the new crew courses).
+
+Parked here because each SQL call from the cloud session needed the owner's approval.
+The rest is for a local agent; see *Exact next step*.
+
 ## Open questions
 
-- **The migrations are not on the live project** (`20261007210000_convoy.sql` and
-  `20261007230000_race.sql`). Apply them with `supabase db push` before or with the
-  merge. Until then signed-in convoys and races finish but their payouts are refused,
-  and a preview deploy (which uses the same project) would show that.
+- **The live SQL tests haven't completed against the new migrations** (see above).
 - **A race hasn't been played to the finish in a browser** (see above).
 - **Race tuning is the owner's call:** equal pay for every finisher (vs a winner's
   bonus), 3 mi, the course by the camp, four-truck line-ups that start the back row 9 m
@@ -117,13 +146,25 @@ The owner asked for a race too (`docs/decisions/0011-races.md`, amending 0010 an
 
 ## Exact next step
 
-Ask the owner to try the convoy and the race, then apply both new migrations to the
-`gilbyy` project (`supabase db push`), run `supabase/tests/game.test.sql` against it as
-`supabase/tests/README.md` describes, and merge `feat/convoy-mission`. Then play one
-convoy and one race signed in from two Google accounts and confirm the payouts persist
-and the race's results line is right.
+Finish the deployment from the owner's machine, where the Supabase CLI is linked:
+
+1. `git fetch origin && git checkout feat/convoy-mission && git pull`. If `origin/main`
+   has moved past the merge commit, merge it in again and re-run the checks.
+2. `pnpm install && pnpm typecheck && pnpm lint && pnpm test && pnpm build`.
+3. `supabase migration list` and `supabase db push --dry-run`: both migrations should
+   show as applied remotely and nothing should be pending. Do not re-apply them.
+4. Run the SQL tests against the linked project as `supabase/tests/README.md`
+   describes; success reads `ALL CHECKS PASSED, rolling back`.
+5. Fast-forward `main` to `feat/convoy-mission` and push it; check the Vercel
+   `gilbyy-web` production deploy goes green and gilbyy.com serves it.
+6. Update `CLAUDE.md` Status, `docs/roadmap.md` and `docs/architecture.md` to say it's
+   merged and live, on `main`.
+
+Then play one convoy and one race signed in from two Google accounts and confirm the
+payouts persist and the race's results line is right.
 
 ## Tokens advisory
 
-Stopped at a natural break: the feature is built, tested and pushed; only the live
-migration and a real two-account run remain.
+Parked mid-deployment at the owner's request (too many approvals for SQL from the cloud
+session). The migrations are live; the live test run, the merge to `main` and the deploy
+remain.

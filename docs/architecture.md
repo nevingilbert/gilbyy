@@ -154,8 +154,9 @@ for sign-in (Google only), and Realtime for the shared valley. See
 ### Online setup
 
 **Done on 2026-10-07.** The project is `gilbyy`, ref `apqlumghzqkklmpwizex`, in the
-Gilbyy org (free plan), region `us-west-1`. All three migrations are applied, and it was
-played signed in from two browsers; see `sessions/2026-10-07-connect-supabase.md`.
+Gilbyy org (free plan), region `us-west-1`. Every migration is applied (the convoy and
+race ones on 2026-10-08), and it was played signed in from two browsers; see
+`sessions/2026-10-07-connect-supabase.md`.
 To do it again from nothing:
 
 1. Create a project on the free plan: `supabase projects create gilbyy --org-id <org>

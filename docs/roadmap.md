@@ -16,7 +16,8 @@ subdomains." Update the **You are here** marker as you progress.
 > café, and each of those is an achievement shown on the leaderboard (`decisions/0009`).
 > It is all on `main` and live at gilbyy.com since 2026-10-07.
 > A convoy and a race for two to four friends are built on `feat/convoy-mission`
-> (`decisions/0010`, `0011`); their migrations are not on the live project yet.
+> (`decisions/0010`, `0011`). Their migrations are on the live project (2026-10-08); the
+> branch is not merged to `main` yet (`sessions/2026-10-07-convoy-mission.md`).
 > **Next:** play it signed in on the live site. Still open:
 > the frame rate on a real phone and laptop. Sign-in is Google only (the email link was
 > removed), and an idle tab now gives its tent back.
