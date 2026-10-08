@@ -100,6 +100,10 @@ The owner asked for a race too (`docs/decisions/0011-races.md`, amending 0010 an
 
 ## Deployment, 2026-10-08: half done, parked
 
+**Finished later the same day**: merged to `main` and live; see
+`2026-10-08-convoy-race-deploy.md`. The rest of this section, and *Exact next step*
+below, are kept as written at the time.
+
 The owner asked to apply the migrations and merge. Done so far, from the cloud session:
 
 - **`main` was merged into `feat/convoy-mission`** (commit "Merge main into
