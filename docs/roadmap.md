@@ -15,7 +15,12 @@ subdomains." Update the **You are here** marker as you progress.
 > leaderboard (`decisions/0008`). The compass mark leads to a first garage and then the
 > café, and each of those is an achievement shown on the leaderboard (`decisions/0009`).
 > It is all on `main` and live at gilbyy.com since 2026-10-07.
-> **Next:** play it signed in on the live site. Still open:
+> A convoy and a race for two to four friends (`decisions/0010`, `0011`) were merged to
+> `main` and went live at gilbyy.com on 2026-10-08. Their migrations are on the live
+> project and the database tests pass against it
+> (`sessions/2026-10-08-convoy-race-deploy.md`).
+> **Next:** play one convoy and one race signed in from two Google accounts on the live
+> site; neither has been played over Supabase yet, only over `?net=local`. Still open:
 > the frame rate on a real phone and laptop. Sign-in is Google only (the email link was
 > removed), and an idle tab now gives its tent back.
 >

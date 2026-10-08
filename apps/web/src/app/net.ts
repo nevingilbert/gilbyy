@@ -1,4 +1,5 @@
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
+import { readConvoy, type ConvoyMsg } from "./convoy";
 import type { Loadout } from "./shop";
 import { CAMP_PITCHES } from "./terrain";
 import type { VehicleId } from "./vehicles";
@@ -6,7 +7,7 @@ import type { VehicleId } from "./vehicles";
 /**
  * Everyone signed in drives the same valley. This is how they hear about each other:
  * who's here and which tent is theirs (presence), where their truck is (poses), friend
- * requests, and chat between friends.
+ * requests, convoys (convoy.ts), and chat between friends.
  *
  * Two transports with the same shape. Online it's a private Supabase Realtime channel,
  * which only signed-in players can join (see the realtime policies in the migration).
@@ -43,6 +44,7 @@ export type NetHandlers = {
   asked(from: string): void;
   friended(from: string): void;
   chat(line: ChatLine): void;
+  convoy(msg: ConvoyMsg): void;
 };
 
 export type Joined = { tent: number } | { full: true } | { error: string };
@@ -57,6 +59,8 @@ export interface Net {
   friended(to: string): void;
   /** Says `text` to each of `to` (friends close enough to hear). */
   say(to: string[], text: string): void;
+  /** Tells the valley about a convoy. Only the gatherer's friends take any notice. */
+  convoy(msg: ConvoyMsg): void;
   /** The friends whose chat to listen for. */
   listen(friends: string[]): void;
   leave(): void;
@@ -292,12 +296,19 @@ abstract class Base implements Net {
     if (this.me) this.emit("friended", { from: this.me.id, to });
   }
 
+  convoy(msg: ConvoyMsg) {
+    if (this.me) this.emit("convoy", msg);
+  }
+
   protected heard(event: string, payload: Record<string, unknown>) {
     const me = this.me?.id;
     if (event === "pose" && typeof payload.id === "string" && Array.isArray(payload.p)) {
       this.on.pose(payload.id, unpackPose(payload.p as number[]));
     } else if (event === "where") {
       this.on.wanted();
+    } else if (event === "convoy") {
+      const msg = readConvoy(payload);
+      if (msg) this.on.convoy(msg);
     } else if ((event === "ask" || event === "friended") && payload.to === me && typeof payload.from === "string") {
       if (event === "ask") this.on.asked(payload.from);
       else this.on.friended(payload.from);
@@ -358,7 +369,8 @@ export class SupabaseNet extends Base {
       .on("broadcast", { event: "pose" }, ({ payload }) => this.heard("pose", payload))
       .on("broadcast", { event: "where" }, ({ payload }) => this.heard("where", payload))
       .on("broadcast", { event: "ask" }, ({ payload }) => this.heard("ask", payload))
-      .on("broadcast", { event: "friended" }, ({ payload }) => this.heard("friended", payload));
+      .on("broadcast", { event: "friended" }, ({ payload }) => this.heard("friended", payload))
+      .on("broadcast", { event: "convoy" }, ({ payload }) => this.heard("convoy", payload));
     this.world = channel;
     let joined = false;
     const error = await new Promise<string | null>((resolve) => {

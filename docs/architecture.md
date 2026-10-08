@@ -70,8 +70,13 @@ Pure modules, no three.js, all unit-tested:
 
   `sampleGrid()` interpolates any field using the same triangulation as the mesh.
 - `missions.ts`: lays out the challenge courses on the real terrain at load (a forest
-  slalom, a ridge climb, a lake loop, an ice drift). `mission-run.ts`: the countdown,
-  gates and finish of a run.
+  slalom, a ridge climb, a lake loop, an ice drift, the convoy loop by the café and the
+  race loop by the camp; the last two come from one loop planner, `loopNear()`).
+  `mission-run.ts`: the countdown, gates and finish of a run.
+- `convoy.ts`: a convoy or race of two to four friends, agreed among their clients over
+  the `world` channel: gathering at the arch, setting off, flag counts, finish times,
+  places, and coming home. Every message is safe to hear twice and is repeated until
+  answered (`decisions/0010-convoys.md`, `0011-races.md`).
 - `world.ts`: trees, rocks and bushes scattered over all that, a bucketed obstacle
   lookup (each obstacle has a height, so tyres can decide what to climb), and the
   `Ground` interface the physics reads, including how slippery the ground is.
@@ -138,6 +143,10 @@ for sign-in (Google only), and Realtime for the shared valley. See
   `discover()`, and the found counts on `leaderboard()`.
 - `20261007200000_achievements.sql` has `leaderboard()` return each player's goals too,
   so friends see each other's achievements (ADR 0009).
+- `20261007210000_convoy.sql` adds `missions.crew`, the convoy course, and
+  `complete_convoy()`, which pays only when a friend is among the crew;
+  `complete_mission()` now refuses courses that take a crew (ADR 0010).
+- `20261007230000_race.sql` adds the race's row; `complete_convoy()` pays it (ADR 0011).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
@@ -147,8 +156,13 @@ for sign-in (Google only), and Realtime for the shared valley. See
 ### Online setup
 
 **Done on 2026-10-07.** The project is `gilbyy`, ref `apqlumghzqkklmpwizex`, in the
-Gilbyy org (free plan), region `us-west-1`. All three migrations are applied, and it was
-played signed in from two browsers; see `sessions/2026-10-07-connect-supabase.md`.
+Gilbyy org (free plan), region `us-west-1`. Every migration is applied (the convoy and
+race ones on 2026-10-08), and it was played signed in from two browsers; see
+`sessions/2026-10-07-connect-supabase.md`.
+The convoy and the race were merged to `main` and deployed on 2026-10-08, after the
+database tests passed against the live project (`supabase/tests/README.md`). Neither
+has been played from two accounts over Supabase yet; see
+`sessions/2026-10-08-convoy-race-deploy.md`.
 To do it again from nothing:
 
 1. Create a project on the free plan: `supabase projects create gilbyy --org-id <org>
@@ -256,6 +270,10 @@ that repo's problem, not this one's.
     Realtime connection close.
   - A parked truck sends no poses, so a player who has just arrived asks for them
     (the `where` broadcast) and everyone answers once.
+  - Convoys and races (`convoy.ts`) are broadcasts too, received by everyone in the valley: while
+    gathering, a call every 3 s and a reply every 3 s from each joiner; while running,
+    each driver's flag count on every flag and every 5 s. A two-minute convoy of two
+    with four players in the valley is a few hundred messages, less than their poses.
   - The first private-channel join on a new or just-restored project can be refused
     with `MissingPartition` while Realtime creates its message partitions;
     `SupabaseNet.open()` tries three times.

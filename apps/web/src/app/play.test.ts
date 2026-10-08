@@ -166,7 +166,7 @@ describe("presence updates", () => {
 const course: Mission = {
   id: "test", name: "Test", blurb: "", start: { x: 0, z: -10, heading: 0 },
   gates: [{ x: 0, z: 0, heading: 0, width: 8 }, { x: 0, z: 20, heading: 0, width: 8 }],
-  reward: 1, repeatReward: 0.5, cooldown: 600, minSeconds: 1,
+  reward: 1, repeatReward: 0.5, cooldown: 600, minSeconds: 1, crew: 1, race: false,
 };
 
 describe("missions", () => {
@@ -208,6 +208,17 @@ describe("single player progress", () => {
     expect(await s.completeMission(course, 0.5)).toHaveProperty("error");
     expect(await s.completeMission(course, 5)).toEqual({ paid: 1 });
     expect(await s.completeMission(course, 5)).toHaveProperty("error");
+  });
+
+  it("pays a convoy only with a friend in it", async () => {
+    const s = new LocalStore("me");
+    const convoy: Mission = { ...course, id: "convoy", crew: 2 };
+    expect(await s.completeMission(convoy, 5)).toHaveProperty("error");
+    expect(await s.completeMission(convoy, 5, ["me"])).toHaveProperty("error");
+    expect(await s.completeMission(convoy, 5, ["stranger"])).toHaveProperty("error");
+    await s.requestFriend("you");
+    s.noteAsked("you");
+    expect(await s.completeMission(convoy, 5, ["you", "stranger"])).toEqual({ paid: 1 });
   });
 
   it("needs both players to ask before they're friends", async () => {

@@ -106,6 +106,22 @@ export function createRemotes(scene: THREE.Scene, world: World) {
     r.heardAt = now;
   }
 
+  /**
+   * Puts a truck somewhere at once instead of easing it there. For a convoy lining up:
+   * eased, it would slide through the trucks between its old spot and its new one.
+   */
+  function jump(id: string, x: number, z: number, heading: number, now: number) {
+    const r = remotes.get(id);
+    const y = world.height(x, z) + (r?.spec.ride ?? 0);
+    const p: Pose = { x, y, z, heading, pitch: 0, roll: 0, speed: 0, steer: 0, turn: 0 };
+    lastKnown.set(id, p);
+    if (!r) return;
+    Object.assign(r.car, { x, y, z, heading, speed: 0 });
+    r.off = still();
+    r.last = p;
+    r.heardAt = now;
+  }
+
   function update(dt: number, now: number, night: number) {
     const ease = 1 - Math.exp(-8 * dt);
     const fade = Math.exp(-SETTLE * dt);
@@ -161,7 +177,7 @@ export function createRemotes(scene: THREE.Scene, world: World) {
     for (const id of [...remotes.keys()]) drop(id);
   }
 
-  return { sync, pose, update, obstacles, tags, positions, dispose };
+  return { sync, pose, jump, update, obstacles, tags, positions, dispose };
 }
 
 export type Remotes = ReturnType<typeof createRemotes>;
