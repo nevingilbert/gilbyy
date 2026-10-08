@@ -33,7 +33,11 @@ function frames(track: Track): Frame[] {
   });
 }
 
-/** A box-section ribbon (top and both sides) following the loop, offset sideways, over the segments `keep` picks. */
+/**
+ * A box-section ribbon following the loop, offset sideways, over the segments `keep` picks.
+ * Closed top to bottom, so it casts a full shadow (the shadow pass draws back faces) and
+ * the deck is solid seen from under a bridge.
+ */
 function ribbon(fr: Frame[], offset: number, width: number, top: number, bottom: number, keep: (i: number) => boolean) {
   const pos: number[] = [];
   const n = fr.length;
@@ -44,10 +48,11 @@ function ribbon(fr: Frame[], offset: number, width: number, top: number, bottom:
     const corner = (f: Frame, side: number, y: number) => [f.x + f.lx * (offset + side * width / 2), f.y + y, f.z + f.lz * (offset + side * width / 2)];
     const [al, ar, bl, br] = [corner(a, 1, top), corner(a, -1, top), corner(b, 1, top), corner(b, -1, top)];
     const [alb, arb, blb, brb] = [corner(a, 1, bottom), corner(a, -1, bottom), corner(b, 1, bottom), corner(b, -1, bottom)];
-    // Top, then the left and right faces, each as two triangles.
-    pos.push(...al, ...bl, ...ar, ...ar, ...bl, ...br);
-    pos.push(...alb, ...blb, ...al, ...al, ...blb, ...bl);
-    pos.push(...ar, ...br, ...arb, ...arb, ...br, ...brb);
+    // Top, left, right and bottom, each as two triangles wound to face outward.
+    pos.push(...al, ...ar, ...bl, ...ar, ...br, ...bl);
+    pos.push(...alb, ...al, ...blb, ...al, ...bl, ...blb);
+    pos.push(...ar, ...arb, ...br, ...arb, ...brb, ...br);
+    pos.push(...alb, ...blb, ...arb, ...arb, ...blb, ...brb);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -75,7 +80,7 @@ function buildRoads(world: World) {
     // Overlap the ends a little so joined segments leave no gap at the corner.
     for (let d = -half; d < len + half; d += 3) {
       const [a, b, c, e] = [at(d, -1), at(d, 1), at(d + 3, -1), at(d + 3, 1)];
-      pos.push(...a, ...c, ...b, ...b, ...c, ...e);
+      pos.push(...a, ...b, ...c, ...b, ...e, ...c);
     }
   };
   for (const s of track.crossings) {
@@ -139,9 +144,9 @@ function bridgeEnd(kit: Kit, world: World, end: BridgeEnd, spacing: number, mats
   const f = trackFrame(track, end.bank);
   const head = kit.at(f.x, f.y, f.z, Math.atan2(f.fx * end.dir, f.fz * end.dir));
   for (let z = -GUARD_LENGTH + 0.25; z < 0; z += 0.5) {
-    // Square pyramids sitting on the sleepers, their bases square to the rails.
-    for (const x of TEETH_INSIDE) head.add(mats.guard, new THREE.ConeGeometry(0.25, 0.3, 4), x, 0, z, 0, Math.PI / 4);
-    for (const x of TEETH_OUTSIDE) for (const s of [1, -1]) head.add(mats.guard, new THREE.ConeGeometry(0.25, 0.4, 4), s * x, 0.05, z, 0, Math.PI / 4);
+    // Square pyramids standing on the deck (0.28 m below the rail tops), their bases square to the rails.
+    for (const x of TEETH_INSIDE) head.add(mats.guard, new THREE.ConeGeometry(0.25, 0.43, 4), x, -0.065, z, 0, Math.PI / 4);
+    for (const x of TEETH_OUTSIDE) for (const s of [1, -1]) head.add(mats.guard, new THREE.ConeGeometry(0.25, 0.53, 4), s * x, -0.015, z, 0, Math.PI / 4);
   }
   for (const s of [1, -1]) {
     const post = head.at(s * POST_SIDE, 0, POST_SET);
