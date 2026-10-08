@@ -76,6 +76,40 @@ select pg_temp.as_player('a');
 set role authenticated;
 select pg_temp.check((select balance from public.complete_mission('forest-slalom', 60)) = 12, 'later finishes pay the repeat reward');
 
+-- The allowance: whatever a client claims, an account banks no more than a keen player.
+reset role;
+update public.profiles set allowance = 0.25, allowance_at = now(), last_drive_at = now() - interval '100 seconds' where id::text like '%a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select balance from public.add_miles(1)) = 12.25, 'miles bank only as far as the allowance goes');
+reset role;
+update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select balance from public.add_miles(1)) = 12.25, 'and not at all once it is spent');
+update public.profiles set allowance = 9999;
+reset role;
+select pg_temp.check((select allowance from public.profiles where id::text like '%a') < 1, 'players cannot write their own allowance');
+update public.profiles set allowance = 0, allowance_at = now() - interval '1 hour', last_drive_at = now() - interval '1000 seconds' where id::text like '%a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select balance between 14.33 and 14.34 from public.add_miles(5)), 'it refills at 50 miles a day');
+reset role;
+update public.profiles set allowance = 90, allowance_at = now() - interval '2 days' where id::text like '%a';
+select pg_temp.check((select public.allowance_now(p) = 100 from public.profiles p where id::text like '%a'), 'and holds no more than 100');
+update public.profiles set allowance = 0.2, allowance_at = now() where id::text like '%a';
+update public.mission_runs set finished_at = now() - interval '11 minutes' where user_id::text like '%a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select balance between 14.53 and 14.54 from public.complete_mission('forest-slalom', 60)), 'repeat rewards come out of the allowance');
+select pg_temp.check((select balance between 16.53 and 16.54 from public.complete_mission('ridge-run', 60)), 'a first finish pays in full even with the allowance spent');
+reset role;
+update public.mission_runs set finished_at = now() - interval '11 minutes' where user_id::text like '%a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select balance between 16.53 and 16.54 from public.complete_mission('forest-slalom', 60)), 'a repeat with nothing left pays nothing');
+select pg_temp.check((select reward = 0 from public.mission_runs where mission = 'forest-slalom' order by finished_at desc limit 1), 'but the run still counts');
+
 -- Names and goals.
 select pg_temp.check((select name from public.set_name('  Nevin  ')) = 'Nevin', 'names are trimmed and saved');
 select pg_temp.fails($$ select public.set_name('x') $$, 'names must be 2 to 20 characters');
@@ -152,5 +186,6 @@ select pg_temp.check(not has_function_privilege('anon', 'public.discover(text)',
 select pg_temp.check(not has_function_privilege('anon', 'public.is_chat_member(text)', 'execute'), 'signed-out visitors cannot probe chat membership');
 select pg_temp.check(has_function_privilege('authenticated', 'public.is_chat_member(text)', 'execute'), 'the chat policies can still check membership');
 select pg_temp.check(not has_function_privilege('authenticated', 'public.handle_new_user()', 'execute'), 'the new-account trigger cannot be called directly');
+select pg_temp.check(not has_function_privilege('authenticated', 'public.allowance_now(public.profiles)', 'execute') and not has_function_privilege('anon', 'public.allowance_now(public.profiles)', 'execute'), 'the allowance is only read inside the game''s functions');
 
 select 'all checks passed' as result;

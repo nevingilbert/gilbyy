@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
@@ -8,7 +9,7 @@ import type { Mission } from "./missions";
 import { AWAY_HIDDEN, AWAY_IDLE, HEARTBEAT, MAX_PLAYERS, PoseGate, PresenceBudget, chatTopic, guessPose, isAway, poseInterval, settle, staleAfter, type Peer, type Pose } from "./net";
 import { makeCar, noInput, step, yawRateOf, STOCK, type Car } from "./physics";
 import { STOCK_LOADOUT } from "./shop";
-import { LocalStore, NAME_PATTERN } from "./store";
+import { ALLOWANCE, LocalStore, NAME_PATTERN, SupabaseStore, allowanceAfter } from "./store";
 
 const peer = (id: string, tent: number, joined: number): Peer => ({ id, name: id, vehicle: "bluff", loadout: STOCK_LOADOUT, tent, joined });
 
@@ -210,6 +211,13 @@ describe("single player progress", () => {
     expect(await s.completeMission(course, 5)).toHaveProperty("error");
   });
 
+  it("has no allowance, because nothing is kept", () => {
+    const s = new LocalStore();
+    s.addMiles(500);
+    expect(s.get().balance).toBe(500);
+    expect(s.allowance()).toBe(Infinity);
+  });
+
   it("needs both players to ask before they're friends", async () => {
     const s = new LocalStore("me");
     expect(await s.requestFriend("you")).toBe("pending");
@@ -236,5 +244,87 @@ describe("single player progress", () => {
     const s = new LocalStore("me");
     s.markGoal("garage");
     expect(achievementsOf((await s.leaderboard())[0].goals).map((a) => a.name)).toEqual(["First garage"]);
+  });
+});
+
+describe("the allowance, signed in", () => {
+  const HOUR = 3600;
+  /** Just enough of the database: a profile and add_miles, which banks what the allowance allows. */
+  const server = (allowance: number, secondsAgo = 0) => {
+    let row = {
+      id: "me", name: "Me", lifetime: 0, balance: 0, owned: [], vehicle: null, loadout: STOCK_LOADOUT, goals: [], discovered: [],
+      allowance, allowance_at: new Date(Date.now() - secondsAgo * 1000).toISOString(),
+    };
+    const sent: number[] = [];
+    const sb = {
+      rpc: async (fn: string, args: { p_miles?: number } = {}) => {
+        if (fn === "add_miles") {
+          const left = allowanceAfter(row.allowance, (Date.now() - Date.parse(row.allowance_at)) / 1000);
+          const banked = Math.min(args.p_miles ?? 0, left);
+          sent.push(args.p_miles ?? 0);
+          row = { ...row, lifetime: row.lifetime + banked, balance: row.balance + banked, allowance: left - banked, allowance_at: new Date().toISOString() };
+        }
+        return { data: row, error: null };
+      },
+    } as unknown as SupabaseClient;
+    return { sb, sent };
+  };
+
+  it("refills at the server's rate, up to the cap", () => {
+    expect(allowanceAfter(0, 24 * HOUR)).toBeCloseTo(ALLOWANCE.perDay);
+    expect(allowanceAfter(0, HOUR)).toBeCloseTo(ALLOWANCE.perDay / 24);
+    expect(allowanceAfter(ALLOWANCE.cap - 1, 24 * HOUR)).toBe(ALLOWANCE.cap);
+    // A client clock behind the server's refills nothing, rather than taking miles away.
+    expect(allowanceAfter(3, -HOUR)).toBe(3);
+  });
+
+  it("stops the odometer where the server would, so nothing jumps back", async () => {
+    const { sb, sent } = server(1);
+    const s = await SupabaseStore.open(sb);
+    s.addMiles(0.6);
+    s.addMiles(0.6);
+    expect(s.get().balance).toBeCloseTo(1, 3);
+    expect(s.allowance()).toBeCloseTo(0, 3);
+    await s.flush();
+    expect(sent[0]).toBeCloseTo(1, 3);
+    expect(s.get().balance).toBeCloseTo(1, 3);
+    s.addMiles(0.5);
+    expect(s.get().balance).toBeCloseTo(1, 3);
+  });
+
+  it("counts miles on their way to the server as spent", async () => {
+    const { sb } = server(1);
+    const s = await SupabaseStore.open(sb);
+    s.addMiles(0.8);
+    const flushing = s.flush();
+    s.addMiles(0.8);
+    expect(s.allowance()).toBeCloseTo(0, 3);
+    await flushing;
+    expect(s.allowance()).toBeCloseTo(0, 3);
+  });
+
+  it("picks up where it was left, refilled for the time away", async () => {
+    const { sb } = server(0, 12 * HOUR);
+    const s = await SupabaseStore.open(sb);
+    expect(s.allowance()).toBeCloseTo(ALLOWANCE.perDay / 2, 2);
+  });
+
+  it("reads the server's timestamps, and survives one it can't read", async () => {
+    const at = (allowance_at: string) =>
+      SupabaseStore.open({ rpc: async () => ({ data: { id: "me", lifetime: 0, balance: 0, allowance: 1, allowance_at }, error: null }) } as unknown as SupabaseClient);
+    const micro = new Date(Date.now() - 24 * HOUR * 1000).toISOString().replace("Z", "123+00:00");
+    expect((await at(micro)).allowance()).toBeCloseTo(1 + ALLOWANCE.perDay, 2);
+    const s = await at("yesterday-ish");
+    s.addMiles(0.5);
+    expect(s.allowance()).toBeCloseTo(0.5, 3);
+    expect(s.get().balance).toBeCloseTo(0.5, 3);
+  });
+
+  it("stays full when the database has no allowance yet", async () => {
+    const sb = { rpc: async () => ({ data: { id: "me", lifetime: 0, balance: 0 }, error: null }) } as unknown as SupabaseClient;
+    const s = await SupabaseStore.open(sb);
+    s.addMiles(2);
+    expect(s.get().balance).toBe(2);
+    expect(s.allowance()).toBe(ALLOWANCE.cap - 2);
   });
 });

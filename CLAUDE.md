@@ -47,7 +47,7 @@ apps, you are in the wrong repo.
       (ADR 0008).
   - Online, also unit-tested:
     - `store.ts`: progress, either `LocalStore` (in memory) or `SupabaseStore`
-      (database functions).
+      (database functions), and the miles allowance (ADR 0010).
     - `net.ts`: presence, tents, poses, friend requests and chat, either `SupabaseNet`
       or `LocalNet` (tabs of one browser, `?net=local`).
     - `supabase.ts`: the client and sign-in.
@@ -108,6 +108,7 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't add a paid service without explicit confirmation.
 - Don't add links, menus, or navigation to the other apps. gilbyy.com is a game, not a launcher.
 - Don't let the client write progress directly. Every change to miles, purchases and friendships goes through a checked `security definer` function in `supabase/migrations/`; keep prices and mission payouts in sync with `shop.ts`/`missions.ts` (`shop.test.ts` enforces it). Only the publishable key ever reaches the browser.
+- Don't pay out miles around the allowance. The server can't tell a player from a script or an agent making the same calls, so every mile banked, from driving or a repeat mission, comes out of `allowance_now()` (100, refilling at 50 a day; ADR 0010). Anything new that pays miles must spend it too; `ALLOWANCE` in `store.ts` mirrors it.
 - Don't make sign-in required. Single player with no account must keep working, and say clearly that nothing is saved.
 - Don't reach for a game engine, a physics engine, react-three-fiber or a post-processing stack. three.js is the one rendering dependency (ADR 0005); the physics is ours and stays a pure, tested function. Anything more needs its own ADR.
 - Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
@@ -143,6 +144,7 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - four missions, and first-time guidance;
 - a map with fog of war, where the garages and café you've found stay marked and are counted (ADR 0008);
 - achievements for the first garage and the café, shown on the leaderboard (ADR 0009);
-- optional sign-in for saved progress, a shared valley, friends, chat and a leaderboard (ADR 0007).
+- optional sign-in for saved progress, a shared valley, friends, chat and a leaderboard (ADR 0007);
+- signed in, miles bank out of an allowance (100, refilling at 50 a day), so scripts and agents can't farm them (ADR 0010, 2026-10-08).
 
 The online half is connected (2026-10-07): the Supabase project `gilbyy` has all three migrations, Google sign-in works, and the whole list (name, tent, seeing each other, friending at the café, chat, leaderboard, a purchase and a mission payout that persist) was played from two browsers. It was merged to `main` the same day, so gilbyy.com offers sign-in. A tab left hidden for five minutes, or untouched for fifteen, gives its tent back and takes one again on return. Sign-in is Google only; the email-link option was removed because Supabase's built-in mailer only reaches members of the Supabase org. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.

@@ -80,6 +80,9 @@ asked for each explicitly, so this records the change instead of working around 
   player returns. Like the cap itself this is a courtesy enforced in the client.
 - **2026-10-07: names are 2 to 20 characters** (they were 3 to 20), and a signed-in
   player sees a small dot and their name in the top right corner.
+- **2026-10-08: miles bank out of an allowance** of up to 100 that refills at 50 a day,
+  spent by driving and by repeat mission rewards, so nothing out-earns a keen player.
+  See `0010`.
 
 ## Consequences
 

@@ -2,10 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import { PARTS, STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, specFor, type PartCategory } from "./shop";
+import { ALLOWANCE } from "./store";
 import { STARTERS, VEHICLES } from "./vehicles";
 import { buildWorld } from "./world";
 
 const migration = readFileSync(resolve(__dirname, "../../../../supabase/migrations/20261007000000_gilbyy_game.sql"), "utf8");
+const allowance = readFileSync(resolve(__dirname, "../../../../supabase/migrations/20261008000000_miles_allowance.sql"), "utf8");
 const rows = (table: string) => {
   const block = migration.match(new RegExp(`insert into public\\.${table} \\([^)]*\\) values([\\s\\S]*?);`))?.[1] ?? "";
   return [...block.matchAll(/\(([^()]*)\)/g)].map((m) => m[1].split(",").map((v) => v.trim().replace(/^'|'$/g, "")));
@@ -24,6 +26,14 @@ describe("the shop and the server agree", () => {
     const server = rows("missions").map(([id, reward, repeat, cooldown, min]) => ({ id, reward: +reward, repeat: +repeat, cooldown: +cooldown, min: +min }));
     const client = buildWorld().missions.map((m) => ({ id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds }));
     expect(server).toEqual(client);
+  });
+
+  it("on the allowance", () => {
+    const [, cap, perDay] = allowance.match(/least\((\d+), p\.allowance \+ extract\(epoch from now\(\) - p\.allowance_at\) \* (\d+) \/ 86400\)/) ?? [];
+    const start = allowance.match(/add column allowance numeric\(8, 3\) not null default (\d+)/)?.[1];
+    expect({ cap: Number(cap), perDay: Number(perDay) }).toEqual(ALLOWANCE);
+    // Everyone starts with a full allowance.
+    expect(Number(start)).toBe(ALLOWANCE.cap);
   });
 });
 

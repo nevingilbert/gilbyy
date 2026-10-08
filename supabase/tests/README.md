@@ -1,8 +1,8 @@
 # Database tests
 
 `game.test.sql` plays three accounts against the game migration and checks every rule:
-miles can't be banked faster than driving, purchases are priced by the server, missions
-pay once per cooldown, players can't write their own profile, friending needs both
+miles can't be banked faster than driving or beyond the allowance, purchases are priced
+by the server, missions pay once per cooldown and repeats come out of the allowance, players can't write their own profile, friending needs both
 players, and only friends can use their chat channel.
 
 It runs on a plain local Postgres, with `local-stubs.sql` standing in for the bits of

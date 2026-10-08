@@ -24,6 +24,18 @@ export const NAME_PATTERN = /^[A-Za-z0-9 _-]{2,20}$/;
 const NAME_RULE = "2–20 letters, numbers, spaces, - or _.";
 export type Standing = { id: string; name: string; lifetime: number; me: boolean; garages: number; cafes: number; goals: string[] };
 
+/**
+ * Signed in, miles bank out of an allowance: up to `cap` at a stretch, refilling at
+ * `perDay`. The server can't tell a player from a program claiming to be one, so this
+ * bounds what any account can bank, whatever is at the wheel (ADR 0010). Must match
+ * allowance_now() in the migrations (shop.test.ts checks).
+ */
+export const ALLOWANCE = { cap: 100, perDay: 50 };
+
+/** What an allowance that stood at `miles` has become `seconds` later. */
+export const allowanceAfter = (miles: number, seconds: number) =>
+  Math.min(ALLOWANCE.cap, miles + (Math.max(0, seconds) * ALLOWANCE.perDay) / 86400);
+
 export interface Store {
   readonly online: boolean;
   get(): Profile;
@@ -31,6 +43,8 @@ export interface Store {
   subscribe(cb: () => void): () => void;
   /** Miles just driven. Banked now (single player) or in batches (online). */
   addMiles(miles: number): void;
+  /** Miles that can still bank before the allowance runs out. */
+  allowance(): number;
   flush(): Promise<void>;
   buy(key: string): Promise<string | null>;
   equip(vehicle: VehicleId, loadout: Loadout): Promise<string | null>;
@@ -74,6 +88,8 @@ export class LocalStore implements Store {
   addMiles(miles: number) {
     if (miles > 0) this.set({ lifetime: this.p.lifetime + miles, balance: this.p.balance + miles });
   }
+  // Single player keeps nothing, so there is nothing to farm and no allowance.
+  allowance = () => Infinity;
   async flush() {}
 
   async buy(key: string) {
@@ -155,6 +171,8 @@ export class LocalStore implements Store {
 type Row = {
   id: string; name: string | null; lifetime: number; balance: number; owned: string[];
   vehicle: VehicleId | null; loadout: Loadout; goals: string[]; discovered: string[];
+  /** Missing from a database that predates the allowance migration. */
+  allowance?: number; allowance_at?: string;
 };
 
 // The column is `discovered` because `found` means something else inside a database function.
@@ -163,15 +181,27 @@ const toProfile = (r: Row): Profile => ({
   vehicle: r.vehicle, loadout: { ...STOCK_LOADOUT, ...(r.loadout ?? {}) }, goals: r.goals ?? [], found: r.discovered ?? [],
 });
 
+/** The allowance as the server last reported it, and when. Without one, it's always full. */
+const allowanceOf = (r: Row) => {
+  if (r.allowance == null) return { miles: ALLOWANCE.cap, at: Date.now() };
+  // Postgres sends microseconds, which not every browser's Date.parse takes.
+  const at = Date.parse(r.allowance_at?.replace(/(\.\d{3})\d+/, "$1") ?? "");
+  return { miles: Number(r.allowance), at: Number.isFinite(at) ? at : Date.now() };
+};
+
 /** Progress on the server. Miles are batched and banked every few seconds. */
 export class SupabaseStore implements Store {
   readonly online = true;
   private p: Profile;
+  private left: { miles: number; at: number };
   private pending = 0;
+  /** Miles on their way to the server, already out of the allowance here. */
+  private sending = 0;
   private listeners = new Set<() => void>();
 
   private constructor(private sb: SupabaseClient, row: Row) {
     this.p = toProfile(row);
+    this.left = allowanceOf(row);
   }
 
   static async open(sb: SupabaseClient) {
@@ -193,13 +223,20 @@ export class SupabaseStore implements Store {
     const { data, error } = await this.sb.rpc(fn, args);
     if (error) return error.message;
     this.p = toProfile(data as Row);
+    this.left = allowanceOf(data as Row);
     this.notify();
     return null;
   }
 
+  // Mirrors the server's allowance, so the odometer stops where the server would and
+  // doesn't jump back after a flush.
+  allowance = () =>
+    Math.max(0, allowanceAfter(this.left.miles, (Date.now() - this.left.at) / 1000) - this.sending - this.pending);
+
   addMiles(miles: number) {
-    if (miles <= 0) return;
-    this.pending += miles;
+    const banked = Math.min(miles, this.allowance());
+    if (banked <= 0) return;
+    this.pending += banked;
     this.notify();
   }
 
@@ -207,7 +244,9 @@ export class SupabaseStore implements Store {
     if (this.pending <= 0) return;
     const sending = this.pending;
     this.pending = 0;
+    this.sending += sending;
     const error = await this.call("add_miles", { p_miles: sending });
+    this.sending -= sending;
     // The server banks what it believes; a failed call puts the miles back to try again.
     if (error) this.pending += sending;
   }

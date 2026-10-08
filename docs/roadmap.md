@@ -15,6 +15,8 @@ subdomains." Update the **You are here** marker as you progress.
 > leaderboard (`decisions/0008`). The compass mark leads to a first garage and then the
 > café, and each of those is an achievement shown on the leaderboard (`decisions/0009`).
 > It is all on `main` and live at gilbyy.com since 2026-10-07.
+> On 2026-10-08 miles started banking out of an allowance (100, refilling at 50 a day),
+> so a script or an agent can't farm them (`decisions/0010`).
 > **Next:** play it signed in on the live site. Still open:
 > the frame rate on a real phone and laptop. Sign-in is Google only (the email link was
 > removed), and an idle tab now gives its tent back.

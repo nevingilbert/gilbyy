@@ -136,6 +136,11 @@ for sign-in (Google only), and Realtime for the shared valley. See
   `discover()`, and the found counts on `leaderboard()`.
 - `20261007200000_achievements.sql` has `leaderboard()` return each player's goals too,
   so friends see each other's achievements (ADR 0009).
+- `20261008000000_miles_allowance.sql` makes miles bank out of an allowance: up to 100,
+  refilling at 50 a day (`allowance_now()`), spent by `add_miles` and by repeat rewards
+  in `complete_mission`. The server can't tell a player from a script making the same
+  calls, so this bounds what any account banks (ADR 0010). `ALLOWANCE` in `store.ts`
+  mirrors it.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

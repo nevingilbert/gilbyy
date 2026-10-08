@@ -207,6 +207,8 @@ export function Game() {
     let lastDistance = 0;
     let unbanked = 0;
     let bankClock = 0;
+    /** Whether the player has been told their allowance is spent. */
+    let rested = false;
     /** The speedometer's reading, eased so bumps don't make it flicker. */
     let gauge = 0;
     let flushClock = 0;
@@ -853,7 +855,8 @@ export function Game() {
         view.showRun(-1, 0, time);
         void store.completeMission(m, seconds).then((res) => {
           goal("mission");
-          if ("paid" in res) say(`${m.name} in ${fmtTime(seconds)}. +${fmtMiles(res.paid)} mi`, 7);
+          if ("paid" in res && res.paid >= 0.1) say(`${m.name} in ${fmtTime(seconds)}. +${fmtMiles(res.paid)} mi`, 7);
+          else if ("paid" in res) say(`${m.name} in ${fmtTime(seconds)}. That's a long day's driving, so this one's just for fun.`, 7);
           else say(`${m.name} in ${fmtTime(seconds)}. ${res.error}`, 7);
         });
         return;
@@ -924,6 +927,13 @@ export function Game() {
           bankClock = 0;
           store.addMiles(unbanked);
           unbanked = 0;
+          // Signed in, miles bank out of an allowance (ADR 0010). Say so once when it runs
+          // out, and not again until it has refilled a good way.
+          const left = store.allowance();
+          if (left < 0.01 && !rested) {
+            rested = true;
+            say("That's a long day's driving. Miles bank slowly from here until tomorrow.", 8);
+          } else if (left > 5) rested = false;
         }
         flushClock += dt;
         if (store.online && flushClock > FLUSH_EVERY) {
