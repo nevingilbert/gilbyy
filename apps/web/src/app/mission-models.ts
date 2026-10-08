@@ -22,16 +22,20 @@ function bunting(k: Kit, colors: readonly THREE.ColorRepresentation[]) {
   }
 }
 
-/** Two posts at x = ±4 on concrete footings, a beam over the top, knee braces, a lantern on each post. */
-function arch(glow: THREE.Material, banner: (k: Kit) => void) {
+/**
+ * Two posts at x = ±4 on concrete footings, a beam over the top, knee braces, a lantern on each post. Each post stands
+ * on `ground(x)`, the ground's height at local x relative to the origin, so the beam stays level across a slope.
+ */
+function arch(glow: THREE.Material, ground: (x: number) => number, banner: (k: Kit) => void) {
   const object = new THREE.Group();
   const k = new Kit();
   const wood = lambert(PALETTE.timber), dark = lambert(tone(PALETTE.timber, 0.72)), iron = lambert(PALETTE.doorDark);
   for (const s of [1, -1]) {
-    const x = s * POST_X;
-    k.box(lambert(PALETTE.concrete), 0.8, 0.35, 0.8, x, 0.17, 0);
-    k.box(wood, 0.4, TOP, 0.4, x, TOP / 2, 0);
-    for (const y of [0.6, TOP - 0.7]) k.box(dark, 0.46, 0.12, 0.46, x, y, 0);
+    const x = s * POST_X, g = ground(x);
+    // The footing reaches a little below the ground, so its downhill edge never shows a gap.
+    k.box(lambert(PALETTE.concrete), 0.8, 0.5, 0.8, x, g + 0.1, 0);
+    k.box(wood, 0.4, TOP - g, 0.4, x, (TOP + g) / 2, 0);
+    for (const y of [g + 0.6, TOP - 0.7]) k.box(dark, 0.46, 0.12, 0.46, x, y, 0);
     k.strut(dark, [x - s * 0.2, TOP - 1.2, 0], [x - s * 1.25, TOP - 0.38, 0], 0.18);
     k.box(iron, 0.5, 0.08, 0.5, x, TOP + 0.04, 0);
     k.box(glow, 0.26, 0.34, 0.26, x, TOP + 0.25, 0);
@@ -44,9 +48,12 @@ function arch(glow: THREE.Material, banner: (k: Kit) => void) {
   return { object: k.build(object), colliders: [{ x: -POST_X, z: 0, r: 0.5 }, { x: POST_X, z: 0, r: 0.5 }] as Circle[] };
 }
 
-/** A timber start arch with a banner, spanning an 8 m opening across local x, posts at x = ±4. Origin at the centre of the opening. */
-export function buildStartArch(glow: THREE.Material): { object: THREE.Group; colliders: Circle[] } {
-  return arch(glow, (k) => {
+/**
+ * A timber start arch with a banner, spanning an 8 m opening across local x, posts at x = ±4. Origin at the centre of the opening.
+ * `ground(x)` is the ground's height at local x, relative to the origin.
+ */
+export function buildStartArch(glow: THREE.Material, ground: (x: number) => number): { object: THREE.Group; colliders: Circle[] } {
+  return arch(glow, ground, (k) => {
     const cream = lambert(PALETTE.trimCream);
     k.box(lambert(PALETTE.banner), BANNER_W, BANNER_H, 0.04, 0, BANNER_Y, 0);
     for (const e of [1, -1]) k.box(cream, BANNER_W, 0.1, 0.06, 0, BANNER_Y + e * (BANNER_H / 2 - 0.12), 0);
@@ -54,9 +61,9 @@ export function buildStartArch(glow: THREE.Material): { object: THREE.Group; col
   });
 }
 
-/** A finish arch, same size, with a chequered banner (alternating barrierWhite / doorDark squares). */
-export function buildFinishArch(glow: THREE.Material): { object: THREE.Group; colliders: Circle[] } {
-  return arch(glow, (k) => {
+/** A finish arch, same size and footing, with a chequered banner (alternating barrierWhite / doorDark squares). */
+export function buildFinishArch(glow: THREE.Material, ground: (x: number) => number): { object: THREE.Group; colliders: Circle[] } {
+  return arch(glow, ground, (k) => {
     const squares = [lambert(PALETTE.barrierWhite), lambert(PALETTE.doorDark)];
     const [cols, rows] = [9, 2], s = BANNER_W / cols;
     for (let i = 0; i < cols; i++)
@@ -72,8 +79,11 @@ const LOOK: Record<Exclude<GateState, "hidden">, { color: THREE.Color; glow: num
   done: { color: new THREE.Color(PALETTE.flagDone), glow: 0.1 },
 };
 
-/** A gate: two tall slim posts at x = ±width/2 with pennant flags. Origin at the gate centre; you drive through along z. */
-export function buildGate(width: number): {
+/**
+ * A gate: two tall slim posts at x = ±width/2 with pennant flags. Origin at the gate centre; you drive through along z.
+ * Each post stands on `ground(x)`, the ground's height at local x relative to the origin.
+ */
+export function buildGate(width: number, ground: (x: number) => number): {
   object: THREE.Group;
   colliders: Circle[];
   /** next: flags PALETTE.flagNext and gently pulsing/waving using `time`; ahead: PALETTE.flag; done: PALETTE.flagDone; hidden: invisible. Must be cheap per frame. */
@@ -88,13 +98,13 @@ export function buildGate(width: number): {
   // Each pennant is two hinged pieces, so the tip can lag the root as it waves.
   const flags: { root: THREE.Object3D; tip: THREE.Object3D; phase: number }[] = [];
   for (const s of [1, -1]) {
-    const x = s * half;
-    k.cyl(dark, 0.17, 0.3, x, 0.15, 0, 0, 0, 6);
-    k.cyl(pole, 0.07, POLE, x, POLE / 2, 0, 0, 0, 6);
-    k.cyl(flag, 0.09, 0.6, x, 1.3, 0, 0, 0, 6);
-    k.add(flag, new THREE.IcosahedronGeometry(0.14, 0), x, POLE + 0.08, 0);
+    const x = s * half, g = ground(x);
+    k.cyl(dark, 0.17, 0.4, x, g + 0.1, 0, 0, 0, 6);
+    k.cyl(pole, 0.07, POLE, x, g + POLE / 2, 0, 0, 0, 6);
+    k.cyl(flag, 0.09, 0.6, x, g + 1.3, 0, 0, 0, 6);
+    k.add(flag, new THREE.IcosahedronGeometry(0.14, 0), x, g + POLE + 0.08, 0);
     const root = new THREE.Group();
-    root.position.set(x, POLE - 0.55, 0);
+    root.position.set(x, g + POLE - 0.55, 0);
     const tip = new THREE.Group();
     tip.position.x = s * 0.8;
     const a = new THREE.Mesh(prism([[0, 0.45], [s * 0.8, 0.27], [s * 0.8, -0.27], [0, -0.45]], 0.03), flag);

@@ -46,6 +46,12 @@ function placer(world: World, group: THREE.Group, colliders: Obstacle[]) {
   };
 }
 
+/** The ground's height along local x of a model placed at (x, z) turned by `rot`, relative to its origin. */
+function across(world: World, x: number, z: number, rot: number) {
+  const y = world.height(x, z);
+  return (lx: number) => world.height(x + lx * Math.cos(rot), z - lx * Math.sin(rot)) - y;
+}
+
 function placeGarages(world: World, windows: THREE.Material) {
   const group = new THREE.Group();
   const models: GarageModel[] = [];
@@ -78,9 +84,11 @@ function placeCamp(world: World, windows: THREE.Material, glow: THREE.Material) 
   group.add(mergeByMaterial(pitches));
   const centre = buildCampCentre(glow);
   place(centre.object, centre.colliders, CAMP_CENTRE.x, CAMP_CENTRE.z, 0);
-  const gate = buildCampGate();
-  // The arch spans the road east out of camp, which runs along x.
-  place(gate.object, gate.colliders, CAMP_GATE.x + 24, CAMP_GATE.z, Math.PI / 2);
+  // The arch spans the road east out of camp, which runs along x. It stands outside the levelled camp, where the
+  // ground falls away across the road.
+  const [gx, gz, rot] = [CAMP_GATE.x + 24, CAMP_GATE.z, Math.PI / 2];
+  const gate = buildCampGate(across(world, gx, gz, rot));
+  place(gate.object, gate.colliders, gx, gz, rot);
   const cafe = buildCoffeeShop(windows, glow);
   const at = place(cafe.object, cafe.colliders, CAFE.x, CAFE.z, CAFE.rot);
   world.addObstacles(colliders);
@@ -96,21 +104,23 @@ function placeMissions(world: World, glow: THREE.Material) {
   const colliders: Obstacle[] = [];
   const place = placer(world, group, colliders);
   const courses = world.missions.map((m) => {
-    const arch = buildStartArch(glow);
+    // Courses cross open country, so each post stands on its own ground.
+    const arch = buildStartArch(glow, across(world, m.start.x, m.start.z, m.start.heading));
     place(arch.object, arch.colliders, m.start.x, m.start.z, m.start.heading);
     const last = m.gates.length - 1;
     const end = m.gates[last];
     const loops = m.gates.slice(0, last).findIndex((g) => Math.hypot(g.x - end.x, g.z - end.z) < 5);
     const gates = m.gates.map((g, i) => {
       if (i === last && loops >= 0) return null;
-      const model = buildGate(g.width);
+      const model = buildGate(g.width, across(world, g.x, g.z, g.heading));
       place(model.object, [], g.x, g.z, g.heading);
       return model;
     });
     if (loops < 0) {
-      const finish = buildFinishArch(glow);
       // Just past the last gate, so the banner frames it as you come through.
-      place(finish.object, finish.colliders, end.x + Math.sin(end.heading) * 6, end.z + Math.cos(end.heading) * 6, end.heading);
+      const [fx, fz] = [end.x + Math.sin(end.heading) * 6, end.z + Math.cos(end.heading) * 6];
+      const finish = buildFinishArch(glow, across(world, fx, fz, end.heading));
+      place(finish.object, finish.colliders, fx, fz, end.heading);
     }
     return { gates, loops, last };
   });
