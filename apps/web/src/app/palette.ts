@@ -144,6 +144,19 @@ export const PALETTE = {
   coffeeAwning: ["#c4473a", "#efe6d6"],
   coffeeSign: "#3a2a22",
 
+  // The four buildings that aren't about driving: bank, church, school, casino (ADR 0012).
+  bankStone: "#d9cfbb",
+  bankCopper: "#5f8f82",
+  brass: "#d6a43a",
+  churchWall: "#f1eadc",
+  churchDoor: "#8c2f2a",
+  graveStone: "#9b98aa",
+  schoolBrick: "#b04f36",
+  chalkboard: "#2f4a3e",
+  casinoWall: "#6a2f52",
+  casinoCarpet: "#a8322e",
+  dieWhite: "#f2ece2",
+
   // Missions: start arches, gate flags (next, ahead, passed), finish banners.
   flag: "#e2702f",
   flagNext: "#ffd36b",

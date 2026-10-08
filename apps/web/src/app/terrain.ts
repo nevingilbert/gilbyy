@@ -431,7 +431,7 @@ function chooseSites(t: Omit<Terrain, "sites">, rand: () => number): Site[] {
 }
 
 /** Levels the ground toward `y` within `flat` metres of `dist`'s zero, blending out over `blend`. */
-function level(heights: Float32Array, box: { x0: number; x1: number; z0: number; z1: number }, y: number, flat: number, blend: number, out?: Float32Array) {
+export function level(heights: Float32Array, box: { x0: number; x1: number; z0: number; z1: number }, y: number, flat: number, blend: number, out?: Float32Array) {
   const reach = flat + blend;
   const i0 = Math.max(0, Math.floor((box.x0 - reach + HALF) / CELL));
   const i1 = Math.min(WORLD.segments, Math.ceil((box.x1 + reach + HALF) / CELL));

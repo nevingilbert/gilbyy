@@ -168,8 +168,8 @@ Not done, roughly in order of how much they'd add:
 - Dust, tyre tracks, an engine note.
 - Water that reads as water: shoreline foam, rivers that visibly flow.
 - Dirt trails between the garages.
-- Buildings that link to other gilbyy.com pages: floated by the owner, needs an ADR
-  superseding `0004` first.
+- ~~Buildings that link to other gilbyy.com pages.~~ Done 2026-10-08 as four easter
+  eggs (`decisions/0012-easter-egg-buildings.md`); not yet merged or deployed.
 
 Note for whoever picks this up: `requestAnimationFrame` does not run while the tab is
 backgrounded, so the game looks frozen in a hidden preview pane and timed input does

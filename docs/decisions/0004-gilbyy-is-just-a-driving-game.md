@@ -2,7 +2,9 @@
 
 Date: 2026-08-28
 Status: Accepted. Narrows `0003-levels-as-standalone-apps.md`, which still assumed the
-landing page would navigate to the levels.
+landing page would navigate to the levels. Since 2026-10-08,
+`0012-easter-egg-buildings.md` allows four hidden buildings that link out; everything
+else here stands.
 
 ## Context
 
