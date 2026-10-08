@@ -3,8 +3,8 @@ import type { Mission } from "./missions";
 /**
  * A convoy: a course for two to four friends, driven together. A race is gathered and
  * set off the same way, and each driver's time travels with their last flag count so
- * everyone sees the same results. See docs/decisions/0009-convoys.md and
- * 0010-races.md.
+ * everyone sees the same results. See docs/decisions/0010-convoys.md and
+ * 0011-races.md.
  *
  * There is no game server, so the drivers agree among themselves over the valley's
  * broadcast channel (net.ts). One friend gathers at the start arch and calls out; friends

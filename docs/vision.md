@@ -40,7 +40,8 @@ HUD that is nearly absent.
   finisher is paid the same and the winner gets only the win. None of them is required.
 - A first-time guide line, one thing at a time, pointing at the compass.
 - A map that starts grey and fills in as you explore, fresh on every visit.
-- A high chase camera, a compass, a minimap and an odometer. Little else on screen.
+- A high chase camera, a compass, a minimap, a speedometer and an odometer. Little else on
+  screen.
 - Keyboard on desktop, touch controls on phones.
 - With no sign-in, single player, and nothing is kept. Signed in, your miles and garage
   are saved, you share the valley with everyone else signed in, you add friends by

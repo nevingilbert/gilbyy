@@ -1,13 +1,17 @@
 import * as THREE from "three";
 import { buildCar, type CarModel } from "./car-model";
-import type { Peer, Pose } from "./net";
+import { guessPose, staleAfter, type Peer, type Pose } from "./net";
 import { makeCar, type Car, type CarSpec } from "./physics";
 import { specFor } from "./shop";
 import { campPitches, type Obstacle, type World } from "./world";
 
-/** Older than this, a pose isn't carried forward any further: the truck coasts to a stop. */
-const STALE = 1.5;
+/** How fast a correction fades, per second: the truck drifts back onto its true path rather than jumping. */
+const SETTLE = 6;
 const pitches = campPitches();
+
+/** How far the drawn truck is from where its poses say, fading away. */
+type Offset = { x: number; y: number; z: number; heading: number };
+const still = (): Offset => ({ x: 0, y: 0, z: 0, heading: 0 });
 
 type Remote = {
   peer: Peer;
@@ -16,15 +20,18 @@ type Remote = {
   car: Car;
   last: Pose | null;
   heardAt: number;
+  off: Offset;
   look: string;
 };
 
 const lookOf = (p: Peer) => p.vehicle + JSON.stringify(p.loadout);
-const turnToward = (from: number, to: number, t: number) => from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * t;
+const angleBetween = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
 /**
- * Everyone else's trucks. Poses arrive a few times a second at most, so between them each
- * truck carries on as it was going and eases toward where it should be.
+ * Everyone else's trucks. Poses arrive a few times a second at most, and only every few
+ * seconds while a truck holds its line, so between them each truck carries on as it was
+ * going, round the bend if it was turning. When a pose shows the guess was off, the truck
+ * keeps being drawn where it was and the difference fades, so it never jumps.
  */
 export function createRemotes(scene: THREE.Scene, world: World) {
   const remotes = new Map<string, Remote>();
@@ -36,9 +43,10 @@ export function createRemotes(scene: THREE.Scene, world: World) {
     const known = lastKnown.get(r.peer.id);
     const bay = pitches[r.peer.tent]?.parking ?? pitches[0].parking;
     r.car = makeCar(world, known?.x ?? bay.x, known?.z ?? bay.z, known?.heading ?? bay.heading, r.spec);
+    r.off = still();
     if (known) {
       r.car.y = known.y;
-      r.last = { ...known, speed: 0 };
+      r.last = { ...known, speed: 0, turn: 0 };
       r.heardAt = performance.now() / 1000;
     }
   }
@@ -48,7 +56,7 @@ export function createRemotes(scene: THREE.Scene, world: World) {
     model.setLoadout(peer.loadout);
     scene.add(model.object);
     const spec = specFor(peer.vehicle, peer.loadout);
-    const r: Remote = { peer, model, spec, car: makeCar(world, 0, 0, 0, spec), last: null, heardAt: 0, look: lookOf(peer) };
+    const r: Remote = { peer, model, spec, car: makeCar(world, 0, 0, 0, spec), last: null, heardAt: 0, off: still(), look: lookOf(peer) };
     place(r);
     remotes.set(peer.id, r);
   }
@@ -69,7 +77,7 @@ export function createRemotes(scene: THREE.Scene, world: World) {
       const r = remotes.get(p.id);
       if (!r) add(p);
       else if (r.peer.vehicle !== p.vehicle) {
-        const keep = { car: r.car, last: r.last, heardAt: r.heardAt };
+        const keep = { car: r.car, last: r.last, heardAt: r.heardAt, off: r.off };
         drop(p.id);
         add(p);
         Object.assign(remotes.get(p.id)!, keep);
@@ -88,8 +96,12 @@ export function createRemotes(scene: THREE.Scene, world: World) {
     lastKnown.set(id, p);
     const r = remotes.get(id);
     if (!r) return;
+    const c = r.car;
     // Far from where we had it (just joined, or back from a garage): jump there.
-    if (!r.last || Math.hypot(p.x - r.car.x, p.z - r.car.z) > 40) Object.assign(r.car, { x: p.x, y: p.y, z: p.z, heading: p.heading });
+    if (!r.last || Math.hypot(p.x - c.x, p.z - c.z) > 40) {
+      Object.assign(c, { x: p.x, y: p.y, z: p.z, heading: p.heading });
+      r.off = still();
+    } else r.off = { x: c.x - p.x, y: c.y - p.y, z: c.z - p.z, heading: angleBetween(p.heading, c.heading) };
     r.last = p;
     r.heardAt = now;
   }
@@ -101,32 +113,39 @@ export function createRemotes(scene: THREE.Scene, world: World) {
   function jump(id: string, x: number, z: number, heading: number, now: number) {
     const r = remotes.get(id);
     const y = world.height(x, z) + (r?.spec.ride ?? 0);
-    const p: Pose = { x, y, z, heading, pitch: 0, roll: 0, speed: 0, steer: 0 };
+    const p: Pose = { x, y, z, heading, pitch: 0, roll: 0, speed: 0, steer: 0, turn: 0 };
     lastKnown.set(id, p);
     if (!r) return;
     Object.assign(r.car, { x, y, z, heading, speed: 0 });
+    r.off = still();
     r.last = p;
     r.heardAt = now;
   }
 
   function update(dt: number, now: number, night: number) {
     const ease = 1 - Math.exp(-8 * dt);
+    const fade = Math.exp(-SETTLE * dt);
+    const stale = staleAfter(remotes.size + 1);
     for (const r of remotes.values()) {
       const p = r.last;
       const c = r.car;
       if (p) {
-        const age = Math.min(now - r.heardAt, STALE);
-        const tx = p.x + Math.sin(p.heading) * p.speed * age;
-        const tz = p.z + Math.cos(p.heading) * p.speed * age;
+        // Past `stale` the guess stops: the truck coasts to a stop where it was last expected.
+        const age = Math.min(now - r.heardAt, stale);
+        const g = guessPose(p, age);
+        const o = r.off;
+        o.x *= fade;
+        o.y *= fade;
+        o.z *= fade;
+        o.heading *= fade;
+        c.x = g.x + o.x;
+        c.z = g.z + o.z;
         // Keep the height it had above the ground, wherever the guess has carried it.
-        const ty = world.height(tx, tz) + (p.y - world.height(p.x, p.z));
-        c.x += (tx - c.x) * ease;
-        c.z += (tz - c.z) * ease;
-        c.y += (ty - c.y) * ease;
-        c.heading = turnToward(c.heading, p.heading, ease);
+        c.y = world.height(g.x, g.z) + (p.y - world.height(p.x, p.z)) + o.y;
+        c.heading = g.heading + o.heading;
         c.pitch += (p.pitch - c.pitch) * ease;
         c.roll += (p.roll - c.roll) * ease;
-        c.speed = now - r.heardAt > STALE ? c.speed * (1 - ease) : p.speed;
+        c.speed = now - r.heardAt > stale ? c.speed * (1 - ease) : p.speed;
         c.steer = p.steer;
       }
       c.grounded = true;

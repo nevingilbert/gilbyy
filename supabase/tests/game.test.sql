@@ -139,6 +139,8 @@ select pg_temp.check((select cardinality(discovered) from public.discover('cafe:
 select pg_temp.fails($$ select public.discover('garage:castle') $$, 'made-up places are refused');
 select pg_temp.check((select garages = 1 and cafes = 1 from public.leaderboard() where is_me), 'the leaderboard counts what you have found');
 select pg_temp.check((select garages = 0 and cafes = 0 from public.leaderboard() where not is_me), 'and what your friend has not');
+select pg_temp.check((select goals = '{found-garage}' from public.leaderboard() where is_me), 'the leaderboard shows your goals, for achievements');
+select pg_temp.check((select goals = '{}' from public.leaderboard() where not is_me), 'and your friend''s');
 update public.profiles set discovered = '{garage:workshop,garage:barn,garage:quonset}';
 reset role;
 select pg_temp.check((select cardinality(discovered) from public.profiles where id::text like '%a') = 2, 'players cannot write what they have found');

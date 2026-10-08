@@ -23,7 +23,7 @@ export type Friend = { id: string; name: string };
 /** What a name may be. Must match the check on `profiles.name` in the migrations. */
 export const NAME_PATTERN = /^[A-Za-z0-9 _-]{2,20}$/;
 const NAME_RULE = "2–20 letters, numbers, spaces, - or _.";
-export type Standing = { id: string; name: string; lifetime: number; me: boolean; garages: number; cafes: number };
+export type Standing = { id: string; name: string; lifetime: number; me: boolean; garages: number; cafes: number; goals: string[] };
 
 export interface Store {
   readonly online: boolean;
@@ -155,7 +155,7 @@ export class LocalStore implements Store {
 
   async leaderboard() {
     const found = countFound(this.p.found);
-    return [{ id: this.p.id, name: this.p.name ?? "You", lifetime: this.p.lifetime, me: true, garages: found.garage, cafes: found.cafe }];
+    return [{ id: this.p.id, name: this.p.name ?? "You", lifetime: this.p.lifetime, me: true, garages: found.garage, cafes: found.cafe, goals: this.p.goals }];
   }
 }
 
@@ -270,8 +270,8 @@ export class SupabaseStore implements Store {
 
   async leaderboard() {
     const { data } = await this.sb.rpc("leaderboard");
-    return (data ?? []).map((r: { id: string; name: string; lifetime: number; is_me: boolean; garages: number; cafes: number }) => ({
-      id: r.id, name: r.name, lifetime: Number(r.lifetime), me: r.is_me, garages: r.garages ?? 0, cafes: r.cafes ?? 0,
+    return (data ?? []).map((r: { id: string; name: string; lifetime: number; is_me: boolean; garages: number; cafes: number; goals: string[] | null }) => ({
+      id: r.id, name: r.name, lifetime: Number(r.lifetime), me: r.is_me, garages: r.garages ?? 0, cafes: r.cafes ?? 0, goals: r.goals ?? [],
     }));
   }
 }

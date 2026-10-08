@@ -7,7 +7,7 @@ course for two to four friends, on `feat/convoy-mission`.
 
 ## Decisions made
 
-- **A convoy, not a race** (`docs/decisions/0009-convoys.md`). A race has a loser and a
+- **A convoy, not a race** (`docs/decisions/0010-convoys.md`; it was 0009 until main took that number for achievements). A race has a loser and a
   timer that matters, which `CLAUDE.md` ("don't add pressure") rules out. Each driver
   drives the course; the convoy is home when everyone still in it is through the finish,
   and then each is paid (4 mi first time, 1.2 mi after, once per 10 minutes).
@@ -55,7 +55,7 @@ course for two to four friends, on `feat/convoy-mission`.
 | `apps/web/src/app/play.test.ts`, `shop.test.ts` | Convoy payout in `LocalStore`; parity across all migrations |
 | `supabase/migrations/20261007210000_convoy.sql` | **Created**: `missions.crew`, the row, `complete_convoy`, `complete_mission` refuses crews |
 | `supabase/tests/game.test.sql` | Eleven convoy checks; `complete_convoy` added to the signed-out privilege check |
-| `docs/decisions/0009-convoys.md` | **Created** |
+| `docs/decisions/0010-convoys.md` | **Created** |
 | `CLAUDE.md`, `docs/vision.md`, `docs/art-direction.md`, `docs/architecture.md`, `docs/roadmap.md` | Convoy mentions, migration, message cost |
 
 ## How it was checked
@@ -72,7 +72,7 @@ course for two to four friends, on `feat/convoy-mission`.
 
 ## Added later the same session: a race
 
-The owner asked for a race too (`docs/decisions/0010-races.md`, amending 0009 and the
+The owner asked for a race too (`docs/decisions/0011-races.md`, amending 0010 and the
 "don't add pressure" line in `CLAUDE.md`).
 
 - **Course:** `race()` in `missions.ts`, a 2.35 km loop of 12 flags starting at

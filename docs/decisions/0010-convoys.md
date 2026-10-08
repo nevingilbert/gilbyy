@@ -1,7 +1,7 @@
-# 0009 — Convoys: a mission you drive with friends
+# 0010 — Convoys: a mission you drive with friends
 
 Date: 2026-10-07
-Status: Accepted. Adds to `0007`; changes nothing in it. Amended by `0010`: at the
+Status: Accepted. Adds to `0007`; changes nothing in it. Amended by `0011`: at the
 owner's request there is now a race too, built on the same agreement.
 
 ## Context
@@ -60,4 +60,4 @@ co-op driving like Over the Hill's trailer) both point the other way.
 - Adding the course clears trees and rocks along it, which shifts the random scatter, so
   trees elsewhere in the valley are not where they were. Nothing saved depends on them.
 - A race was built on the same agreement the same day, at the owner's request; see
-  `0010` for how it keeps the payout equal and the result unrecorded.
+  `0011` for how it keeps the payout equal and the result unrecorded.

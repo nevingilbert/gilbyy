@@ -1,12 +1,12 @@
-# 0010 — Races between friends
+# 0011 — Races between friends
 
 Date: 2026-10-07
-Status: Accepted. Amends `0009`, which built the convoy and left races out, and the
+Status: Accepted. Amends `0010`, which built the convoy and left races out, and the
 "don't add pressure" line in `CLAUDE.md`.
 
 ## Context
 
-The owner asked for a race as well as the convoy. `0009` chose a convoy precisely
+The owner asked for a race as well as the convoy. `0010` chose a convoy precisely
 because a race has a winner and a clock that matters, which `CLAUDE.md` and
 `art-direction.md` steer away from. That was a judgment about tone, not a hard
 constraint, and the owner has made the call. This records how the race keeps as much of
@@ -42,7 +42,7 @@ the calm as it can.
   in a new ADR.
 - Times are the client's word, like every mission's. A modified client could claim a
   fast time; it would win a line on its friends' screens and nothing else.
-- The race adds the same Realtime messages as a convoy (`0009`), only while one is on.
+- The race adds the same Realtime messages as a convoy (`0010`), only while one is on.
 - The line-up puts two trucks in front and two behind, so with four the back row starts
   9 m behind. Among friends that is left as it is.
 - `complete_convoy` keeps its name although it now pays races too; the race's row is in

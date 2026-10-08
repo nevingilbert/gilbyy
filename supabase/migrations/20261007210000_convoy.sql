@@ -1,5 +1,5 @@
 -- Convoys: a course driven by two to four friends together, which pays each of them when
--- everyone is through the finish. See docs/decisions/0009-convoys.md.
+-- everyone is through the finish. See docs/decisions/0010-convoys.md.
 
 -- How many drivers a mission takes. The four courses so far are driven alone.
 alter table public.missions add column crew int not null default 1 check (crew between 1 and 4);

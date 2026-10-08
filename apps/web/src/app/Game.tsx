@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { achievementFor } from "./achievements";
 import { CONVOY_MAX, Convoys, GATHER_REACH, lineUp, type ConvoyEvent } from "./convoy";
 import { secondsUntil } from "./daylight";
 import { GarageMenu, fmtMiles } from "./GarageMenu";
@@ -9,7 +10,7 @@ import { createMap } from "./map";
 import { fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, type Net, type NetHandlers, type Peer } from "./net";
 import { Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
-import { makeCar, noInput, step, type Input } from "./physics";
+import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
 import { countFound, foundLine } from "./places";
 import { createView, type Garage } from "./scene";
 import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "./shop";
@@ -41,6 +42,8 @@ const RETRY_JOIN = 60;
 const COMPASS = ["N", "·", "NE", "·", "E", "·", "SE", "·", "S", "·", "SW", "·", "W", "·", "NW", "·"];
 const COMPASS_ITEM = 28;
 const COMPASS_VIEW = COMPASS_ITEM * 8;
+/** Metres a second to miles an hour, for the speedometer. */
+const MPH = 3600 / METRES_PER_MILE;
 
 type Mode = "boot" | "pick" | "drive" | "entering" | "garage" | "leaving" | "map";
 type Presence = "solo" | "local" | "joining" | "online" | "full" | "away";
@@ -92,6 +95,7 @@ export function Game() {
   const miniRef = useRef<HTMLCanvasElement>(null);
   const fullRef = useRef<HTMLCanvasElement>(null);
   const compassRef = useRef<HTMLDivElement>(null);
+  const speedRef = useRef<HTMLSpanElement>(null);
   const markRef = useRef<HTMLDivElement>(null);
   const fadeRef = useRef<HTMLDivElement>(null);
   const tagsRef = useRef<HTMLDivElement>(null);
@@ -213,6 +217,8 @@ export function Game() {
     let lastDistance = 0;
     let unbanked = 0;
     let bankClock = 0;
+    /** The speedometer's reading, eased so bumps don't make it flicker. */
+    let gauge = 0;
     let flushClock = 0;
     let nearGarage = -1;
     let cut = { garage: -1, t: 0, from: { x: 0, z: 0, heading: 0 } };
@@ -318,7 +324,13 @@ export function Game() {
     };
     attach(store);
 
-    const goal = (id: string) => store.markGoal(id);
+    /** An achievement just earned, announced once the truck is back on the road. */
+    let cheer: string | null = null;
+    const goal = (id: string) => {
+      if (store.get().goals.includes(id)) return;
+      store.markGoal(id);
+      cheer = achievementFor(id)?.name ?? cheer;
+    };
 
     // ——— Other players ———
 
@@ -340,7 +352,7 @@ export function Game() {
     const sharePose = (now: number, asked = false) => {
       const m = modeRef.current;
       if (!net || tent < 0 || m === "boot" || m === "pick") return;
-      const pose = { x: car.x, y: car.y, z: car.z, heading: car.heading, pitch: car.pitch, roll: car.roll, speed: car.speed, steer: car.steer };
+      const pose = { x: car.x, y: car.y, z: car.z, heading: car.heading, pitch: car.pitch, roll: car.roll, speed: car.speed, steer: car.steer, turn: yawRateOf(car, spec) };
       if (!asked && !gate.due(pose, now, peers.size + 1)) return;
       net.sendPose(pose);
       gate.sent(pose, now);
@@ -900,7 +912,6 @@ export function Game() {
           : called ? called
           : !g ? null
           : g.target === "garage" ? nearest(view.garages.map((x) => x.approach))
-          : g.target === "mission" ? nearest(courses.map((m) => m.start))
           : g.target === "cafe" ? view.cafe
           : null;
         if (g?.id === "cafe" && Math.hypot(view.cafe.x - car.x, view.cafe.z - car.z) < view.cafe.r + CAFE_SLACK) goal("cafe");
@@ -917,7 +928,9 @@ export function Game() {
       const off = wrapHalf(bearingOf(Math.atan2(to.x - car.x, to.z - car.z)) - bearingOf(car.heading)) * COMPASS.length * COMPASS_ITEM;
       const edge = COMPASS_VIEW / 2 + 10;
       mark.style.opacity = "1";
-      mark.style.transform = `translateX(${Math.max(-edge, Math.min(edge, off))}px)`;
+      // `translate`, not `transform`: the diamond's `rotate-45` is the `rotate` property, and a
+      // transform would slide it along the rotated axis, diagonally off the compass.
+      mark.style.translate = `${Math.max(-edge, Math.min(edge, off))}px 0`;
     };
 
     /** What's on offer where the truck is: a garage door, a start arch, a friend to make. */
@@ -1071,6 +1084,10 @@ export function Game() {
           }
           runOn(dt);
           lookAround();
+          if (cheer) {
+            say(`Achievement: ${cheer}`, 6);
+            cheer = null;
+          }
         } else if (m === "entering" && garage) animateEnter(garage, dt);
         else if (m === "leaving" && garage) animateLeave(garage, dt);
 
@@ -1123,6 +1140,10 @@ export function Game() {
         const at = (COMPASS.length * (1 + bearingOf(car.heading)) + 0.5) * COMPASS_ITEM;
         compassRef.current.style.transform = `translateX(${COMPASS_VIEW / 2 - at}px)`;
       }
+      // Speedometer: whole miles an hour, written only when the number changes.
+      gauge += (Math.abs(car.speed) - gauge) * (1 - Math.exp(-dt * 8));
+      const mph = String(Math.round(gauge * MPH));
+      if (speedRef.current && speedRef.current.textContent !== mph) speedRef.current.textContent = mph;
       if (first) {
         first = false;
         setReady(true);
@@ -1248,9 +1269,13 @@ export function Game() {
             </button>
           )}
 
-          {/* Minimap and odometer: top-right on phones (clear of the thumbs), bottom-left otherwise. */}
+          {/* Minimap, speedometer and odometer: top-right on phones (clear of the thumbs), bottom-left otherwise. */}
           <div className="absolute right-4 top-12 flex flex-col items-center gap-1 sm:bottom-5 sm:left-5 sm:right-auto sm:top-auto">
             <canvas ref={miniRef} className="pointer-events-none h-[104px] w-[104px] rounded-full drop-shadow-md sm:h-[150px] sm:w-[150px]" />
+            <p className="pointer-events-none -mb-1 text-[rgba(255,246,232,0.82)] drop-shadow-sm">
+              <span ref={speedRef} className="text-base font-semibold tabular-nums">0</span>
+              <span className="ml-1 text-[10px] font-semibold tracking-wide text-[rgba(255,246,232,0.6)]">mph</span>
+            </p>
             <button
               onClick={() => setBoard(true)}
               className="text-[11px] font-semibold tracking-wide text-[rgba(255,246,232,0.7)] drop-shadow-sm"
@@ -1261,6 +1286,25 @@ export function Game() {
             </button>
           </div>
         </>
+      )}
+
+      {/* The keys that aren't driving, kept on the right edge for keyboards. Talk only works with a friend near. */}
+      {driving && (
+        <ul className="pointer-events-none absolute right-5 top-1/2 hidden -translate-y-1/2 flex-col gap-1.5 text-[11px] font-medium tracking-wide text-[rgba(255,246,232,0.82)] drop-shadow sm:flex">
+          {[
+            { key: "M", label: "map" },
+            { key: "L", label: "leaderboard" },
+            { key: "T", label: "talk", note: canChat ? "" : "when a friend is near" },
+          ].map((k) => (
+            <li key={k.key} className="flex items-center gap-2">
+              <span className="w-5 rounded border border-white/40 text-center text-[10px] font-semibold">{k.key}</span>
+              <span>
+                {k.label}
+                {k.note && <span className="text-[rgba(255,246,232,0.6)]"> · {k.note}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
 
       {driving && solo && !run && <SoloBanner canSignIn={onlineConfigured} onSignIn={() => setSigningIn(true)} />}
@@ -1328,7 +1372,7 @@ export function Game() {
           showHint && ready && mode === "drive" && !prompt && !run ? "opacity-100" : "opacity-0"
         }`}
       >
-        <span className="hidden sm:inline">arrows or WASD to drive · M for the map · L for miles</span>
+        <span className="hidden sm:inline">arrows or WASD to drive</span>
         <span className="sm:hidden">hold ▲ to drive</span>
       </p>
 

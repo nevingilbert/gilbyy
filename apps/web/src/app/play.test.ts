@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
-import { currentGoal } from "./goals";
+import { ACHIEVEMENTS, achievementsOf } from "./achievements";
+import { currentGoal, GOALS } from "./goals";
 import { COUNTDOWN, crossed, startRun, tick } from "./mission-run";
 import type { Mission } from "./missions";
-import { AWAY_HIDDEN, AWAY_IDLE, MAX_PLAYERS, PoseGate, PresenceBudget, chatTopic, isAway, settle, type Peer, type Pose } from "./net";
+import { AWAY_HIDDEN, AWAY_IDLE, HEARTBEAT, MAX_PLAYERS, PoseGate, PresenceBudget, chatTopic, guessPose, isAway, poseInterval, settle, staleAfter, type Peer, type Pose } from "./net";
+import { makeCar, noInput, step, yawRateOf, STOCK, type Car } from "./physics";
 import { STOCK_LOADOUT } from "./shop";
 import { LocalStore, NAME_PATTERN } from "./store";
 
@@ -32,7 +34,7 @@ describe("tents", () => {
 });
 
 describe("pose sending", () => {
-  const pose = (x: number, speed: number, heading = 0): Pose => ({ x, y: 0, z: 0, heading, pitch: 0, roll: 0, speed, steer: 0 });
+  const pose = (x: number, speed: number, heading = 0): Pose => ({ x, y: 0, z: 0, heading, pitch: 0, roll: 0, speed, steer: 0, turn: 0 });
 
   it("sends nothing while parked, and little while cruising straight", () => {
     const gate = new PoseGate();
@@ -51,6 +53,40 @@ describe("pose sending", () => {
     const gate = new PoseGate();
     gate.sent(pose(0, 10), 0);
     expect(gate.due({ ...pose(0, 10, 0.3), z: 5 }, 0.5, 2)).toBe(true);
+  });
+
+  it("guesses round a bend at the speed and turn it last had", () => {
+    // Heading 0 faces +z and a positive turn swings it toward +x: a quarter circle ends
+    // one radius along each, facing +x.
+    const g = guessPose({ ...pose(0, 10), turn: 0.5 }, Math.PI);
+    expect(g.heading).toBeCloseTo(Math.PI / 2, 6);
+    expect(g.x).toBeCloseTo(20, 6);
+    expect(g.z).toBeCloseTo(20, 6);
+  });
+
+  it("sends little while driving round a steady bend", () => {
+    const flat = { height: () => 0, waterAt: () => -100, obstaclesNear: () => [], slipAt: () => 0, limit: 1000 };
+    const car = makeCar(flat, 0, 0, 0);
+    const drive = (seconds: number) => {
+      for (let i = 0; i < seconds * 120; i++) step(car, { ...noInput(), gas: true, left: true }, 1 / 120, flat, STOCK);
+    };
+    const poseOf = (c: Car): Pose => ({ ...c, turn: yawRateOf(c, STOCK) });
+    drive(20); // Up to speed, and settled into the circle.
+    const gate = new PoseGate();
+    gate.sent(poseOf(car), 0);
+    let sends = 0;
+    for (let t = 0.1; t < HEARTBEAT - 0.05; t += 0.1) {
+      drive(0.1);
+      if (gate.due(poseOf(car), t, 2)) sends++;
+    }
+    expect(Math.abs(car.speed)).toBeGreaterThan(5);
+    expect(sends).toBe(0);
+  });
+
+  it("keeps carrying a quiet truck forward until its next pose is due", () => {
+    for (const players of [2, 5, 10, 20, 30]) {
+      expect(staleAfter(players)).toBeGreaterThan(Math.max(HEARTBEAT, poseInterval(players)));
+    }
   });
 
   it("sends less often the more players there are", () => {
@@ -195,7 +231,21 @@ describe("single player progress", () => {
 
   it("guides a newcomer one thing at a time", () => {
     expect(currentGoal([], false)?.id).toBe("garage");
-    expect(currentGoal(["garage", "buy", "mission"], false)).toBeNull();
-    expect(currentGoal(["garage", "buy", "mission"], true)?.id).toBe("cafe");
+    // The compass mark leads to a garage, then the café, then goes away.
+    expect(currentGoal(["garage"], false)?.target).toBe("cafe");
+    expect(currentGoal(["garage"], false)?.text).not.toMatch(/friends/);
+    expect(currentGoal(["garage"], true)?.text).toMatch(/friends/);
+    expect(currentGoal(["garage", "cafe"], true)?.target).toBeNull();
+    expect(currentGoal(["garage", "cafe", "buy"], false)?.target).toBeNull();
+    expect(currentGoal(["garage", "cafe", "buy", "mission"], true)).toBeNull();
+  });
+
+  it("turns the first garage and the café into achievements, and nothing else", async () => {
+    expect(ACHIEVEMENTS.every((a) => GOALS.some((g) => g.id === a.goal))).toBe(true);
+    expect(achievementsOf([]).map((a) => a.name)).toEqual([]);
+    expect(achievementsOf(["cafe", "buy", "made-up", "garage"]).map((a) => a.name)).toEqual(["First garage", "First café"]);
+    const s = new LocalStore("me");
+    s.markGoal("garage");
+    expect(achievementsOf((await s.leaderboard())[0].goals).map((a) => a.name)).toEqual(["First garage"]);
   });
 });

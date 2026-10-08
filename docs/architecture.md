@@ -76,7 +76,7 @@ Pure modules, no three.js, all unit-tested:
 - `convoy.ts`: a convoy or race of two to four friends, agreed among their clients over
   the `world` channel: gathering at the arch, setting off, flag counts, finish times,
   places, and coming home. Every message is safe to hear twice and is repeated until
-  answered (`decisions/0009-convoys.md`, `0010-races.md`).
+  answered (`decisions/0010-convoys.md`, `0011-races.md`).
 - `world.ts`: trees, rocks and bushes scattered over all that, a bucketed obstacle
   lookup (each obstacle has a height, so tyres can decide what to climb), and the
   `Ground` interface the physics reads, including how slippery the ground is.
@@ -91,7 +91,7 @@ Pure modules, no three.js, all unit-tested:
 - `net.ts`: presence, tents, poses, friend requests and chat. `SupabaseNet` runs over
   Supabase Realtime; `LocalNet` runs over a `BroadcastChannel`, for testing across
   tabs.
-- `goals.ts` (first-time guidance), `track.ts` (train and crossings as functions of
+- `goals.ts` (first-time guidance), `achievements.ts` (which goals are achievements), `track.ts` (train and crossings as functions of
   time), `daylight.ts` (hour and sky).
 
 Rendering and UI:
@@ -104,7 +104,8 @@ Rendering and UI:
   - vehicles: `car-model.ts` with `vehicle-models.ts` (eight bodies);
   - buildings: `garages.ts`, `campground-model.ts`, `coffee-shop-model.ts`;
   - missions: `mission-models.ts`;
-  - other players' trucks: `remote.ts`, interpolated between poses;
+  - other players' trucks: `remote.ts`, carried forward between poses along the bend
+    they were taking (`guessPose` in `net.ts`), with any correction faded in;
   - the garage interior: `showroom.ts`.
 - `map.ts`: a parchment topo map drawn once at load, under a fog layer cleared as you
   drive. The fog is kept in memory only, so it resets every visit. The garages and
@@ -138,10 +139,12 @@ for sign-in (Google only), and Realtime for the shared valley. See
   signed-in users can execute the nine game functions; that is the design.
 - `20261007120000_found_places.sql` adds the `places` list, `profiles.discovered`,
   `discover()`, and the found counts on `leaderboard()`.
+- `20261007200000_achievements.sql` has `leaderboard()` return each player's goals too,
+  so friends see each other's achievements (ADR 0009).
 - `20261007210000_convoy.sql` adds `missions.crew`, the convoy course, and
   `complete_convoy()`, which pays only when a friend is among the crew;
-  `complete_mission()` now refuses courses that take a crew.
-- `20261007230000_race.sql` adds the race's row; `complete_convoy()` pays it.
+  `complete_mission()` now refuses courses that take a crew (ADR 0010).
+- `20261007230000_race.sql` adds the race's row; `complete_convoy()` pays it (ADR 0011).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
@@ -239,8 +242,13 @@ that repo's problem, not this one's.
     - `PoseGate` in `net.ts` keeps players² × send rate under about 40 messages a
       second;
     - it sends nothing while a truck is parked;
-    - while cruising straight it sends only a heartbeat every 3 s, because the
-      others' dead reckoning already has the truck in the right place.
+    - while cruising straight or round a steady bend it sends only a heartbeat every
+      3 s, because the others' dead reckoning already has the truck in the right
+      place. Each pose carries the truck's turn rate so the guess can follow a bend;
+      the sender and the others use the same `guessPose`, so they agree on when the
+      guess has gone wrong. The others keep a quiet truck moving for a little longer
+      than the heartbeat (`staleAfter`), or it would stop and lurch on between
+      heartbeats.
   - **Presence has its own limit: five updates per client in thirty seconds, or
     Realtime closes that client's channel** (`ClientPresenceRateLimitReached` in the
     Realtime logs). Presence carries each player's tent, name and rig, so
