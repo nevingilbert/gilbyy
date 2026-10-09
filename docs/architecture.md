@@ -185,9 +185,14 @@ for sign-in (Google only), and Realtime for the shared valley. See
   `private.flight_log`; `shop_items.world` and the Sandfly, with `buy()` checking where
   you are; a row of `fog` per world, with `explore()` and `explored()` taking the world;
   and the policies that let only players on the island use `world:island` (ADR 0014).
-  **Not applied to the live project yet.** On 2026-10-09 it and the whole of
-  `game.test.sql` were run against the live project in one transaction that rolled
-  back, and every check passed (`supabase/tests/README.md` says how).
+  Applied to the live project on 2026-10-09 with `supabase db push`, after it and the
+  whole of `game.test.sql` passed a dry run there that rolled back
+  (`supabase/tests/README.md` says how); the checks pass against the migrated project
+  too. The advisors' new notices are the expected ones and were left alone: `fly`,
+  `explore`, `explored` and `is_in_world` are callable by signed-in players, which is
+  the design; `private.flight_log` has no policies because only the owner reads it;
+  and the foreign keys to `worlds` have no index, because it has two rows that are
+  never deleted.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

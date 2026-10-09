@@ -19,12 +19,13 @@ subdomains." Update the **You are here** marker as you progress.
 > `main` and went live at gilbyy.com on 2026-10-08. Their migrations are on the live
 > project and the database tests pass against it
 > (`sessions/2026-10-08-convoy-race-deploy.md`).
-> Built on 2026-10-09 on `feat/game-airport-island`, not merged: an airstrip hidden over
-> the river, a 300-mile flight each way, and an island with its own camp, garage and
-> rig (`decisions/0014`, `sessions/2026-10-09-airports-and-the-island.md`). Its
-> migration is not applied; it and the database tests passed a dry run against the
-> live project that rolled back.
-> **Next:** play one convoy and one race signed in from two Google accounts on the live
+> On 2026-10-09 came an airstrip hidden over the river, a 300-mile flight each way, and
+> an island with its own camp, garage and rig (`decisions/0014`). Its migration is on
+> the live project and it was merged to `main` the same day
+> (`sessions/2026-10-09-airports-and-the-island.md`).
+> **Next:** the island's second pass, scoped in that checkpoint: courses and more
+> garages there, and found-counts per world that include the airstrip and the easter
+> eggs, on the leaderboard too. Still open from before: play one convoy and one race signed in from two Google accounts on the live
 > site; neither has been played over Supabase yet, only over `?net=local`. Still open:
 > the frame rate on a real phone and laptop. Sign-in is Google only (the email link was
 > removed), and an idle tab now gives its tent back.

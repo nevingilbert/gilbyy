@@ -57,8 +57,12 @@ camp, airstrip, garage and rig. ADR `docs/decisions/0014-airports-and-the-island
   signed-in player; `boot()` swaps if the profile disagrees.
 - **Database checks were a dry run on the live project**, with the owner's go-ahead:
   `begin;` + the migration + `game.test.sql`, rolled back by the final raise. All 112
-  checks passed and the project was confirmed unchanged afterwards. The owner chose
-  **not to apply the migration yet**.
+  checks passed and the project was confirmed unchanged afterwards.
+- **Then the owner looked at the preview, said it was good, and had it applied and
+  merged.** `supabase db push` applied `20261009180000_island.sql` to the live project,
+  the checks passed again against it, and the advisors showed only the expected
+  notices (listed in `docs/architecture.md`). All 11 players are in the valley and
+  both saved fogs are still theirs. Pull request 8 was merged to `main`.
 
 ## Files changed
 
@@ -85,8 +89,8 @@ camp, airstrip, garage and rig. ADR `docs/decisions/0014-airports-and-the-island
 
 Verified: typecheck, lint, 162 vitest tests, `pnpm build`. In the browser, both flights
 end to end by day and at night, at 1280×800 and 375×812, the Sandfly in the shack's
-showroom, the island's full map, and `?net=local&world=island` taking a tent. Committed
-on `feat/game-airport-island` with a pull request into `main`; not merged.
+showroom, the island's full map, and `?net=local&world=island` taking a tent. Merged to
+`main` as pull request 8 (`feat/game-airport-island`).
 
 ## Open questions
 
@@ -106,21 +110,43 @@ on `feat/game-airport-island` with a pull request into `main`; not merged.
 
 ## Exact next step
 
-Ask the owner whether the pull request from `feat/game-airport-island` is ready to
-merge. If so: apply `supabase/migrations/20261009180000_island.sql` to project `gilbyy`
-(`apqlumghzqkklmpwizex`) first, run the advisors, merge, then fly once signed in.
+Start a branch from `main` for **the island's second pass**, which the owner scoped on
+2026-10-09 after seeing this one. It has three parts.
 
-After that, the second pass the owner asked for, in `apps/web/src/app/island.ts`:
+1. **Courses on the island.** `missions` is `[]` in `buildIsland()` and
+   `planMissions()` in `missions.ts` is written for the valley. Write an island planner
+   (a beach run, a dune course, a jungle loop), add rows to `public.missions` in a new
+   migration with `min_seconds` from the course lengths, and make `shop.test.ts`
+   compare both worlds' missions with the server's.
+2. **More garages on the island.** `sites` is `[shack]`. Add styles to `SiteStyle` and
+   `garages.ts`, or allow several shacks; `GARAGE_NAMES` and `garageKey()` are per style.
+3. **Found-counts for the world you're in**, so players know there is an airstrip to
+   look for ("0/1 airport found"). The owner's answers:
+   - The line shown is only for the world you're in: its garages, its café if it has
+     one, its airstrip, and its easter eggs if it has any.
+   - The bank, church, schoolhouse and casino are called **easter eggs** and are
+     counted: "x/4 easter eggs found". One is found **when you look inside** (E at the
+     door, where `setVisiting` opens `LandmarkCard`), not by driving near. They stay
+     off the map and the compass.
+   - The airstrip is found by coming within sight, like a garage.
+   - **The leaderboard shows the same counts**, each friend's for the world the viewer
+     is in.
+   - Finding still pays nothing.
 
-1. **More garages.** `sites` is `[shack]`. Either add styles to `SiteStyle` and
-   `garages.ts`, or allow several shacks (the island's map marks sites, not styles, so
-   duplicates draw fine; `GARAGE_NAMES` is per style).
-2. **Courses.** `missions` is `[]` and `planMissions()` in `missions.ts` is written for
-   the valley. Write an island planner (a beach run, a dune course, a jungle loop), add
-   rows to `public.missions` in a new migration with `min_seconds` from the course
-   lengths, and make `shop.test.ts` compare both worlds' missions with the server's.
+   Rough shape: give `public.places` a `world` column and kinds `airport` and `egg`;
+   `discover()` already takes any key in that table. Have `leaderboard()` take the
+   world and count each kind for it. In `places.ts`, make `placesOf`, `PLACE_KINDS` and
+   `PLACE_TOTALS` per world and build `foundLine` from the kinds that world has. In
+   `map.ts`, the island's garages and both airstrips then come from found keys rather
+   than `seenSites` and `seenAirport`. `places.test.ts` holds client and server
+   together.
+
+   This **reverses two written rules**, on the owner's say: "don't count them" for the
+   easter eggs (ADR 0012 and `CLAUDE.md`) and "is not a counted place" for the airstrip
+   (ADR 0014). Write ADR 0015 for it and change those lines.
 
 ## Tokens advisory
 
-Natural break: built, tested, dry-run against the database, committed and opened as a
-pull request. Long session; no token limit was hit.
+Natural break: built, tested, applied to the live database and merged, with the next
+MR scoped. Long session; no token limit was hit. The owner asked for the second pass to
+be a fresh session.
