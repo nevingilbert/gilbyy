@@ -85,8 +85,22 @@ Pure modules, no three.js, all unit-tested:
   roll chase the four wheels. Rocks under the tyres' clearance are bumps under the
   wheels. Sideways slip decays fast on dirt, slowly on snow and very slowly on ice,
   scaled by the tyres' snow grip.
-- `vehicles.ts` (the eight rigs) and `shop.ts` (parts, prices, and `specFor()`, which
-  turns a rig and its loadout into a `CarSpec`).
+- `vehicles.ts` (the eight rigs, and the Sandfly, which only the island's garage sells)
+  and `shop.ts` (parts, prices, and `specFor()`, which turns a rig and its loadout into
+  a `CarSpec`).
+- The second world and the way to it (`decisions/0014-airports-and-the-island.md`):
+  - `worlds.ts`: the worlds there are and what the flight to each costs.
+  - `airport.ts`: an airstrip (a 260 m runway and an apron) in "field space", the search
+    that sites one (`findField`), the valley's hidden one (`valleyAirfield`, placed last
+    so nothing else in the valley moves), and the bank and screen of pines round it.
+  - `island.ts`: `buildIsland()` returns the same `World` shape as the valley's
+    `buildWorld()`, on the same grid: sea, beach, dunes and jungle, thirty pitches in a
+    row on the beach, an airstrip and one garage. It has an empty track, no rivers and
+    no courses.
+  - `flight.ts`: the flight as a film. `departure()` and `arrival()` give one frame for
+    a time: the plane's pose, its ramp and wheels, where the truck is, the camera, and
+    how much is lost in cloud. Also the plane's measurements, which the model shares,
+    and the parked plane's colliders.
 - `store.ts`: progress behind one interface. `LocalStore` is in memory for single
   player; `SupabaseStore` calls the database functions.
 - `net.ts`: presence, tents, poses, friend requests and chat. `SupabaseNet` runs over
@@ -99,29 +113,36 @@ Pure modules, no three.js, all unit-tested:
 
 Rendering and UI:
 
-- `scene.ts` assembles the world and runs the chase camera. The pieces:
+- `scene.ts` assembles a world and runs the chase camera. What belongs to one world
+  (ground, scatter, buildings, other players' trucks) is a stage that `setWorld()` takes
+  down and puts up again; the sky, the truck and the plane stay. During a flight
+  `render()` is handed the film's frame, which places the plane and directs the camera.
+  The pieces:
   - terrain and water: `terrain-mesh.ts` (chunked terrain, lakes and rivers as one
     water mesh, grass near the car), `scenery.ts` (instanced trees, bushes and rocks
     in culling tiles), `sky.ts`;
   - the railway: `railway.ts`, `train-model.ts`, `crossing-model.ts`;
-  - vehicles: `car-model.ts` with `vehicle-models.ts` (eight bodies);
+  - vehicles: `car-model.ts` with `vehicle-models.ts` (nine bodies);
   - buildings: `garages.ts`, `campground-model.ts`, `coffee-shop-model.ts`;
+  - flying: `airport-model.ts` (runway, paint, lights, windsock, terminal) and
+    `plane-model.ts` (the jet, its ramp and its wheels);
   - missions: `mission-models.ts`;
   - other players' trucks: `remote.ts`, carried forward between poses along the bend
     they were taking (`guessPose` in `net.ts`), with any correction faded in;
   - the garage interior: `showroom.ts`.
-- `map.ts`: a parchment topo map drawn once at load, under a fog layer cleared as you
-  drive. The garages and café you've found (`places.ts`) are drawn over it regardless,
+- `map.ts`: a parchment topo map of the world you're in, drawn once when that world
+  goes up, under a fog layer cleared as you drive. The garages and café you've found (`places.ts`) are drawn over it regardless,
   and signed in they are saved (`decisions/0008-found-places.md`). So is the fog, as
   the cells of a coarse grid the truck has been in (`fog.ts`,
-  `decisions/0013-saved-fog.md`); single player's fog lasts the visit.
+  `decisions/0013-saved-fog.md`), a set per world; single player's fog lasts the
+  visit. The airstrip is part of the sheet, so it shows where the fog has cleared.
 - `Game.tsx`: a fixed 120 Hz physics loop, the modes (picking a rig, driving, garage,
-  map) and the HUD. `GarageMenu.tsx` is the shop. `Panels.tsx` holds the starter
+  map, flying) and the HUD. `enterWorld()` swaps the world, its map and its courses. `GarageMenu.tsx` is the shop. `Panels.tsx` holds the starter
   picker, the single-player banner, sign-in, the name prompt and the leaderboard.
 
 Runtime dependencies beyond React: three.js (MIT, ~144 KB gzipped) and
-`@supabase/supabase-js` (MIT). There are no asset files: the whole world is generated
-at load (~1.5 s).
+`@supabase/supabase-js` (MIT). There are no asset files: the world you're in is
+generated at load (~1.5 s), and the other one in the cloud of a flight.
 
 The other apps (`friendlybets`, `wellness-planner`, `beeriokart-dashboard`) share the
 domain via subdomains and share nothing else. This repo references other projects in
@@ -160,6 +181,13 @@ for sign-in (Google only), and Realtime for the shared valley. See
   ten mission claims paid five times.
 - `20261009120000_saved_fog.sql` adds the `fog` table, `explore()` and `explored()`,
   which save the map's fog (ADR 0013).
+- `20261009180000_island.sql` adds `worlds` (the fares), `profiles.world`, `fly()` and
+  `private.flight_log`; `shop_items.world` and the Sandfly, with `buy()` checking where
+  you are; a row of `fog` per world, with `explore()` and `explored()` taking the world;
+  and the policies that let only players on the island use `world:island` (ADR 0014).
+  **Not applied to the live project yet.** On 2026-10-09 it and the whole of
+  `game.test.sql` were run against the live project in one transaction that rolled
+  back, and every check passed (`supabase/tests/README.md` says how).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
@@ -286,6 +314,10 @@ that repo's problem, not this one's.
     Realtime connection close.
   - A parked truck sends no poses, so a player who has just arrived asks for them
     (the `where` broadcast) and everyone answers once.
+  - Each world has its own channel (`worldTopic` in `net.ts`: `world` for the valley,
+    `world:island` for the island) and its own thirty tents, so a pose is only ever
+    delivered to players in the same world. The limits above are per project, though:
+    both channels draw on the same budget.
   - Convoys and races (`convoy.ts`) are broadcasts too, received by everyone in the valley: while
     gathering, a call every 3 s and a reply every 3 s from each joiner; while running,
     each driver's flag count on every flag and every 5 s. A two-minute convoy of two

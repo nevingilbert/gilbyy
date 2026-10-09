@@ -17,6 +17,12 @@ export const WORLD = {
   limit: 2880,
 } as const;
 
+/**
+ * The places there are to drive. Each is its own ground on the same grid: the valley you
+ * start in, and the island a plane takes you to (island.ts, ADR 0014).
+ */
+export type WorldId = "valley" | "island";
+
 export const CELL = WORLD.size / WORLD.segments;
 export const HALF = WORLD.size / 2;
 export const ROW = WORLD.segments + 1;
@@ -42,7 +48,8 @@ export const CAMP = { x: -900, z: -150 };
 export const CAMP_PITCHES = 30;
 export const CAFE = { x: -620, z: -205, rot: 0 };
 
-export type Pitch = { index: number; x: number; z: number; parking: { x: number; z: number; heading: number } };
+/** `rot` is which way the pitch faces: its bay is 4 m out that way from its centre, and a truck parks facing it. */
+export type Pitch = { index: number; x: number; z: number; rot: number; parking: { x: number; z: number; heading: number } };
 
 /** Pitch centres and their parking bays. Each pitch faces +z, onto the road in front of its row. */
 export function campPitches(): Pitch[] {
@@ -51,7 +58,7 @@ export function campPitches(): Pitch[] {
     for (let i = 0; i < 10; i++) {
       const x = CAMP.x - 54 + i * 12;
       const z = CAMP.z - 50 + row * 45;
-      out.push({ index: out.length, x, z, parking: { x, z: z + 4, heading: 0 } });
+      out.push({ index: out.length, x, z, rot: 0, parking: { x, z: z + 4, heading: 0 } });
     }
   }
   return out;
@@ -339,7 +346,8 @@ function runRiver(base: (x: number, z: number) => number, angle: number, seed: n
   return { xs, zs, surface };
 }
 
-export type SiteStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch";
+/** Eight in the valley, and the beach shack on the island. */
+export type SiteStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack";
 export type Site = { x: number; z: number; rot: number; style: SiteStyle; y: number };
 
 export type Terrain = {
@@ -366,8 +374,8 @@ export type Terrain = {
   sites: Site[];
 };
 
-const SITE_FLAT = 22;
-const SITE_BLEND = 26;
+export const SITE_FLAT = 22;
+export const SITE_BLEND = 26;
 
 /**
  * Garages, each style placed by its own rule: the roadside workshop a short drive from
@@ -449,9 +457,9 @@ export function level(heights: Float32Array, box: { x0: number; x1: number; z0: 
   }
 }
 
-/** Which vertices a truck can reach from the start without wading deeper than `wade`. */
-function flood(heights: Float32Array, water: Float32Array, wade: number, into: Uint8Array, mark: number) {
-  const startK = Math.round((START.z + HALF) / CELL) * ROW + Math.round((START.x + HALF) / CELL);
+/** Which vertices a truck can reach from `from` without wading deeper than `wade`. */
+export function flood(heights: Float32Array, water: Float32Array, wade: number, into: Uint8Array, mark: number, from: { x: number; z: number } = START) {
+  const startK = Math.round((from.z + HALF) / CELL) * ROW + Math.round((from.x + HALF) / CELL);
   const ok = (k: number) => {
     const x = gridX(k % ROW);
     const z = gridZ(Math.floor(k / ROW));

@@ -6,7 +6,10 @@ import { CELL, ROW, WORLD, gridX, gridZ, sampleGrid, type World } from "./world"
 
 const colour = (hex: string) => new THREE.Color(hex);
 
-export type Surface = "lakebed" | "shore" | "rock" | "snow" | "drift" | "ice" | "floor" | "grass" | "dirt";
+export type Surface =
+  | "lakebed" | "shore" | "rock" | "snow" | "drift" | "ice" | "floor" | "grass" | "dirt"
+  // The island's.
+  | "seabed" | "wetsand" | "beach" | "sand" | "scrub" | "jungle";
 
 /**
  * What the ground is made of at a point, and a 0–1 tone for variation within it.
@@ -15,6 +18,22 @@ export type Surface = "lakebed" | "shore" | "rock" | "snow" | "drift" | "ice" | 
 export function makeSurface(world: World) {
   const patch = makeNoise2D(41);
   const fine = makeNoise2D(42);
+  if (world.id === "island") {
+    return (x: number, y: number, z: number, ny: number): [Surface, number] => {
+      const big = patch(x / 110, z / 110);
+      const small = fine(x / 24, z / 24);
+      const tone = Math.max(0, Math.min(1, (big * 0.7 + small * 0.3 + 1) / 2));
+      // Under the sea the tone is the depth: pale in the shallows, dark where it falls away.
+      if (y < -0.6) return ["seabed", Math.min(1, -y / 16)];
+      if (y < 0.55 + small * 0.25) return ["wetsand", tone];
+      // The shack's yard and the verges of the airstrip are packed sand.
+      if (sampleGrid(world.siteDist, x, z) < 13 + big * 3) return ["wetsand", tone];
+      const jungle = sampleGrid(world.forest, x, z);
+      if (jungle > 0.5 + small * 0.2) return [ny < 0.8 ? "rock" : "jungle", tone];
+      if (jungle > 0.12 + small * 0.1) return ["scrub", tone];
+      return [y < 4.3 + big * 0.7 ? "beach" : "sand", tone];
+    };
+  }
   return (x: number, y: number, z: number, ny: number): [Surface, number] => {
     const big = patch(x / 110, z / 110);
     const small = fine(x / 24, z / 24);
@@ -71,6 +90,12 @@ export function buildTerrainMesh(world: World, surface: SurfaceAt) {
     snow: [colour(PALETTE.snow), colour(PALETTE.snow)],
     drift: PALETTE.snowDrift.map(colour),
     ice: [colour(PALETTE.ice), colour(PALETTE.ice)],
+    seabed: PALETTE.seabed.map(colour),
+    wetsand: [colour(PALETTE.wetSand), colour(PALETTE.wetSand)],
+    beach: PALETTE.beach.map(colour),
+    sand: PALETTE.dune.map(colour),
+    scrub: PALETTE.scrub.map(colour),
+    jungle: PALETTE.jungleFloor.map(colour),
   };
   const material = new THREE.MeshLambertMaterial({ vertexColors: true });
   const group = new THREE.Group();
@@ -127,7 +152,12 @@ export function buildWaterMesh(world: World) {
   const H = world.heights;
   const W = world.water;
   const chunks = new Map<number, number[]>();
-  for (let j = 0; j < WORLD.segments; j++) {
+  // The sea is one level sheet out past the horizon, clearer than a lake so the shallows show pale.
+  if (world.sea) {
+    const far = WORLD.size * 1.5;
+    chunks.set(0, [-far, WORLD.water, -far, -far, WORLD.water, far, far, WORLD.water, -far, far, WORLD.water, -far, -far, WORLD.water, far, far, WORLD.water, far]);
+  }
+  for (let j = 0; !world.sea && j < WORLD.segments; j++) {
     for (let i = 0; i < WORLD.segments; i++) {
       const ks = [j * ROW + i, j * ROW + i + 1, (j + 1) * ROW + i, (j + 1) * ROW + i + 1];
       if (!ks.some((k) => H[k] < W[k] - 0.02)) continue;
@@ -141,11 +171,11 @@ export function buildWaterMesh(world: World) {
 
   const time = { value: 0 };
   const material = new THREE.MeshPhongMaterial({
-    color: PALETTE.water,
-    specular: PALETTE.waterSpecular,
+    color: world.sea ? PALETTE.sea : PALETTE.water,
+    specular: world.sea ? PALETTE.seaSpecular : PALETTE.waterSpecular,
     shininess: 90,
     transparent: true,
-    opacity: 0.82,
+    opacity: world.sea ? 0.7 : 0.82,
   });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
@@ -236,8 +266,15 @@ export function buildGrass(world: World, surface: SurfaceAt) {
   mesh.receiveShadow = true;
   mesh.setColorAt(0, new THREE.Color());
 
-  const grass = PALETTE.grass.map(colour);
-  const floor = PALETTE.forestFloor.map(colour);
+  /** What grows tufts: how much of the ground they cover, and their colours. */
+  const tufts: Partial<Record<Surface, { share: number; tones: THREE.Color[] }>> = {
+    grass: { share: 1, tones: PALETTE.grass.map(colour) },
+    floor: { share: 0.3, tones: PALETTE.forestFloor.map(colour) },
+    jungle: { share: 0.8, tones: PALETTE.fern.map(colour) },
+    scrub: { share: 0.28, tones: PALETTE.scrub.map(colour) },
+    // A little marram on the dunes; the beach is bare.
+    sand: { share: 0.045, tones: PALETTE.scrub.map(colour) },
+  };
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
@@ -263,7 +300,8 @@ export function buildGrass(world: World, surface: SurfaceAt) {
         const y = world.height(tx, tz);
         const ny = 2 / Math.hypot(world.height(tx + 1, tz) - world.height(tx - 1, tz), 2, world.height(tx, tz + 1) - world.height(tx, tz - 1));
         const [kind, tone] = surface(tx, y, tz, ny);
-        if (kind !== "grass" && !(kind === "floor" && hash(gx, gz, 3) < 0.3)) continue;
+        const tuft = tufts[kind];
+        if (!tuft || hash(gx, gz, 3) >= tuft.share) continue;
         // Not on the railway, the dirt roads, or the campground's gravel.
         if (sampleGrid(world.trackDist, tx, tz) < 5.5 || sampleGrid(world.roadDist, tx, tz) < 3.5) continue;
         if (sampleGrid(world.campDist, tx, tz) < 0.5) continue;
@@ -272,7 +310,7 @@ export function buildGrass(world: World, surface: SurfaceAt) {
         q.setFromAxisAngle(up, hash(gx, gz, 5) * Math.PI * 2);
         m.compose(v.set(tx, y - 0.05, tz), q, s.set(size, size * (0.8 + hash(gx, gz, 6) * 0.5), size));
         mesh.setMatrixAt(n, m);
-        ramp(kind === "grass" ? grass : floor, Math.min(1, tone + (hash(gx, gz, 7) - 0.5) * 0.25), c);
+        ramp(tuft.tones, Math.min(1, tone + (hash(gx, gz, 7) - 0.5) * 0.25), c);
         mesh.setColorAt(n, c);
         if (++n >= capacity) break rows;
       }

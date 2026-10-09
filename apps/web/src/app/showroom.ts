@@ -15,6 +15,7 @@ const WALLS: Record<SiteStyle, { wall: string; floor: string }> = {
   container: { wall: PALETTE.shipping[1], floor: PALETTE.concreteDark },
   hangar: { wall: PALETTE.roofTin, floor: PALETTE.concrete },
   ranch: { wall: PALETTE.timber, floor: PALETTE.timber },
+  shack: { wall: PALETTE.bamboo, floor: PALETTE.wetSand },
 };
 
 export const GARAGE_NAMES: Record<SiteStyle, string> = {
@@ -26,6 +27,7 @@ export const GARAGE_NAMES: Record<SiteStyle, string> = {
   container: "The Container Yard",
   hangar: "The Airstrip Hangar",
   ranch: "The Ranch",
+  shack: "The Beach Shack",
 };
 
 export function buildShowroom() {

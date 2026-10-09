@@ -28,6 +28,18 @@ exception when others then
 end;
 $$;
 
+-- Refused, and for the reason given.
+create function pg_temp.refused(sql text, why text, what text) returns void language plpgsql as $$
+begin
+  execute sql;
+  raise exception 'FAILED (should have been refused): %', what;
+exception when others then
+  if sqlerrm like 'FAILED%' then raise; end if;
+  if sqlerrm not like '%' || why || '%' then raise exception 'FAILED (refused, but for "%"): %', sqlerrm, what; end if;
+  raise notice 'ok: % (%)', what, sqlerrm;
+end;
+$$;
+
 -- Become a player: the JWT subject Supabase would set, and the authenticated role.
 create function pg_temp.as_player(who text) returns void language plpgsql as $$
 begin
@@ -173,9 +185,47 @@ set role authenticated;
 select pg_temp.check(public.explored() is null, 'one player''s map is not another''s');
 reset role;
 
+-- The island: a flight costs its fare, takes you there and is logged, and the way home costs the same.
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select world from public.me()) = 'valley', 'everyone starts in the valley');
+select pg_temp.refused($$ select public.fly('island') $$, 'not enough miles', 'cannot fly without the fare');
+select pg_temp.refused($$ select public.fly('moon') $$, 'no such world', 'cannot fly somewhere that is not there');
+select pg_temp.refused($$ select public.fly(null) $$, 'no such world', 'nor to nowhere');
+reset role;
+update public.profiles set balance = 400 where id::text like '%a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.refused($$ select public.buy('vehicle:sandfly') $$, 'only sold in island', 'the Sandfly is not sold in the valley');
+select pg_temp.check((select balance = 400 and world = 'valley' from public.fly('valley')), 'flying to where you already are costs nothing');
+select pg_temp.check((select balance = 100 and world = 'island' from public.fly('island')), 'a flight takes the fare and takes you there');
+select pg_temp.check((select balance = 100 and world = 'island' from public.fly('island')), 'asking twice charges once');
+select pg_temp.refused($$ select public.fly('valley') $$, 'not enough miles', 'the way home costs the same');
+select pg_temp.check((select balance from public.buy('vehicle:sandfly')) = 70, 'the Sandfly is sold on the island');
+select pg_temp.check((select vehicle from public.equip('sandfly', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}')) = 'sandfly', 'and can be driven once bought');
+select pg_temp.check((select balance from public.buy('tyres:allTerrain')) = 68, 'everything else is sold there too');
+update public.profiles set world = 'valley';
+reset role;
+select pg_temp.check((select world from public.profiles where id::text like '%a') = 'island', 'players cannot write where they are');
+select pg_temp.check((select count(*) = 1 and min(origin) = 'valley' and min(destination) = 'island' and sum(fare) = 300 from private.flight_log where user_id::text like '%a'),
+  'every flight is logged');
+
+-- The fog is kept for each world.
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check(public.explored() is null, 'a world you have just landed in is all fog');
+select pg_temp.check(public.explored('valley') = '01000040' || repeat('00', 2043) || '80', 'the valley''s map is as you left it');
+select public.explore('{9}', 'island');
+select pg_temp.check(public.explored() = '0002' || repeat('00', 2046), 'the island''s fog clears on the island''s map');
+select pg_temp.check(public.explored('valley') = '01000040' || repeat('00', 2043) || '80', 'and not on the valley''s');
+select pg_temp.refused($$ select public.explore('{1}', 'moon') $$, 'no such world', 'there is no map of nowhere');
+select pg_temp.check((select count(*) from public.worlds) = 2, 'anyone can read what the flights cost');
+reset role;
+
 -- Realtime channels.
 insert into realtime.messages (topic, extension, payload) values
   ('world', 'broadcast', '{}'),
+  ('world:island', 'broadcast', '{}'),
   ('chat:00000000-0000-0000-0000-00000000000a:00000000-0000-0000-0000-00000000000b', 'broadcast', '{}');
 select set_config('realtime.topic', 'world', false);
 select pg_temp.as_player('c');
@@ -199,16 +249,39 @@ select pg_temp.fails($$ insert into realtime.messages (topic, extension, payload
 reset role;
 select pg_temp.check(not public.is_chat_member('chat:not-a-uuid:also-not'), 'garbled chat topics are refused');
 
+-- The island's channel is for the players who are on the island (a is; b and c are in the valley).
+select set_config('realtime.topic', 'world:island', false);
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select count(*) from realtime.messages where topic = 'world:island') = 1, 'a player on the island hears the island');
+insert into realtime.messages (topic, extension, payload) values (current_setting('realtime.topic'), 'presence', '{}');
+select pg_temp.check(true, 'and can be seen there');
+reset role;
+select pg_temp.as_player('c');
+set role authenticated;
+select pg_temp.check((select count(*) from realtime.messages where topic = 'world:island') = 0, 'a player in the valley does not');
+select pg_temp.fails($$ insert into realtime.messages (topic, extension, payload) values (current_setting('realtime.topic'), 'broadcast', '{}') $$, 'nor can they send there');
+reset role;
+select set_config('realtime.topic', 'world', false);
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select count(*) from realtime.messages where topic = 'world') = 1, 'the valley''s channel stays open to everyone signed in');
+select pg_temp.check(not public.is_in_world('world:valley') and not public.is_in_world('world') and not public.is_in_world('world:moon'), 'only the world you are in has a channel for you');
+reset role;
+
 -- Only the game's own functions can be called, and only when signed in.
 select pg_temp.check(not has_function_privilege('anon', 'public.me()', 'execute'), 'signed-out visitors cannot call the game''s functions');
 select pg_temp.check(not has_function_privilege('anon', 'public.discover(text)', 'execute') and not has_function_privilege('anon', 'public.leaderboard()', 'execute')
   and not has_function_privilege('anon', 'public.complete_convoy(text, numeric, uuid[])', 'execute')
-  and not has_function_privilege('anon', 'public.explore(int[])', 'execute') and not has_function_privilege('anon', 'public.explored()', 'execute'), 'nor the ones added since');
+  and not has_function_privilege('anon', 'public.explore(int[], text)', 'execute') and not has_function_privilege('anon', 'public.explored(text)', 'execute')
+  and not has_function_privilege('anon', 'public.fly(text)', 'execute'), 'nor the ones added since');
 select pg_temp.check(not has_function_privilege('anon', 'public.is_chat_member(text)', 'execute'), 'signed-out visitors cannot probe chat membership');
 select pg_temp.check(has_function_privilege('authenticated', 'public.is_chat_member(text)', 'execute'), 'the chat policies can still check membership');
+select pg_temp.check(not has_function_privilege('anon', 'public.is_in_world(text)', 'execute') and has_function_privilege('authenticated', 'public.is_in_world(text)', 'execute'),
+  'and the same goes for which world a player is in');
 select pg_temp.check(not has_function_privilege('authenticated', 'public.handle_new_user()', 'execute'), 'the new-account trigger cannot be called directly');
 select pg_temp.check(not has_schema_privilege('anon', 'private', 'usage') and not has_schema_privilege('authenticated', 'private', 'usage'),
-  'nobody can read the drive log or the hourly totals from the game');
+  'nobody can read the drive log, the flight log or the hourly totals from the game');
 select pg_temp.check((select sum(miles) from private.miles_hourly where user_id::text like '%a') = (select lifetime from public.profiles where id::text like '%a'),
   'the hourly totals add up to the lifetime miles');
 
