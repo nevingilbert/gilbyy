@@ -47,6 +47,13 @@ select pg_temp.check((select lifetime from public.add_miles(10)) = 1, 'miles do 
 update public.profiles set balance = 9999;
 reset role;
 select pg_temp.check((select balance from public.profiles where id::text like '%a') = 1, 'players cannot write their own balance');
+select pg_temp.check((select count(*) = 2 and sum(asked) = 11 and sum(paid) = 1 from private.drive_log where user_id::text like '%a'),
+  'every bank is logged with what was claimed and what was paid');
+update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select lifetime from public.add_miles(null)) = 1, 'claiming nothing banks nothing');
+reset role;
 
 -- Shop.
 select pg_temp.as_player('a');
@@ -178,5 +185,9 @@ select pg_temp.check(not has_function_privilege('anon', 'public.discover(text)',
 select pg_temp.check(not has_function_privilege('anon', 'public.is_chat_member(text)', 'execute'), 'signed-out visitors cannot probe chat membership');
 select pg_temp.check(has_function_privilege('authenticated', 'public.is_chat_member(text)', 'execute'), 'the chat policies can still check membership');
 select pg_temp.check(not has_function_privilege('authenticated', 'public.handle_new_user()', 'execute'), 'the new-account trigger cannot be called directly');
+select pg_temp.check(not has_schema_privilege('anon', 'private', 'usage') and not has_schema_privilege('authenticated', 'private', 'usage'),
+  'nobody can read the drive log or the hourly totals from the game');
+select pg_temp.check((select sum(miles) from private.miles_hourly where user_id::text like '%a') = (select lifetime from public.profiles where id::text like '%a'),
+  'the hourly totals add up to the lifetime miles');
 
 select 'all checks passed' as result;
