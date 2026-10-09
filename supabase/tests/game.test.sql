@@ -210,11 +210,11 @@ select pg_temp.refused($$ select public.fly('island') $$, 'not enough miles', 'c
 select pg_temp.refused($$ select public.fly('moon') $$, 'no such world', 'cannot fly somewhere that is not there');
 select pg_temp.refused($$ select public.fly(null) $$, 'no such world', 'nor to nowhere');
 reset role;
-update public.profiles set balance = 400 where id::text like '%a';
+update public.profiles set balance = 250 where id::text like '%a';
 select pg_temp.as_player('a');
 set role authenticated;
 select pg_temp.refused($$ select public.buy('vehicle:sandfly') $$, 'only sold in island', 'the Sandfly is not sold in the valley');
-select pg_temp.check((select balance = 400 and world = 'valley' from public.fly('valley')), 'flying to where you already are costs nothing');
+select pg_temp.check((select balance = 250 and world = 'valley' from public.fly('valley')), 'flying to where you already are costs nothing');
 select pg_temp.check((select balance = 100 and world = 'island' from public.fly('island')), 'a flight takes the fare and takes you there');
 select pg_temp.check((select balance = 100 and world = 'island' from public.fly('island')), 'asking twice charges once');
 select pg_temp.refused($$ select public.fly('valley') $$, 'not enough miles', 'the way home costs the same');
@@ -224,7 +224,7 @@ select pg_temp.check((select balance from public.buy('tyres:allTerrain')) = 68, 
 update public.profiles set world = 'valley';
 reset role;
 select pg_temp.check((select world from public.profiles where id::text like '%a') = 'island', 'players cannot write where they are');
-select pg_temp.check((select count(*) = 1 and min(origin) = 'valley' and min(destination) = 'island' and sum(fare) = 300 from private.flight_log where user_id::text like '%a'),
+select pg_temp.check((select count(*) = 1 and min(origin) = 'valley' and min(destination) = 'island' and sum(fare) = 150 from private.flight_log where user_id::text like '%a'),
   'every flight is logged');
 
 -- The fog is kept for each world.

@@ -11,8 +11,8 @@ go. With no sign-in it is single player and nothing is saved. Signed in, progres
 persists and everyone shares the valley: you spawn at a 30-tent campground, make friends
 by meeting at the café, chat with friends nearby (ADR 0007), and drive a convoy course
 together (ADR 0010) or race each other (ADR 0011). Over the river, hidden, is an
-airstrip: 300 miles buys a flight, truck and all, to an island of beach, dunes and
-jungle, and 300 more buys the flight home (ADR 0014). Both places have animals that keep
+airstrip: 150 miles buys a flight, truck and all, to an island of beach, dunes and
+jungle, and 150 more buys the flight home (ADR 0014). Both places have animals that keep
 out of your way: deer, hares, reindeer and ducks in the valley; crabs, gulls, boar,
 macaws and dolphins on the island (ADR 0015). That is the entire product.
 
@@ -174,7 +174,7 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - achievements for the first garage and the café, shown on the leaderboard (ADR 0009);
 - optional sign-in for saved progress, a shared valley, friends, chat and a leaderboard (ADR 0007);
 - since 2026-10-08: a bank, a church, a school and a casino hidden in the valley, each linking to one of the owner's other projects (ADR 0012).
-- since 2026-10-09: an airstrip hidden over the river, a flight for 300 miles each way, and an island (beach, dunes, jungle, tents on the beach, one garage) where the Sandfly dune buggy is sold (ADR 0014). Its migration is on the live project and it was merged to `main` the same day. Nobody has flown signed in yet: the fare is more miles than any player has.
+- since 2026-10-09: an airstrip hidden over the river, a flight for 150 miles each way (300 until later that day), and an island (beach, dunes, jungle, tents on the beach, one garage) where the Sandfly dune buggy is sold (ADR 0014). Its migration is on the live project and it was merged to `main` the same day. Nobody has flown signed in yet: the fare is more miles than any player has.
 - since 2026-10-09: two more garages on the island (the Dune Outpost, the Jungle Lodge), a café on its beach, three courses there (Beach Run, Dune Dash, Jungle Loop), and found-counts for the world you're in that also count its airstrip and, in the valley, the four easter eggs (found when you look inside), shown on the leaderboard too (ADR 0016). Merged to `main` as pull request 10, and `20261009230000_island_second_pass.sql` is on the live project.
 - since 2026-10-09: animals in both worlds, nine species, each browser simulating its own (ADR 0015). Client only; no migration.
 

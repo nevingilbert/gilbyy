@@ -4,7 +4,8 @@ Date: 2026-10-09
 Status: Accepted, except that an airstrip is now a counted place and the island has
 three garages and three courses (`0016`). There is now a second map, which `docs/art-direction.md` listed under
 "what we don't (yet)". Changes one line of `0008` (the places that are counted are the
-valley's) and one of `0013` (the fog is kept per world).
+valley's) and one of `0013` (the fog is kept per world). The fare was lowered to 150
+miles each way later on 2026-10-09, the owner's call (`20261009233000_cheaper_flights.sql`).
 
 ## Context
 
@@ -44,7 +45,7 @@ is only sold there; this one's is a dune buggy.
   other side the cruise, the landing and the truck's way out. The picture is lost in
   cloud at the end of the way out and found again at the start of the way in, and the
   other world is built in between. It runs about 37 seconds and can't be skipped.
-- **A flight costs 300 miles each way**, the owner's number. It goes through `fly()`,
+- **A flight costs 300 miles each way** (150 since later that day), the owner's number. It goes through `fly()`,
   a checked function like every other spend. The fares are in `public.worlds` and
   `worlds.ts`, and `flight.test.ts` fails if they differ. A card asks first, because it
   is a lot of miles and the way back costs the same.

@@ -19,7 +19,7 @@ subdomains." Update the **You are here** marker as you progress.
 > `main` and went live at gilbyy.com on 2026-10-08. Their migrations are on the live
 > project and the database tests pass against it
 > (`sessions/2026-10-08-convoy-race-deploy.md`).
-> On 2026-10-09 came an airstrip hidden over the river, a 300-mile flight each way, and
+> On 2026-10-09 came an airstrip hidden over the river, a flight each way (300 miles, 150 since later that day), and
 > an island with its own camp, garage and rig (`decisions/0014`). Its migration is on
 > the live project and it was merged to `main` the same day
 > (`sessions/2026-10-09-airports-and-the-island.md`).
