@@ -14,7 +14,7 @@ import { fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
 import { FlightCard, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
 import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
-import { countFound, foundLine } from "./places";
+import { countFound, eggKey, foundLine } from "./places";
 import { createView, type Film, type Garage } from "./scene";
 import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "./shop";
 import { GARAGE_NAMES } from "./showroom";
@@ -714,6 +714,8 @@ export function Game() {
       }
       if (landmarkHere && !running && !convoys.state) {
         inputRef.current = noInput();
+        // Looking inside is what finds an easter egg (ADR 0016). It pays nothing.
+        store.discover(eggKey(landmarkHere));
         setVisiting(landmarkHere);
         return;
       }
@@ -1616,7 +1618,7 @@ export function Game() {
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={() => actions.current.toggleMap()}>
           <canvas ref={fullRef} className="aspect-square w-[min(88vw,82dvh)] rounded-2xl shadow-2xl" />
           <p className="absolute bottom-4 text-center text-xs text-[rgba(255,246,232,0.6)]">
-            {profile?.world === "valley" && <span className="block tabular-nums text-[rgba(255,246,232,0.85)]">{foundLine(countFound(profile.found))} found</span>}
+            {profile && <span className="block tabular-nums text-[rgba(255,246,232,0.85)]">{foundLine(countFound(profile.found, profile.world), profile.world)} found</span>}
             M or Esc to close
           </p>
         </div>

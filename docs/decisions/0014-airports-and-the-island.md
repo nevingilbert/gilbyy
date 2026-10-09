@@ -1,7 +1,8 @@
 # 0014 — Airstrips, and an island to fly to
 
 Date: 2026-10-09
-Status: Accepted. There is now a second map, which `docs/art-direction.md` listed under
+Status: Accepted, except that an airstrip is now a counted place and the island has
+three garages and three courses (`0016`). There is now a second map, which `docs/art-direction.md` listed under
 "what we don't (yet)". Changes one line of `0008` (the places that are counted are the
 valley's) and one of `0013` (the fog is kept per world).
 

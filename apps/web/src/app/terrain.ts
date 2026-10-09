@@ -347,7 +347,7 @@ function runRiver(base: (x: number, z: number) => number, angle: number, seed: n
 }
 
 /** Eight in the valley, and the beach shack on the island. */
-export type SiteStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack";
+export type SiteStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack" | "outpost" | "lodge";
 export type Site = { x: number; z: number; rot: number; style: SiteStyle; y: number };
 
 export type Terrain = {

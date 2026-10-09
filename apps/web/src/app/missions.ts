@@ -58,7 +58,7 @@ function helpers(t: Terrain) {
 }
 
 /** Each gate faces along the path: from the point before it toward the point after it. */
-function gatesAlong(start: Pt, pts: Pt[], width: number): Gate[] {
+export function gatesAlong(start: Pt, pts: Pt[], width: number): Gate[] {
   return pts.map((p, i) => {
     const prev = i === 0 ? start : pts[i - 1];
     const next = pts[i + 1] ?? p;
@@ -308,7 +308,7 @@ function race(t: Terrain, others: Float32Array): Mission | null {
 }
 
 /** Distance to the nearest course's driving line, out to `reach` metres. */
-const courseDistOf = (missions: Mission[], reach: number) => {
+export const courseDistOf = (missions: Mission[], reach: number) => {
   const dist = new Float32Array(ROW * ROW).fill(1000);
   for (const m of missions) {
     // From a little behind the start arch, where trucks line up.
@@ -327,3 +327,6 @@ export function planMissions(t: Terrain) {
   // Keep every course clear of trees and rocks along its driving line.
   return { missions, courseDist: courseDistOf(missions, 20) };
 }
+
+/** How far a course is to drive, from its start through every flag. */
+export const courseLength = length;

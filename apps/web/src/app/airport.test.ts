@@ -180,14 +180,38 @@ describe("the island", () => {
     expect(island.obstaclesNear(fire.x, fire.z).some((o) => apart(o, fire) < 12)).toBe(false);
   });
 
-  it("has one garage, the beach shack, a drive along the shore from the tents", () => {
-    expect(island.sites.map((s) => s.style)).toEqual(["shack"]);
-    const s = island.sites[0];
-    const hs = [0, 1, 2, 3, 4, 5].map((k) => island.height(s.x + Math.cos(k) * 15, s.z + Math.sin(k) * 15));
-    expect(Math.max(...hs) - Math.min(...hs)).toBeLessThan(0.05);
-    expect(zoneOf(island, s.x, s.z)).toBe(1);
-    expect(apart(s, island.camp)).toBeGreaterThan(500);
-    expect([...island.trees, ...island.rocks].some((t) => apart(t, s) < 20)).toBe(false);
+  it("has three garages, one in each ring, each on level ground a drive from the tents", () => {
+    expect(island.sites.map((s) => s.style)).toEqual(["shack", "outpost", "lodge"]);
+    for (const s of island.sites) {
+      const hs = [0, 1, 2, 3, 4, 5].map((k) => island.height(s.x + Math.cos(k) * 15, s.z + Math.sin(k) * 15));
+      expect(Math.max(...hs) - Math.min(...hs)).toBeLessThan(0.05);
+      expect(zoneOf(island, s.x, s.z)).toBe(1);
+      expect(apart(s, island.camp)).toBeGreaterThan(500);
+      expect([...island.trees, ...island.rocks].some((t) => apart(t, s) < 20)).toBe(false);
+      for (const o of island.sites) if (o !== s) expect(apart(s, o)).toBeGreaterThan(600);
+    }
+  });
+
+  it("has a course in each ring, with a clear line and a way in through the trees", () => {
+    expect(island.missions.map((m) => m.id)).toEqual(["beach-run", "dune-dash", "jungle-loop"]);
+    for (const m of island.missions) {
+      const pts = [m.start, ...m.gates];
+      for (let i = 1; i < pts.length; i++) {
+        for (let k = 0; k <= 20; k++) {
+          const x = pts[i - 1].x + ((pts[i].x - pts[i - 1].x) * k) / 20;
+          const z = pts[i - 1].z + ((pts[i].z - pts[i - 1].z) * k) / 20;
+          expect(island.height(x, z)).toBeGreaterThan(0.4);
+          expect(island.obstaclesNear(x, z).some((o) => Math.hypot(o.x - x, o.z - z) < 4)).toBe(false);
+        }
+      }
+      expect(m.crew).toBe(1);
+      expect(apart(m.start, island.camp)).toBeGreaterThan(200);
+    }
+    // Two tracks cut out of the jungle: from the lodge and from the jungle course's start.
+    expect(island.roads).toHaveLength(2);
+    for (const road of island.roads) {
+      for (let i = 0; i < road.xs.length; i++) expect(island.obstaclesNear(road.xs[i], road.zs[i]).some((o) => Math.hypot(o.x - road.xs[i], o.z - road.zs[i]) < 4)).toBe(false);
+    }
   });
 
   it("can be driven all over on stock tyres", () => {
@@ -198,10 +222,9 @@ describe("the island", () => {
     expect(island.slipAt(0, 0)).toBe(0);
   });
 
-  it("has no railway, rivers, courses or easter eggs", () => {
+  it("has no railway, rivers or easter eggs", () => {
     expect(island.track.xs).toHaveLength(0);
     expect(island.rivers).toHaveLength(0);
-    expect(island.missions).toHaveLength(0);
     expect(island.landmarks).toHaveLength(0);
     expect(island.id).toBe("island");
     expect(valley.id).toBe("valley");
