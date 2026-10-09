@@ -7,21 +7,29 @@ import { buildWorld } from "./world";
 
 const dir = resolve(__dirname, "../../../../supabase/migrations");
 const migrations = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort().map((f) => readFileSync(resolve(dir, f), "utf8"));
-/** Every row inserted into `table` across the migrations, in order, as column → value. */
-const rows = (table: string) =>
-  migrations.flatMap((sql) =>
-    [...sql.matchAll(new RegExp(`insert into public\\.${table} \\(([^)]*)\\) values([\\s\\S]*?);`, "g"))].flatMap(([, cols, block]) => {
+/**
+ * Every row of `table` as the migrations leave it, keyed by `key`, as column → value. A
+ * later insert of the same key (`on conflict … do update`) replaces the earlier row's
+ * columns, as it does in the database.
+ */
+const rows = (table: string, key: string) => {
+  const out = new Map<string, Record<string, string>>();
+  for (const sql of migrations) {
+    for (const [, cols, block] of sql.matchAll(new RegExp(`insert into public\\.${table} \\(([^)]*)\\) values([\\s\\S]*?)(?:on conflict[\\s\\S]*?)?;`, "g"))) {
       const names = cols.split(",").map((c) => c.trim());
-      return [...block.matchAll(/\(([^()]*)\)/g)].map((m) => {
+      for (const m of block.matchAll(/\(([^()]*)\)/g)) {
         const values = m[1].split(",").map((v) => v.trim().replace(/^'|'$/g, ""));
-        return Object.fromEntries(names.map((n, i) => [n, values[i]]));
-      });
-    }),
-  );
+        const row = Object.fromEntries(names.map((n, i) => [n, values[i]]));
+        out.set(row[key], { ...out.get(row[key]), ...row });
+      }
+    }
+  }
+  return [...out.values()];
+};
 
 describe("the shop and the server agree", () => {
   it("on every price", () => {
-    const server = new Map(rows("shop_items").map((r) => [r.key, Number(r.price)]));
+    const server = new Map(rows("shop_items", "key").map((r) => [r.key, Number(r.price)]));
     const client = new Map<string, number>();
     for (const v of VEHICLES) client.set(itemKey("vehicle", v.id), v.price);
     for (const cat of Object.keys(PARTS) as PartCategory[]) for (const p of PARTS[cat]) client.set(itemKey(cat, p.id), p.price);
@@ -29,11 +37,14 @@ describe("the shop and the server agree", () => {
   });
 
   it("on every mission's rewards and limits", () => {
-    const server = rows("missions").map((r) => ({
-      id: r.id, reward: +r.reward, repeat: +r.repeat_reward, cooldown: +r.cooldown_seconds, min: +r.min_seconds, crew: +(r.crew ?? 1),
+    const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id);
+    const server = rows("missions", "id").map((r) => ({
+      id: r.id, reward: +r.reward, repeat: +r.repeat_reward, cooldown: +r.cooldown_seconds, min: +r.min_seconds, crew: +(r.crew ?? 1), miles: +(r.min_miles ?? 0),
     }));
-    const client = buildWorld().missions.map((m) => ({ id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds, crew: m.crew }));
-    expect(server).toEqual(client);
+    const client = buildWorld().missions.map((m) => ({
+      id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds, crew: m.crew, miles: m.minMiles,
+    }));
+    expect(server.sort(byId)).toEqual(client.sort(byId));
   });
 });
 

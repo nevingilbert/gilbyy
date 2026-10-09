@@ -166,7 +166,7 @@ describe("presence updates", () => {
 const course: Mission = {
   id: "test", name: "Test", blurb: "", start: { x: 0, z: -10, heading: 0 },
   gates: [{ x: 0, z: 0, heading: 0, width: 8 }, { x: 0, z: 20, heading: 0, width: 8 }],
-  reward: 1, repeatReward: 0.5, cooldown: 600, minSeconds: 1, crew: 1, race: false,
+  reward: 1, repeatReward: 0.5, cooldown: 600, minSeconds: 1, minMiles: 0, crew: 1, race: false,
 };
 
 describe("missions", () => {
@@ -197,11 +197,11 @@ describe("missions", () => {
 describe("single player progress", () => {
   it("banks miles, buys only what you can afford, and pays missions once per cooldown", async () => {
     const s = new LocalStore();
-    s.addMiles(3);
+    s.addMiles(15);
     expect(await s.buy("tyres:mud")).toMatch(/not enough/i);
     expect(await s.buy("tyres:allTerrain")).toBeNull();
-    expect(s.get().balance).toBeCloseTo(1);
-    expect(s.get().lifetime).toBeCloseTo(3);
+    expect(s.get().balance).toBeCloseTo(5);
+    expect(s.get().lifetime).toBeCloseTo(15);
     expect(await s.equip("bluff", { ...STOCK_LOADOUT, tyres: "mud" })).toMatch(/own/);
     expect(await s.equip("bluff", { ...STOCK_LOADOUT, tyres: "allTerrain" })).toBeNull();
 

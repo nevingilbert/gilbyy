@@ -158,6 +158,11 @@ for sign-in (Google only), and Realtime for the shared valley. See
   the MCP. `me()` now locks the caller's row: before, calls sent at once each read the
   same profile, so twenty `add_miles` calls in flight paid 20 miles instead of 5 and
   ten mission claims paid five times.
+- `20261009180000_courses_pay.sql` raises every price fivefold and every course's payout
+  eightfold or more, adds the seven new courses, and adds `missions.min_miles`. Both
+  `complete_mission()` and `complete_convoy()` now pay through `private.pay_run()`,
+  which also refuses a run that overlaps the last one or banked less than
+  `min_miles` since it (ADR 0013).
 - `20261009120000_saved_fog.sql` adds the `fog` table, `explore()` and `explored()`,
   which save the map's fog (ADR 0013).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain

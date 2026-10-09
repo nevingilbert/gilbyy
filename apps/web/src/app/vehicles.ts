@@ -65,31 +65,31 @@ export const VEHICLES: Vehicle[] = [
   // Inspired by the Land Cruiser 70-series: the original red overlander from the trailers.
   {
     id: "overlander", name: "Overlander", blurb: "Classic expedition wagon with a roof rack. Goes anywhere slowly.",
-    price: 8, starter: false, length: 4.6, width: 1.9, height: 2.0, wheelbase: 2.6, track: 1.7,
+    price: 40, starter: false, length: 4.6, width: 1.9, height: 2.0, wheelbase: 2.6, track: 1.7,
     wheelRadius: 0.42, ride: 1.15, travel: 0.32, accel: 5.4, maxSpeed: 17.5, grip: 1.08, clearance: 0.55, wade: 1.4, factoryPaint: "rustRed",
   },
   // Inspired by the Toyota Tundra: a full-size crew-cab pickup.
   {
     id: "prairie", name: "Prairie", blurb: "Full-size crew-cab pickup. Big engine, big everything.",
-    price: 18, starter: false, length: 5.8, width: 2.05, height: 1.95, wheelbase: 3.7, track: 1.75,
+    price: 90, starter: false, length: 5.8, width: 2.05, height: 1.95, wheelbase: 3.7, track: 1.75,
     wheelRadius: 0.44, ride: 1.2, travel: 0.34, accel: 6.2, maxSpeed: 19, grip: 1.1, clearance: 0.6, wade: 1.4, factoryPaint: "pearlWhite",
   },
   // Inspired by the Range Rover: luxury on air suspension, famous for fording.
   {
     id: "highland", name: "Highland", blurb: "Posh four-door on air suspension. Wades deep, rides soft.",
-    price: 28, starter: false, length: 5.0, width: 2.0, height: 1.87, wheelbase: 3.0, track: 1.7,
+    price: 140, starter: false, length: 5.0, width: 2.0, height: 1.87, wheelbase: 3.0, track: 1.7,
     wheelRadius: 0.43, ride: 1.18, travel: 0.38, accel: 6.4, maxSpeed: 19.5, grip: 1.12, clearance: 0.6, wade: 1.65, factoryPaint: "lagoonTeal",
   },
   // Inspired by the Land Cruiser 300: the flagship that crosses continents.
   {
     id: "summit", name: "Summit", blurb: "Flagship expedition SUV. Unbreakable, unhurried, unstoppable.",
-    price: 40, starter: false, length: 5.0, width: 2.0, height: 1.95, wheelbase: 2.85, track: 1.7,
+    price: 200, starter: false, length: 5.0, width: 2.0, height: 1.95, wheelbase: 2.85, track: 1.7,
     wheelRadius: 0.45, ride: 1.22, travel: 0.36, accel: 6.0, maxSpeed: 19, grip: 1.18, clearance: 0.7, wade: 1.5, factoryPaint: "chocolate",
   },
   // Inspired by the Ford F-150 Raptor: wide, long-travel desert truck.
   {
     id: "duneclaw", name: "Duneclaw", blurb: "Wide-body desert pickup with long-travel suspension. Fast.",
-    price: 55, starter: false, length: 5.9, width: 2.2, height: 2.0, wheelbase: 3.7, track: 1.9,
+    price: 275, starter: false, length: 5.9, width: 2.2, height: 2.0, wheelbase: 3.7, track: 1.9,
     wheelRadius: 0.47, ride: 1.28, travel: 0.48, accel: 7.2, maxSpeed: 23, grip: 1.15, clearance: 0.75, wade: 1.3, factoryPaint: "sunsetOrange",
   },
 ];

@@ -54,7 +54,10 @@ export interface Store {
   leaderboard(): Promise<Standing[]>;
 }
 
-/** In-memory progress with the same rules the server enforces. */
+/**
+ * In-memory progress with the same rules the server enforces, bar the check that a run
+ * banked its course's miles: nothing here is kept, so there's nothing to protect.
+ */
 export class LocalStore implements Store {
   readonly online = false;
   private p: Profile;

@@ -6,7 +6,7 @@ import { CAFE, CAMP_GATE, buildWorld } from "./world";
 const course: Mission = {
   id: "convoy", name: "Convoy", blurb: "", start: { x: 0, z: 0, heading: 0 },
   gates: [{ x: 0, z: 40, heading: 0, width: 14 }, { x: 0, z: 80, heading: 0, width: 14 }, { x: 0, z: 120, heading: 0, width: 14 }],
-  reward: 4, repeatReward: 1.2, cooldown: 600, minSeconds: 1, crew: 2, race: false,
+  reward: 4, repeatReward: 1.2, cooldown: 600, minSeconds: 1, minMiles: 0, crew: 2, race: false,
 };
 
 /**
@@ -297,8 +297,8 @@ describe("racing", () => {
 describe("the courses for friends", () => {
   const world = buildWorld();
   const together = world.missions.filter((m) => m.crew > 1);
-  const convoy = together.find((m) => !m.race)!;
-  const race = together.find((m) => m.race)!;
+  const convoy = together.find((m) => m.id === "convoy")!;
+  const race = together.find((m) => m.id === "race")!;
   /** Points every 10 m along a course, from the start arch through every flag. */
   const line = (m: Mission) => {
     const pts = [m.start, ...m.gates];
@@ -309,8 +309,10 @@ describe("the courses for friends", () => {
     });
   };
 
-  it("are a convoy and a race, each for two to four", () => {
-    expect(together.map((m) => [m.id, m.crew, m.race])).toEqual([["convoy", 2, false], ["race", 2, true]]);
+  it("are two convoys and two races, each for two to four", () => {
+    expect(together.map((m) => [m.id, m.crew, m.race])).toEqual([
+      ["convoy", 2, false], ["race", 2, true], ["grand-tour", 2, false], ["hill-race", 2, true],
+    ]);
   });
 
   it("start a short drive from the café and the camp, and come back round", () => {

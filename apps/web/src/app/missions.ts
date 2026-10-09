@@ -1,9 +1,11 @@
+import { METRES_PER_MILE } from "./shop";
 import { CAFE, CAMP_GATE, FROZEN, LAKES, ROW, START, WORLD, nearest, sampleGrid, type Path, type Terrain } from "./terrain";
 
 /**
  * Optional driving challenges, laid out on the real terrain at load. Drive to a start
  * arch, press E, and go through the gates in order. Finishing earns miles; there is
- * no failing, only giving up. Pure data, no three.js.
+ * no failing, only giving up. Courses pay far better than the same minutes spent just
+ * driving (ADR 0013). Pure data, no three.js.
  */
 export type Gate = { x: number; z: number; heading: number; width: number };
 export type Mission = {
@@ -19,6 +21,8 @@ export type Mission = {
   cooldown: number;
   /** Faster than this is not believable; the server refuses the claim. */
   minSeconds: number;
+  /** Miles that must have been banked while the run was on, or the server refuses the claim. */
+  minMiles: number;
   /** How many drivers it takes: 1 for a course you drive alone, more for a convoy or a race. */
   crew: number;
   /** Driven by friends against each other rather than together. Paid the same either way. */
@@ -54,7 +58,18 @@ function helpers(t: Terrain) {
     }
     return true;
   };
-  return { h, f, slope, zone, clearAt, lineOk };
+  /** Whether every few metres along a polyline is more than `gap` from the courses in `avoid`. */
+  const awayFrom = (avoid: Float32Array | null, pts: Pt[], gap: number) => {
+    if (!avoid) return true;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 10);
+      for (let k = 0; k <= n; k++) if (f(avoid, a.x + ((b.x - a.x) * k) / n, a.z + ((b.z - a.z) * k) / n) <= gap) return false;
+    }
+    return true;
+  };
+  return { h, f, slope, zone, clearAt, lineOk, awayFrom };
 }
 
 /** Each gate faces along the path: from the point before it toward the point after it. */
@@ -70,6 +85,17 @@ function gatesAlong(start: Pt, pts: Pt[], width: number): Gate[] {
 
 const length = (start: Pt, pts: Pt[]) =>
   pts.reduce((sum, p, i) => sum + Math.hypot(p.x - (i ? pts[i - 1] : start).x, p.z - (i ? pts[i - 1] : start).z), 0);
+
+/** No rig averages more than 23 m/s round a course; a quicker claim is refused. */
+const secondsFor = (metres: number) => Math.floor(metres / 23);
+/**
+ * Three fifths of the line through the flags, in miles. The odometer counts every metre
+ * driven, so an honest run always banks more than this; a claim from a truck that never
+ * drove the course doesn't.
+ */
+const milesFor = (metres: number) => Math.floor(((metres * 0.6) / METRES_PER_MILE) * 100) / 100;
+/** How long a course's line is, and the limits that follow from it. */
+const limits = (metres: number) => ({ minSeconds: secondsFor(metres), minMiles: milesFor(metres) });
 
 /** Weaving between flags through the thickest forest within reach of camp. */
 function forestSlalom(t: Terrain): Mission | null {
@@ -102,17 +128,20 @@ function forestSlalom(t: Terrain): Mission | null {
   return {
     id: "forest-slalom", name: "Forest Slalom", blurb: "Ten flags through the pines. Mind the trunks.",
     start: { ...best.start, heading: best.heading }, gates: gatesAlong(best.start, best.pts, 9),
-    reward: 1.5, repeatReward: 0.5, cooldown: 600, minSeconds: Math.floor(length(best.start, best.pts) / 23), crew: 1, race: false,
+    reward: 12, repeatReward: 4, cooldown: 600, ...limits(length(best.start, best.pts)), crew: 1, race: false,
   };
 }
 
-/** Straight up the biggest climbable hill on the near side, flag by flag to the summit. */
-function ridgeRun(t: Terrain): Mission | null {
-  const { h, f, zone, clearAt, lineOk } = helpers(t);
+/**
+ * Straight up the biggest climbable hill on the near side, flag by flag to the summit.
+ * With `avoid`, the biggest one more than 150 m from every course in it.
+ */
+function ridgeRun(t: Terrain, avoid: Float32Array | null = null, id = "ridge-run", name = "Ridge Run"): Mission | null {
+  const { h, f, zone, clearAt, lineOk, awayFrom } = helpers(t);
   let best: { start: Pt; heading: number; pts: Pt[]; climb: number } | null = null;
   for (let z = -2000; z <= 2000; z += 50) {
     for (let x = -2000; x <= 2000; x += 50) {
-      if (zone(x, z) !== 1 || f(t.snow, x, z) > 0.2) continue;
+      if (zone(x, z) !== 1 || f(t.snow, x, z) > 0.2 || (avoid && f(avoid, x, z) <= 150)) continue;
       const top = h(x, z);
       let peak = true;
       for (let k = 0; k < 8 && peak; k++) peak = h(x + Math.sin(k) * 120, z + Math.cos(k) * 120) < top - 8;
@@ -122,7 +151,7 @@ function ridgeRun(t: Terrain): Mission | null {
         const start = { x: x - Math.sin(a) * 360, z: z - Math.cos(a) * 360 };
         const climb = top - h(start.x, start.z);
         if (climb < 30 || (best && climb <= best.climb)) continue;
-        if (!clearAt(start.x, start.z, 0.25) || !lineOk([start, { x, z }], 0.42)) continue;
+        if (!clearAt(start.x, start.z, 0.25) || !lineOk([start, { x, z }], 0.42) || !awayFrom(avoid, [start, { x, z }], 150)) continue;
         const pts = [1, 2, 3, 4, 5, 6, 7].map((g) => {
           const along = g / 7;
           const side = g === 7 ? 0 : g % 2 ? 4 : -4;
@@ -134,9 +163,9 @@ function ridgeRun(t: Terrain): Mission | null {
   }
   if (!best) return null;
   return {
-    id: "ridge-run", name: "Ridge Run", blurb: `Seven flags, ${Math.round(best.climb)} metres of climb. Keep it steady.`,
+    id, name, blurb: `Seven flags, ${Math.round(best.climb)} metres of climb. Keep it steady.`,
     start: { ...best.start, heading: best.heading }, gates: gatesAlong(best.start, best.pts, 9),
-    reward: 2, repeatReward: 0.6, cooldown: 600, minSeconds: Math.floor(length(best.start, best.pts) / 23), crew: 1, race: false,
+    reward: 15, repeatReward: 5, cooldown: 600, ...limits(length(best.start, best.pts)), crew: 1, race: false,
   };
 }
 
@@ -164,7 +193,7 @@ function lakeshoreLoop(t: Terrain): Mission | null {
   return {
     id: "lakeshore-loop", name: "Lakeshore Loop", blurb: "Once round the west lake. Wet feet optional.",
     start: { ...start, heading: tangent }, gates: gatesAlong(start, loop, 10),
-    reward: 2.5, repeatReward: 0.8, cooldown: 600, minSeconds: Math.floor(length(start, loop) / 23), crew: 1, race: false,
+    reward: 20, repeatReward: 7, cooldown: 600, ...limits(length(start, loop)), crew: 1, race: false,
   };
 }
 
@@ -180,7 +209,7 @@ function iceDrift(t: Terrain): Mission | null {
   return {
     id: "ice-drift", name: "Ice Drift", blurb: "Flags across the frozen lake. Snow tyres help. A lot.",
     start: { ...start, heading: Math.PI / 2 }, gates: gatesAlong(start, pts, 12),
-    reward: 3, repeatReward: 1, cooldown: 600, minSeconds: Math.floor(length(start, pts) / 23), crew: 1, race: false,
+    reward: 25, repeatReward: 8, cooldown: 600, ...limits(length(start, pts)), crew: 1, race: false,
   };
 }
 
@@ -285,7 +314,7 @@ function convoy(t: Terrain, others: Float32Array): Mission | null {
   return {
     id: "convoy", name: "Convoy", blurb: "For two to four friends: once round and back to the café.",
     start: c.start, gates: c.gates,
-    reward: 4, repeatReward: 1.2, cooldown: 600, minSeconds: Math.floor(c.length / 23), crew: 2, race: false,
+    reward: 30, repeatReward: 10, cooldown: 600, ...limits(c.length), crew: 2, race: false,
   };
 }
 
@@ -303,20 +332,159 @@ function race(t: Terrain, others: Float32Array): Mission | null {
   return {
     id: "race", name: "Race", blurb: "Two to four friends, once round. Quickest wins; every finisher is paid the same.",
     start: c.start, gates: c.gates,
-    reward: 3, repeatReward: 1, cooldown: 600, minSeconds: Math.floor(c.length / 23), crew: 2, race: true,
+    reward: 25, repeatReward: 8, cooldown: 600, ...limits(c.length), crew: 2, race: true,
   };
 }
+
+/** What a straight run of flags looks for. */
+type LinePlan = {
+  /** The start and every flag must be somewhere this allows, as well as on clear ground. */
+  where: (x: number, z: number) => boolean;
+  /** How good a flag's spot is. The line with the best average wins, if it reaches `least`. */
+  score: (x: number, z: number) => number;
+  least: number;
+  flags: number;
+  spacing: number;
+  /** How far each flag sits off the centre line, alternately left and right. */
+  side: number;
+  maxSlope: number;
+};
+
+/** The best straight run of flags for `plan`, anywhere in the valley. */
+function flagLine(t: Terrain, plan: LinePlan) {
+  const { clearAt, lineOk } = helpers(t);
+  let best: { start: Pt; heading: number; pts: Pt[]; score: number } | null = null;
+  for (let z = -2200; z <= 2200; z += 60) {
+    for (let x = -2200; x <= 2200; x += 60) {
+      // A line rarely scores well from a start that scores badly, so don't try those.
+      if (plan.score(x, z) < plan.least - 0.2 || !plan.where(x, z) || !clearAt(x, z, 0.3)) continue;
+      for (let d = 0; d < 12; d++) {
+        const a = (d / 12) * Math.PI * 2;
+        const dx = Math.sin(a);
+        const dz = Math.cos(a);
+        const pts: Pt[] = [];
+        let score = 0;
+        for (let g = 1; g <= plan.flags; g++) {
+          const side = g % 2 ? plan.side : -plan.side;
+          const p = { x: x + dx * g * plan.spacing + dz * side, z: z + dz * g * plan.spacing - dx * side };
+          pts.push(p);
+          score += plan.score(p.x, p.z) / plan.flags;
+        }
+        if (score < plan.least || (best && score <= best.score)) continue;
+        if (!pts.every((p) => plan.where(p.x, p.z)) || !lineOk([{ x, z }, ...pts], plan.maxSlope)) continue;
+        best = { start: { x, z }, heading: a, pts, score };
+      }
+    }
+  }
+  return best;
+}
+
+/** A solo course from a run of flags, or null if the valley has nowhere for it. */
+function lineCourse(line: ReturnType<typeof flagLine>, width: number, m: Pick<Mission, "id" | "name" | "blurb" | "reward" | "repeatReward">): Mission | null {
+  if (!line) return null;
+  return {
+    ...m, start: { ...line.start, heading: line.heading }, gates: gatesAlong(line.start, line.pts, width),
+    cooldown: 600, ...limits(length(line.start, line.pts)), crew: 1, race: false,
+  };
+}
+
+/** A second slalom, deeper in the woods and well away from camp. */
+function deepWoods(t: Terrain, avoid: Float32Array): Mission | null {
+  const { f, zone } = helpers(t);
+  const line = flagLine(t, {
+    where: (x, z) => zone(x, z) === 1 && f(t.snow, x, z) <= 0.05 && f(avoid, x, z) > 120 && Math.hypot(x - START.x, z - START.z) > 500,
+    score: (x, z) => f(t.forest, x, z), least: 0.55, flags: 12, spacing: 40, side: 7, maxSlope: 0.32,
+  });
+  return lineCourse(line, 9, { id: "deep-woods", name: "Deep Woods", blurb: "Twelve flags through the far pines. Slower than it looks.", reward: 15, repeatReward: 5 });
+}
+
+/** Flags across the open snow, wide apart. Road tyres can't climb it; chains or studs can. */
+function snowfield(t: Terrain, avoid: Float32Array): Mission | null {
+  const { f, zone, slope } = helpers(t);
+  const line = flagLine(t, {
+    where: (x, z) => zone(x, z) === 1 && f(t.snow, x, z) > 0.7 && f(t.ice, x, z) < 0.1 && f(avoid, x, z) > 150,
+    score: (x, z) => 1 - slope(x, z) * 2, least: 0.6, flags: 10, spacing: 50, side: 14, maxSlope: 0.3,
+  });
+  return lineCourse(line, 12, { id: "snowfield", name: "Snowfield", blurb: "Ten wide flags across the snow. Bring chains or studded tyres.", reward: 25, repeatReward: 8 });
+}
+
+/** Over the river, where only a snorkel gets you: a run through the far bank's trees. */
+function farBank(t: Terrain, avoid: Float32Array): Mission | null {
+  const { f, zone, slope } = helpers(t);
+  const line = flagLine(t, {
+    where: (x, z) => zone(x, z) === 2 && f(avoid, x, z) > 150,
+    score: (x, z) => Math.min(f(t.forest, x, z), 0.6) + (0.3 - slope(x, z)), least: 0.3, flags: 10, spacing: 45, side: 9, maxSlope: 0.32,
+  });
+  return lineCourse(line, 10, { id: "far-bank", name: "Far Bank", blurb: "Ten flags on the far side of the river. You'll need a snorkel to get there.", reward: 30, repeatReward: 10 });
+}
+
+const highRidge = (t: Terrain, avoid: Float32Array) => {
+  const m = ridgeRun(t, avoid, "high-ridge", "High Ridge");
+  return m && { ...m, reward: 18, repeatReward: 6 };
+};
+
+/** A loop by the south lake, out past the quiet end of the valley. */
+function southernShore(t: Terrain, avoid: Float32Array): Mission | null {
+  const lake = LAKES[2];
+  const loop = loopNear(t, avoid, {
+    near: { x: lake.x, z: lake.z - lake.r - 60 }, radii: [280, 340], flags: 14,
+    score: (l) => Math.min(l.forest, 0.3) - l.steep * 4 - l.from / 300,
+  });
+  if (!loop) return null;
+  const c = loopCourse(loop, 10);
+  return {
+    id: "southern-shore", name: "Southern Shore", blurb: "Once round by the south lake, at the quiet end of the valley.",
+    start: c.start, gates: c.gates,
+    reward: 20, repeatReward: 7, cooldown: 600, ...limits(c.length), crew: 1, race: false,
+  };
+}
+
+/** For friends with longer: a big loop from the big lake's south shore, driven together. */
+function grandTour(t: Terrain, others: Float32Array): Mission | null {
+  const lake = LAKES[0];
+  const loop = loopNear(t, others, {
+    near: { x: lake.x, z: lake.z + lake.r + 120 }, radii: [360, 420], flags: 18,
+    score: (l) => Math.min(l.climb, 50) / 50 + Math.min(l.forest, 0.4) - l.steep * 4 - l.from / 400,
+  });
+  if (!loop) return null;
+  const c = loopCourse(loop, 14);
+  return {
+    id: "grand-tour", name: "Grand Tour", blurb: "For two to four friends: the long way round, by the big lake.",
+    start: c.start, gates: c.gates,
+    reward: 40, repeatReward: 12, cooldown: 600, ...limits(c.length), crew: 2, race: false,
+  };
+}
+
+/** A second race, hillier and through the trees, by the roadside workshop. */
+function hillRace(t: Terrain, others: Float32Array): Mission | null {
+  const workshop = t.sites.find((s) => s.style === "workshop");
+  if (!workshop) return null;
+  const loop = loopNear(t, others, {
+    near: workshop, radii: [260, 320, 380], flags: 12,
+    score: (l) => Math.min(l.climb, 50) / 50 + Math.min(l.forest, 0.4) - l.steep * 4 - l.from / 300,
+  });
+  if (!loop) return null;
+  const c = loopCourse(loop, 14);
+  return {
+    id: "hill-race", name: "Hill Race", blurb: "Two to four friends, up and down through the trees. Every finisher is paid the same.",
+    start: c.start, gates: c.gates,
+    reward: 30, repeatReward: 10, cooldown: 600, ...limits(c.length), crew: 2, race: true,
+  };
+}
+
+/** Lowers `dist` to the distance to `m`'s driving line wherever that is nearer, out to `reach` metres. */
+const addCourse = (dist: Float32Array, m: Mission, reach: number) => {
+  // From a little behind the start arch, where trucks line up.
+  const back = { x: m.start.x - Math.sin(m.start.heading) * 25, z: m.start.z - Math.cos(m.start.heading) * 25 };
+  const path: Path = { xs: [back.x, m.start.x, ...m.gates.map((g) => g.x)], zs: [back.z, m.start.z, ...m.gates.map((g) => g.z)] };
+  const d = nearest(path, false, reach).dist;
+  for (let k = 0; k < d.length; k++) dist[k] = Math.min(dist[k], d[k]);
+};
 
 /** Distance to the nearest course's driving line, out to `reach` metres. */
 const courseDistOf = (missions: Mission[], reach: number) => {
   const dist = new Float32Array(ROW * ROW).fill(1000);
-  for (const m of missions) {
-    // From a little behind the start arch, where trucks line up.
-    const back = { x: m.start.x - Math.sin(m.start.heading) * 25, z: m.start.z - Math.cos(m.start.heading) * 25 };
-    const path: Path = { xs: [back.x, m.start.x, ...m.gates.map((g) => g.x)], zs: [back.z, m.start.z, ...m.gates.map((g) => g.z)] };
-    const d = nearest(path, false, reach).dist;
-    for (let k = 0; k < d.length; k++) dist[k] = Math.min(dist[k], d[k]);
-  }
+  for (const m of missions) addCourse(dist, m, reach);
   return dist;
 };
 
@@ -324,6 +492,15 @@ export function planMissions(t: Terrain) {
   const solo = [forestSlalom(t), ridgeRun(t), lakeshoreLoop(t), iceDrift(t)].filter((m): m is Mission => !!m);
   const withConvoy = [...solo, convoy(t, courseDistOf(solo, 60))].filter((m): m is Mission => !!m);
   const missions = [...withConvoy, race(t, courseDistOf(withConvoy, 60))].filter((m): m is Mission => !!m);
+  // The courses added with ADR 0013, each laid out clear of every course before it, so the
+  // first six stay exactly where they were.
+  const avoid = courseDistOf(missions, 160);
+  for (const plan of [grandTour, hillRace, deepWoods, southernShore, highRidge, snowfield, farBank]) {
+    const m = plan(t, avoid);
+    if (!m) continue;
+    missions.push(m);
+    addCourse(avoid, m, 160);
+  }
   // Keep every course clear of trees and rocks along its driving line.
   return { missions, courseDist: courseDistOf(missions, 20) };
 }

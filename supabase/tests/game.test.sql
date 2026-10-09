@@ -28,6 +28,42 @@ exception when others then
 end;
 $$;
 
+-- Like fails(), but also checks why it was refused.
+create function pg_temp.refuses(sql text, reason text, what text) returns void language plpgsql as $$
+begin
+  execute sql;
+  raise exception 'FAILED (should have been refused): %', what;
+exception when others then
+  if sqlerrm like 'FAILED%' then raise; end if;
+  if sqlerrm not like '%' || reason || '%' then raise exception 'FAILED (refused for the wrong reason, %): %', sqlerrm, what; end if;
+  raise notice 'ok: % (%)', what, sqlerrm;
+end;
+$$;
+
+-- How much running `sql` added to the current player's balance.
+create function pg_temp.pays(sql text) returns numeric language plpgsql as $$
+declare
+  before numeric;
+begin
+  select balance into before from public.profiles where id = auth.uid();
+  execute sql;
+  return (select balance from public.profiles where id = auth.uid()) - before;
+end;
+$$;
+
+-- Moves a player fifteen minutes on: their runs are over and out of their cooldowns,
+-- the miles they banked are too old to count for the next run, and there's time to
+-- bank more. Run as the database owner, not as the player.
+create function pg_temp.rewind(who text) returns void language plpgsql as $$
+declare
+  me uuid := ('00000000-0000-0000-0000-00000000000' || who)::uuid;
+begin
+  update public.mission_runs set finished_at = finished_at - interval '15 minutes' where user_id = me;
+  update private.drive_log set at = at - interval '15 minutes' where user_id = me;
+  update public.profiles set last_drive_at = last_drive_at - interval '15 minutes' where id = me;
+end;
+$$;
+
 -- Become a player: the JWT subject Supabase would set, and the authenticated role.
 create function pg_temp.as_player(who text) returns void language plpgsql as $$
 begin
@@ -61,27 +97,42 @@ set role authenticated;
 select pg_temp.fails($$ select public.buy('tyres:mud') $$, 'cannot buy without the miles');
 select pg_temp.fails($$ select public.buy('tyres:gold') $$, 'cannot buy what the shop does not sell');
 reset role;
-update public.profiles set balance = 50 where id::text like '%a';
+update public.profiles set balance = 250 where id::text like '%a';
 select pg_temp.as_player('a');
 set role authenticated;
-select pg_temp.check((select balance from public.buy('vehicle:summit')) = 10, 'buying takes the price');
-select pg_temp.check((select balance from public.buy('vehicle:summit')) = 10, 'buying twice charges once');
-select pg_temp.check((select balance from public.buy('tyres:road')) = 10, 'free things cost nothing');
+select pg_temp.check((select balance from public.buy('vehicle:summit')) = 50, 'buying takes the price');
+select pg_temp.check((select balance from public.buy('vehicle:summit')) = 50, 'buying twice charges once');
+select pg_temp.check((select balance from public.buy('tyres:road')) = 50, 'free things cost nothing');
 select pg_temp.fails($$ select public.equip('summit', '{"paint":"factory","tyres":"mud","lights":"stock","snorkel":"none","winter":"none"}') $$, 'cannot fit unbought tyres');
 select pg_temp.fails($$ select public.equip('duneclaw', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}') $$, 'cannot drive an unbought rig');
 select pg_temp.fails($$ select public.equip('summit', '{"engine":"v12"}') $$, 'cannot fit a made-up part');
 select pg_temp.check((select vehicle from public.equip('summit', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}')) = 'summit', 'can fit what is owned');
 select pg_temp.check((select vehicle from public.equip('bluff', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}')) = 'bluff', 'starters are free to drive');
 
--- Missions.
-select pg_temp.fails($$ select public.complete_mission('forest-slalom', 5) $$, 'impossibly fast runs pay nothing');
-select pg_temp.check((select balance from public.complete_mission('forest-slalom', 60)) = 11.5, 'first finish pays the full reward');
-select pg_temp.fails($$ select public.complete_mission('forest-slalom', 60) $$, 'repeats wait for the cooldown');
+-- Missions: paid for a believable run that banked most of the course's miles, one at a time.
+select pg_temp.refuses($$ select public.complete_mission('forest-slalom', 5) $$, 'too fast', 'impossibly fast runs pay nothing');
 reset role;
-update public.mission_runs set finished_at = now() - interval '11 minutes';
+select pg_temp.rewind('a');
 select pg_temp.as_player('a');
 set role authenticated;
-select pg_temp.check((select balance from public.complete_mission('forest-slalom', 60)) = 12, 'later finishes pay the repeat reward');
+select pg_temp.refuses($$ select public.complete_mission('forest-slalom', 60) $$, 'drive the whole course', 'a run that banked no miles pays nothing');
+select public.add_miles(0.1);
+select pg_temp.refuses($$ select public.complete_mission('forest-slalom', 60) $$, 'drive the whole course', 'nor one that banked too few');
+reset role;
+update public.profiles set last_drive_at = now() - interval '1 minute' where id::text like '%a';
+select pg_temp.as_player('a');
+set role authenticated;
+select public.add_miles(1);
+select pg_temp.check(pg_temp.pays($$ select public.complete_mission('forest-slalom', 60) $$) = 12, 'first finish pays the full reward');
+select pg_temp.refuses($$ select public.complete_mission('forest-slalom', 60) $$, 'come back later', 'repeats wait for the cooldown');
+select pg_temp.refuses($$ select public.complete_mission('ridge-run', 60) $$, 'one course at a time', 'a run cannot overlap the last one');
+reset role;
+select pg_temp.rewind('a');
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.refuses($$ select public.complete_mission('ridge-run', 60) $$, 'drive the whole course', 'miles banked before the last run do not count again');
+select public.add_miles(1);
+select pg_temp.check(pg_temp.pays($$ select public.complete_mission('forest-slalom', 60) $$) = 4, 'later finishes pay the repeat reward');
 
 -- Names and goals.
 select pg_temp.check((select name from public.set_name('  Nevin  ')) = 'Nevin', 'names are trimmed and saved');
@@ -122,15 +173,35 @@ select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-
 select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000c}') $$, 'a convoy of strangers pays nothing');
 select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c,00000000-0000-0000-0000-00000000000d,00000000-0000-0000-0000-00000000000e}') $$, 'a convoy is four drivers at most');
 select pg_temp.fails($$ select public.complete_convoy('convoy', 10, '{00000000-0000-0000-0000-00000000000b}') $$, 'impossibly fast convoys pay nothing');
-select pg_temp.check((select balance from public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c}')) = 16, 'a convoy with a friend in it pays the full reward');
-select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b}') $$, 'convoys wait for the cooldown too');
+reset role;
+select pg_temp.rewind('a');
+select pg_temp.as_player('a');
+set role authenticated;
+select public.add_miles(2);
+select pg_temp.check(pg_temp.pays($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c}') $$) = 30,
+  'a convoy with a friend in it pays the full reward');
+select pg_temp.refuses($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b}') $$, 'come back later', 'convoys wait for the cooldown too');
 select pg_temp.fails($$ select public.complete_mission('race', 200) $$, 'a race cannot be claimed as a solo run');
 select pg_temp.fails($$ select public.complete_convoy('race', 200, '{00000000-0000-0000-0000-00000000000c}') $$, 'a race against strangers pays nothing');
-select pg_temp.check((select balance from public.complete_convoy('race', 200, '{00000000-0000-0000-0000-00000000000b}')) = 19, 'a race against a friend pays the finisher');
 reset role;
+select pg_temp.rewind('a');
+select pg_temp.as_player('a');
+set role authenticated;
+select public.add_miles(2);
+select pg_temp.check(pg_temp.pays($$ select public.complete_convoy('race', 200, '{00000000-0000-0000-0000-00000000000b}') $$) = 25, 'a race against a friend pays the finisher');
+reset role;
+-- The friend banked their miles on the way round, then waited five minutes at the finish
+-- for the others: a convoy is claimed when everyone is home.
+select pg_temp.rewind('b');
 select pg_temp.as_player('b');
 set role authenticated;
-select pg_temp.check((select balance from public.complete_convoy('convoy', 125, '{00000000-0000-0000-0000-00000000000a}')) = 4, 'the friend claims their own');
+select public.add_miles(2);
+reset role;
+update private.drive_log set at = at - interval '5 minutes' where user_id = '00000000-0000-0000-0000-00000000000b';
+select pg_temp.as_player('b');
+set role authenticated;
+select pg_temp.check(pg_temp.pays($$ select public.complete_convoy('convoy', 125, '{00000000-0000-0000-0000-00000000000a}') $$) = 30,
+  'the friend claims their own, after waiting for the rest');
 reset role;
 select pg_temp.as_player('c');
 set role authenticated;
