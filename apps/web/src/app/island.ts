@@ -1,9 +1,10 @@
 import { findField, inFunnel, levelField } from "./airport";
 import { planeObstacles } from "./flight";
+import { courseDistOf, courseLength, gatesAlong, type Mission } from "./missions";
 import { fbm, makeNoise2D, makeRandom, smoothstep } from "./noise";
 import {
   CAMP_PITCHES, FAR, ROW, SITE_BLEND, SITE_FLAT, SNORKEL_WADE, STOCK_WADE, WORLD,
-  flood, gridX, gridZ, level, nearest, sampleGrid, type Pitch, type Site, type Track,
+  flood, gridX, gridZ, level, nearest, sampleGrid, type Path, type Pitch, type Site, type SiteStyle, type Track,
 } from "./terrain";
 import { buildWorld, obstacleIndex, trunkRadius, type Bush, type Rock, type Tree, type World, type WorldId } from "./world";
 
@@ -11,7 +12,9 @@ import { buildWorld, obstacleIndex, trunkRadius, type Bush, type Rock, type Tree
  * The island a plane takes you to (ADR 0014): sea all round instead of mountains, a beach
  * inside that, dunes behind the beach, and jungle in the middle. The tents are on the
  * beach, on the side the afternoon sun goes down on. There is an airstrip to fly home
- * from and one garage, a beach shack, which is the only place that sells the dune buggy.
+ * from, and three garages, one in each ring: a shack on the beach, an outpost in the dunes
+ * and a lodge in the jungle. They are the only places that sell the dune buggy. Three
+ * courses too, one in each ring, and a café on the beach by the camp (ADR 0016).
  *
  * It lies on the same grid as the valley, so the renderer, the physics and the map read
  * it the same way. Pure data, no three.js. A bearing here is a heading: 0 is +z.
@@ -154,16 +157,64 @@ export function buildIsland(seed = 20261009): World {
     if (Math.max(...hs) - Math.min(...hs) < 3 && Math.min(...hs) > 1.4) shack = { ...p, rot: deg * DEG, style: "shack", y: ground(p.x, p.z) };
   }
   if (!shack) throw new Error("Nowhere on the island for the shack.");
-  level(heights, { x0: shack.x, x1: shack.x, z0: shack.z, z1: shack.z }, shack.y, SITE_FLAT, SITE_BLEND, siteDist);
+
+  // Two more garages: an outpost among the dunes on the far side from the camp, and a
+  // lodge up in the jungle. Each goes on the most level ground its stretch has, door outward.
+  const levellest = (style: SiteStyle, spots: { deg: number; r: number }[]): Site => {
+    let best: { site: Site; range: number } | null = null;
+    for (const s of spots) {
+      const p = along(s.deg * DEG, s.r);
+      const hs = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => ground(p.x + Math.cos(k) * 24, p.z + Math.sin(k) * 24));
+      const range = Math.max(...hs) - Math.min(...hs);
+      if (!best || range < best.range) best = { site: { ...p, rot: s.deg * DEG, style, y: ground(p.x, p.z) }, range };
+    }
+    return best!.site;
+  };
+  const spread = (from: number, to: number, step: number, radii: (deg: number) => number[]) => {
+    const out: { deg: number; r: number }[] = [];
+    for (let deg = from; deg <= to; deg += step) for (const r of radii(deg)) out.push({ deg, r });
+    return out;
+  };
+  const outpost = levellest("outpost", spread(156, 204, 2, (deg) => [250, 290, 330].map((back) => shape.shoreAlong(deg * DEG) - back)));
+  const lodge = levellest("lodge", spread(24, 76, 2, () => [540, 600, 660]));
+  const sites = [shack, outpost, lodge];
+  for (const s of sites) level(heights, { x0: s.x, x1: s.x, z0: s.z, z1: s.z }, s.y, SITE_FLAT, SITE_BLEND, siteDist);
+
+  // The café, on the beach a short drive past the last tent on the way to the shack, its door to the sea.
+  const cafeAt = camp.heading + 20 * DEG;
+  const cafe = { ...along(cafeAt, shape.shoreAlong(cafeAt) - 95), rot: cafeAt };
+  level(heights, { x0: cafe.x, x1: cafe.x, z0: cafe.z, z1: cafe.z }, Math.max(1.8, ground(cafe.x, cafe.z)), SITE_FLAT, SITE_BLEND, siteDist);
+
+  const slope = (x: number, z: number) => Math.hypot(ground(x + 2, z) - ground(x - 2, z), ground(x, z + 2) - ground(x, z - 2)) / 4;
+  const missions = planCourses(shape, camp.heading, ground, slope);
+  const courseDist = courseDistOf(missions, 20);
+
+  // Tracks cut through the jungle, straight out to the dunes: one from the lodge's door,
+  // one from where the jungle course starts. Without them the trees are a wall.
+  const loop = missions.find((m) => m.id === "jungle-loop");
+  const tracks: Path[] = [{ x: lodge.x, z: lodge.z }, ...(loop ? [loop.start] : [])].map((from) => {
+    const bearing = Math.atan2(from.x, from.z);
+    const path: Path = { xs: [], zs: [] };
+    for (let r = Math.hypot(from.x, from.z) + 14; r <= ISLAND.jungle + 150; r += 34) {
+      const p = along(bearing, r);
+      path.xs.push(p.x);
+      path.zs.push(p.z);
+    }
+    return path;
+  });
+  for (const path of tracks) {
+    const d = nearest(path, false, 30).dist;
+    for (let k = 0; k < d.length; k++) roadDist[k] = Math.min(roadDist[k], d[k]);
+  }
 
   const start = camp.pitches[0].parking;
   const zone = new Uint8Array(ROW * ROW);
   flood(heights, water, STOCK_WADE, zone, 1, start);
   flood(heights, water, SNORKEL_WADE, zone, 2, start);
 
-  const slope = (x: number, z: number) => Math.hypot(ground(x + 2, z) - ground(x - 2, z), ground(x, z + 2) - ground(x, z - 2)) / 4;
-  /** Clear of the camp, the shack's yard and the airstrip, by at least these distances. */
-  const clear = (x: number, z: number, site: number, tents: number) => field(siteDist, x, z) > site && field(campDist, x, z) > tents;
+  /** Clear of the camp, the garages' yards, the airstrip, the courses and the tracks, by at least these distances. */
+  const clear = (x: number, z: number, site: number, tents: number) =>
+    field(siteDist, x, z) > site && field(campDist, x, z) > tents && field(courseDist, x, z) > 7 && field(roadDist, x, z) > 8;
 
   // Trees on a jittered grid: canopy trees and palms thick in the jungle, and palms in
   // clumps along the back of the beach and among the dunes. None on the open sand.
@@ -228,14 +279,60 @@ export function buildIsland(seed = 20261009): World {
     id: "island",
     heights, water, forest, trackDist, riverDist, roadDist, siteDist, campDist, zone,
     snow: new Float32Array(ROW * ROW), ice: new Float32Array(ROW * ROW),
-    track: NO_TRACK, rivers: [], roads: [], sites: [shack],
-    trees, bushes, rocks, missions: [], landmarks: [], courseDist: far(), airport,
-    start, pitches: camp.pitches, camp: { ...camp.middle, heading: camp.heading },
+    track: NO_TRACK, rivers: [], roads: tracks, sites,
+    trees, bushes, rocks, missions, landmarks: [], courseDist, airport,
+    cafe, start, pitches: camp.pitches, camp: { ...camp.middle, heading: camp.heading },
     sea: true, mapSpan: (ISLAND.shore + 420) * 2,
     height: ground, waterAt: () => WORLD.water, obstaclesNear: solid.near, limit: WORLD.limit,
     slipAt: () => 0,
     addObstacles: (list) => list.forEach(solid.add),
   };
+}
+
+/**
+ * The island's three courses, one in each ring, all driven alone: along the beach away
+ * from the camp, zigzagging over the dunes, and once round the hill under the trees.
+ * Payouts must match `public.missions` (shop.test.ts checks).
+ */
+function planCourses(
+  shape: ReturnType<typeof makeIsland>, campBearing: number,
+  ground: (x: number, z: number) => number, slope: (x: number, z: number) => number,
+): Mission[] {
+  const camp = campBearing / DEG;
+  const course = (start: { x: number; z: number }, pts: { x: number; z: number }[], width: number) => ({
+    start: { ...start, heading: Math.atan2(pts[0].x - start.x, pts[0].z - start.z) },
+    gates: gatesAlong(start, pts, width),
+    cooldown: 600, minSeconds: Math.floor(courseLength(start, pts) / 23), crew: 1, race: false,
+  });
+
+  // Along the beach, from past the last tent on round the shore.
+  const sand = Array.from({ length: 11 }, (_, i) => {
+    const b = (camp - 24 - i * 4) * DEG;
+    return along(b, shape.shoreAlong(b) - 62);
+  });
+  // Over the dunes behind that beach, in and out across the ridges.
+  const dunes = Array.from({ length: 11 }, (_, i) => {
+    const b = (camp - 66 + i * 4) * DEG;
+    return along(b, shape.shoreAlong(b) - (i % 2 ? 215 : 300));
+  });
+  // Round the hill: whichever circle under the trees has the gentlest worst stretch.
+  let ring: { pts: { x: number; z: number }[]; steep: number } | null = null;
+  for (const r of [380, 430, 480, 530]) {
+    const pts = Array.from({ length: 15 }, (_, i) => along((camp - i * 24) * DEG, r));
+    let steep = 0;
+    for (let i = 0; i < 14; i++) for (let k = 0; k <= 10; k++) steep = Math.max(steep, slope(pts[i].x + ((pts[i + 1].x - pts[i].x) * k) / 10, pts[i].z + ((pts[i + 1].z - pts[i].z) * k) / 10));
+    if (!ring || steep < ring.steep) ring = { pts, steep };
+  }
+  const round = ring!.pts;
+  // The start arch stands a little outside the first flag, on the way in from the dunes.
+  const b0 = camp * DEG + 0.09;
+  const gate = along(b0, Math.hypot(round[0].x, round[0].z) + 4);
+  const dry = (pts: { x: number; z: number }[]) => pts.every((p) => ground(p.x, p.z) > 0.5);
+  const out: Mission[] = [];
+  if (dry(sand)) out.push({ id: "beach-run", name: "Beach Run", blurb: "Ten flags along the sand, the sea on your right.", ...course(sand[0], sand.slice(1), 12), reward: 2, repeatReward: 0.6 });
+  if (dry(dunes)) out.push({ id: "dune-dash", name: "Dune Dash", blurb: "Ten flags in and out across the dunes. The buggy was made for it.", ...course(dunes[0], dunes.slice(1), 12), reward: 2.5, repeatReward: 0.8 });
+  out.push({ id: "jungle-loop", name: "Jungle Loop", blurb: "Once round the hill, under the trees.", ...course(gate, [...round.slice(1), round[0]], 10), reward: 3, repeatReward: 1 });
+  return out;
 }
 
 /** Where the island's fire is: out from the middle of the row of tents, further down the beach. */

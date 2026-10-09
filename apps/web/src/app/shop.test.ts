@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import { PARTS, STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, specFor, type PartCategory } from "./shop";
 import { STARTERS, VEHICLES } from "./vehicles";
+import { buildIsland } from "./island";
 import { buildWorld } from "./world";
 
 const dir = resolve(__dirname, "../../../../supabase/migrations");
@@ -32,7 +33,8 @@ describe("the shop and the server agree", () => {
     const server = rows("missions").map((r) => ({
       id: r.id, reward: +r.reward, repeat: +r.repeat_reward, cooldown: +r.cooldown_seconds, min: +r.min_seconds, crew: +(r.crew ?? 1),
     }));
-    const client = buildWorld().missions.map((m) => ({ id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds, crew: m.crew }));
+    // The valley's courses, then the island's, in the order the migrations added them.
+    const client = [...buildWorld().missions, ...buildIsland().missions].map((m) => ({ id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds, crew: m.crew }));
     expect(server).toEqual(client);
   });
 });

@@ -1,7 +1,8 @@
 # 0012 — Four easter-egg buildings point at the owner's other projects
 
 Date: 2026-10-08
-Status: Accepted. Supersedes the "no links, no proximity prompts" part of
+Status: Accepted, except that the easter eggs are now counted once you look inside
+(`0016`); they still pay nothing and stay off the map. Supersedes the "no links, no proximity prompts" part of
 `0004-gilbyy-is-just-a-driving-game.md`, narrowly. The rest of `0004` stands: gilbyy.com
 is still a driving game and still not a hub.
 

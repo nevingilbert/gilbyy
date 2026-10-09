@@ -179,6 +179,9 @@ export const PALETTE = {
   fern: ["#3f8f3f", "#2f7f45", "#58a045", "#8fae4a"],
   thatch: ["#c9a55a", "#b8924a"],
   bamboo: "#c9b06a",
+  /** The dune outpost's sun-bleached planks, and the jungle lodge's roof. */
+  driftwood: "#a89a82",
+  jungleThatch: ["#8f7a44", "#6f5e36"],
   surfboard: ["#ee6f5b", "#3fb0b4", "#f3d59c", "#efe6d6"],
 
   /**

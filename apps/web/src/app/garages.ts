@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { PALETTE } from "./palette";
 
-export type GarageStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack";
-export const GARAGE_STYLES: readonly GarageStyle[] = ["workshop", "barn", "bunker", "quonset", "cabin", "container", "hangar", "ranch", "shack"];
+export type GarageStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack" | "outpost" | "lodge";
+export const GARAGE_STYLES: readonly GarageStyle[] = ["workshop", "barn", "bunker", "quonset", "cabin", "container", "hangar", "ranch", "shack", "outpost", "lodge"];
 
 export type Circle = { x: number; z: number; r: number };
 
@@ -637,11 +637,18 @@ function surfboard(k: Kit, color: THREE.ColorRepresentation, x: number, z: numbe
   k.box(lambert(tone(color, 0.7)), 0.03, len * 0.8, 0.045, x, (len / 2) * Math.cos(lean) + 0.02, z - (len / 2) * Math.sin(lean) + 0.012, -lean);
 }
 
-/** The island's garage: cane walls under a deep thatched roof, boards leaning by the door, bulbs strung along the eaves. */
-const shack: Build = (root, k, glass) => {
+/** What tells the island's three garages apart: their walls, their roofs, and what leans by the door. */
+type Hut = { wall: string; roof: readonly [string, string]; boards: boolean };
+
+/**
+ * The island's garages: a hut under a deep roof, bulbs strung along the eaves. On the beach
+ * it's cane and thatch with boards leaning by the door; in the dunes, bleached planks under
+ * tin; in the jungle, logs under dark thatch.
+ */
+const hut = (look: Hut): Build => (root, k, glass) => {
   const W = 9, D = 8, H = 3.9, DW = 3.8, DH = 3.4, F = D / 2, RISE = 2.9;
-  const cane = lambert(PALETTE.bamboo), seam = lambert(tone(PALETTE.bamboo, 0.76)), wood = lambert(PALETTE.timber), woodDark = lambert(tone(PALETTE.timber, 0.75));
-  const thatch = lambert(PALETTE.thatch[0]), thatchDark = lambert(PALETTE.thatch[1]);
+  const cane = lambert(look.wall), seam = lambert(tone(look.wall, 0.76)), wood = lambert(PALETTE.timber), woodDark = lambert(tone(PALETTE.timber, 0.75));
+  const thatch = lambert(look.roof[0]), thatchDark = lambert(look.roof[1]);
   shell(k, cane, W, D, H, DW, DH);
   // Cane seams on every wall, round posts at the corners and the door.
   for (let x = -W / 2 + 0.25; x < W / 2; x += 0.5) {
@@ -670,7 +677,11 @@ const shack: Build = (root, k, glass) => {
   pane(k.at(W / 2 + 0.02, 2.2, -0.8, Math.PI / 2), glass, 1.3, 0.9, PALETTE.timber);
   pane(k.at(-W / 2 - 0.02, 2.2, 0.6, -Math.PI / 2), glass, 1.3, 0.9, PALETTE.timber);
   // Boards leaning on the wall by the door, a bench down the side, drums and tyres round the back.
-  PALETTE.surfboard.forEach((c, i) => surfboard(k, c, DW / 2 + 0.95 + i * 0.62, F + 0.72, 0.22 + (i % 2) * 0.05, 2.1 + (i % 3) * 0.2));
+  if (look.boards) PALETTE.surfboard.forEach((c, i) => surfboard(k, c, DW / 2 + 0.95 + i * 0.62, F + 0.72, 0.22 + (i % 2) * 0.05, 2.1 + (i % 3) * 0.2));
+  else {
+    tyres(k, DW / 2 + 1.3, F + 0.6, 4);
+    drum(k, DW / 2 + 2.3, F + 0.5, PALETTE.surfboard[0]);
+  }
   bench(k.at(-W / 2 - 0.75, 0, -0.6, Math.PI / 2));
   drum(k, -W / 2 - 0.8, 2.3, PALETTE.surfboard[1]);
   drum(k, -W / 2 - 0.9, 3.05, PALETTE.surfboard[0]);
@@ -697,7 +708,12 @@ const shack: Build = (root, k, glass) => {
   return { setDoor: (t) => (door.scale.y = 1 - 0.95 * t), colliders: ring(props, -W / 2, W / 2, -F, F), ...entry(F, 9.5) };
 };
 
-const BUILDERS: Record<GarageStyle, Build> = { workshop, barn, bunker, quonset, cabin, container: containers, hangar, ranch, shack };
+const BUILDERS: Record<GarageStyle, Build> = {
+  workshop, barn, bunker, quonset, cabin, container: containers, hangar, ranch,
+  shack: hut({ wall: PALETTE.bamboo, roof: PALETTE.thatch, boards: true }),
+  outpost: hut({ wall: PALETTE.driftwood, roof: [PALETTE.roofTin, PALETTE.corrugated], boards: false }),
+  lodge: hut({ wall: PALETTE.logWood, roof: PALETTE.jungleThatch, boards: false }),
+};
 
 /** A garage the car can drive into. `windowMaterial` is shared and owned by the caller; it glows at night. */
 export function buildGarage(style: GarageStyle, windowMaterial: THREE.Material): GarageModel {

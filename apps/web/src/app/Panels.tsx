@@ -306,7 +306,7 @@ export function Leaderboard({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{r.name}</span>
                     <span className="block text-[11px] tabular-nums text-[rgba(255,246,232,0.45)]">
-                      {foundLine({ garage: r.garages, cafe: r.cafes })} found
+                      {foundLine(r.found, r.world)} found
                     </span>
                     {/* Achievements, in the compass mark's yellow: it's what leads you to them. */}
                     {earned.length > 0 && (

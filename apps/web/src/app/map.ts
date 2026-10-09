@@ -1,19 +1,18 @@
 import { APRON, RUNWAY, fromField } from "./airport";
-import { PLANE } from "./flight";
 import { cellAt, cellCentre } from "./fog";
 import { PALETTE } from "./palette";
-import { CAFE_KEY, garageKey, placesOf } from "./places";
-import { CAFE, HALF, WORLD, sampleGrid, type Mission, type Site, type World } from "./world";
+import { placesOf } from "./places";
+import { HALF, WORLD, sampleGrid, type Mission, type World } from "./world";
 
 /**
  * The map: a parchment topo sheet of the world you're in, drawn once, under a grey fog
- * that clears wherever you've driven. The camp is marked from the start. In the valley,
- * garages and the café appear once the truck has been near them, and then stay for good,
+ * that clears wherever you've driven. The camp is marked from the start. Garages,
+ * the café and the airstrip appear once the truck has been near them, and then stay for good,
  * fog or no fog: `onFound` is told when one is found and `setFound` puts back the ones
  * saved from earlier visits. The fog is remembered as the grid cells the truck has been
  * in (fog.ts): `onExplored` is told each new one and `setExplored` clears the saved ones
- * again. Mission starts, the airstrip and the island's garage show wherever the fog has
- * cleared, which is how they are remembered too.
+ * again. Mission starts show wherever the fog has cleared, which is how they are
+ * remembered too.
  */
 const SIZE = 512;
 const PX = SIZE / WORLD.size;
@@ -240,12 +239,10 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
   const f = fog.getContext("2d", { willReadFrequently: true })!;
   f.fillStyle = PALETTE.map.fog;
   f.fillRect(0, 0, SIZE, SIZE);
-  // Only the valley's places are found and counted (ADR 0008). The island's garage shows once the fog is off it.
-  const places = world.id === "valley" ? placesOf(world.sites) : [];
+  // This world's garages, its café if it has one, and its airstrip (ADR 0008, ADR 0016).
+  const places = placesOf(world);
   const found = new Set<string>();
   const seenMissions = new Set<Mission>();
-  const seenSites = new Set<Site>();
-  let seenAirport = false;
   const cells = new Set<number>();
   let lastX = Infinity;
   let lastZ = Infinity;
@@ -278,17 +275,17 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
       onFound(p.key);
     }
     for (const m of world.missions) if (Math.hypot(m.start.x - x, m.start.z - z) < SIGHT * 0.8) seenMissions.add(m);
-    for (const s of world.sites) if (Math.hypot(s.x - x, s.z - z) < SIGHT * 0.8) seenSites.add(s);
-    seenAirport ||= Math.hypot(stand.x - x, stand.z - z) < SIGHT * 0.8;
   }
 
-  /** Where the plane stands, which is where the airstrip's mark goes. */
-  const stand = fromField(world.airport, 0, PLANE.stand);
   const markers = (g: CanvasRenderingContext2D, place: (x: number, z: number) => [number, number], icon: number, extras: Extras) => {
     drawCamp(g, ...place(world.camp.x, world.camp.z), icon * 1.1);
-    if (found.has(CAFE_KEY)) drawCafe(g, ...place(CAFE.x, CAFE.z), icon * 0.9);
-    for (const s of world.sites) if (places.length ? found.has(garageKey(s.style)) : seenSites.has(s)) drawGarage(g, ...place(s.x, s.z), icon);
-    if (seenAirport) drawPlane(g, ...place(stand.x, stand.z), world.airport.heading, icon * 1.15);
+    // Only what has been found, and only what is in this world: the valley's café isn't on the island's map.
+    for (const p of places) {
+      if (!found.has(p.key)) continue;
+      if (p.kind === "cafe") drawCafe(g, ...place(p.x, p.z), icon * 0.9);
+      else if (p.kind === "garage") drawGarage(g, ...place(p.x, p.z), icon);
+      else drawPlane(g, ...place(p.x, p.z), world.airport.heading, icon * 1.15);
+    }
     for (const m of seenMissions) drawFlag(g, ...place(m.start.x, m.start.z), icon);
     if (extras.train) drawDot(g, ...place(extras.train.x, extras.train.z), icon * 0.55, PALETTE.map.train);
     for (const p of extras.players ?? []) drawDot(g, ...place(p.x, p.z), icon * 0.5, p.friend ? PALETTE.map.friend : PALETTE.map.player);
@@ -367,8 +364,6 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
       f.fillRect(0, 0, SIZE, SIZE);
       cells.clear();
       seenMissions.clear();
-      seenSites.clear();
-      seenAirport = false;
       lastX = lastZ = Infinity;
     }
     for (const cell of saved) {
@@ -378,8 +373,6 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
       clear(c.x, c.z);
     }
     for (const m of world.missions) if (explored(m.start.x, m.start.z)) seenMissions.add(m);
-    for (const s of world.sites) if (explored(s.x, s.z)) seenSites.add(s);
-    seenAirport ||= explored(stand.x, stand.z);
   }
 
   return { reveal, drawMini, drawFull, explored, setFound, setExplored };
