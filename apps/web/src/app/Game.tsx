@@ -11,6 +11,7 @@ import { buildWorldOf } from "./island";
 import { LANDMARKS, type LandmarkKind } from "./landmarks";
 import { createMap } from "./map";
 import { fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
+import { stackTags, type TagBox } from "./name-tags";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
 import { FlightCard, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
 import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
@@ -291,7 +292,11 @@ export function Game() {
     const friends = new Map<string, string>();
     const askedBy = new Set<string>();
     const bubbles = new Map<string, { text: string; until: number }>();
-    const tags = new Map<string, HTMLDivElement>();
+    /** Each tag's element, the words it was measured with and its size, and how far up it's drawn (null while off screen). */
+    const tags = new Map<string, { el: HTMLDivElement; text: string; w: number; h: number; lift: number | null }>();
+    /** Where `stackTags` last put each tag, and when. */
+    let tagLifts = new Map<string, number>();
+    let tagsAt = 0;
     let friendHere: { id: string; name: string } | null = null;
     let chatKey = 0;
     // A convoy or a race: what E does at its arch, my time through its finish while the
@@ -1036,25 +1041,30 @@ export function Game() {
 
     // ——— Each frame ———
 
-    /** Name tags and speech bubbles over the trucks, placed in screen space. */
+    /** Name tags and speech bubbles over the trucks, placed in screen space and kept apart. */
     const drawTags = (now: number) => {
       const layer = tagsRef.current;
       if (!layer) return;
+      const ease = 1 - Math.exp(-10 * Math.min(0.1, Math.max(0, now - tagsAt)));
+      tagsAt = now;
       const me = store.get().id;
       const list = view.remotes.tags();
       const mine = bubbles.get(me);
       if (mine) list.push({ id: me, name: "", x: car.x, y: car.y + view.carTop() + 1.1, z: car.z });
       const seen = new Set<string>();
+      const shown: TagBox[] = [];
       for (const t of list) {
         const at = view.project(t.x, t.y, t.z);
-        let el = tags.get(t.id);
-        if (!el) {
-          el = document.createElement("div");
+        let tag = tags.get(t.id);
+        if (!tag) {
+          const el = document.createElement("div");
           el.className = "absolute left-0 top-0 flex flex-col items-center gap-1 whitespace-nowrap will-change-transform";
           el.innerHTML = '<span data-say class="max-w-[14rem] whitespace-normal rounded-xl bg-black/45 px-2.5 py-1 text-center text-xs text-[rgba(255,246,232,0.95)] backdrop-blur"></span><span data-name class="text-[11px] font-semibold tracking-wide text-[rgba(255,246,232,0.85)] drop-shadow"></span>';
           layer.appendChild(el);
-          tags.set(t.id, el);
+          tag = { el, text: "", w: 0, h: 0, lift: null };
+          tags.set(t.id, tag);
         }
+        const { el } = tag;
         seen.add(t.id);
         const bubble = bubbles.get(t.id);
         const sayEl = el.querySelector<HTMLSpanElement>("[data-say]")!;
@@ -1066,18 +1076,41 @@ export function Game() {
         if (nameEl.textContent !== label) nameEl.textContent = label;
         if (!at || at.far > 260) {
           el.style.opacity = "0";
+          tag.lift = null;
           continue;
         }
         el.style.opacity = String(1 - smooth(160, 260, at.far));
         // Kept clear of the screen's edges, so a bubble is never cut off.
         const x = Math.max(120, Math.min(layer.clientWidth - 120, at.x));
+        shown.push({ id: t.id, x, y: Math.max(40, at.y), w: tag.w, h: tag.h, far: at.far });
+      }
+      // Measured only when the words change, and only after every tag's words are in, so
+      // the page is laid out at most once a frame for it.
+      for (const b of shown) {
+        const tag = tags.get(b.id)!;
+        const text = tag.el.textContent ?? "";
+        if (tag.text !== text) {
+          tag.text = text;
+          tag.w = tag.el.offsetWidth;
+          tag.h = tag.el.offsetHeight;
+        }
+        b.w = tag.w;
+        b.h = tag.h;
+      }
+      // Trucks side by side would have their tags on one another: the further ones go up.
+      tagLifts = stackTags(shown, tagLifts);
+      for (const b of shown) {
+        const tag = tags.get(b.id)!;
+        const want = tagLifts.get(b.id) ?? 0;
+        // A tag just come into view starts where it belongs; after that it eases there.
+        tag.lift = tag.lift === null ? want : tag.lift + (want - tag.lift) * ease;
         // Centred here and only here: a Tailwind `translate-*` class is the CSS `translate`
         // property, which would shift the tag a second time on top of this transform.
-        el.style.transform = `translate(${x}px, ${Math.max(40, at.y)}px) translate(-50%, -100%)`;
+        tag.el.style.transform = `translate(${b.x}px, ${b.y - tag.lift}px) translate(-50%, -100%)`;
       }
-      for (const [id, el] of tags) {
+      for (const [id, tag] of tags) {
         if (!seen.has(id)) {
-          el.remove();
+          tag.el.remove();
           tags.delete(id);
         }
       }
@@ -1377,7 +1410,7 @@ export function Game() {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("pagehide", onUnload);
-      for (const el of tags.values()) el.remove();
+      for (const tag of tags.values()) tag.el.remove();
       view.dispose();
     };
   }, []);

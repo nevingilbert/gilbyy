@@ -51,6 +51,8 @@ apps, you are in the wrong repo.
       (those two steps as achievements, ADR 0009).
     - `convoy.ts`: how friends gather, set off and come home together on the convoy
       course, or race, agreed over broadcasts (ADR 0010, ADR 0011).
+    - `name-tags.ts`: keeps the name tags over other players' trucks off one another;
+      a further truck's tag is lifted above a nearer one's.
     - `track.ts` (train, crossings, and the bridges' guards, abutments and legs), `daylight.ts`
       (time of day), `noise.ts`.
     - `places.ts`: things to find, world by world (garages, the café, the airstrip, the
