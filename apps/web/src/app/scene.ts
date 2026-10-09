@@ -20,7 +20,7 @@ import { buildShowroom } from "./showroom";
 import { buildSky } from "./sky";
 import { buildGrass, buildTerrainMesh, buildWaterMesh, makeSurface } from "./terrain-mesh";
 import type { VehicleId } from "./vehicles";
-import { CAFE, CAMP_CENTRE, CAMP_GATE, sampleGrid, type Ground, type Obstacle, type SiteStyle, type World } from "./world";
+import { CAMP_CENTRE, CAMP_GATE, sampleGrid, type Ground, type Obstacle, type SiteStyle, type World } from "./world";
 
 const SHADOW_SPAN = 55;
 const FAR = 2600;
@@ -94,7 +94,9 @@ function placeCamp(world: World, windows: THREE.Material, glow: THREE.Material) 
   }
   group.add(mergeByMaterial(pitches));
   const centre = buildCampCentre(glow);
-  let cafe: { x: number; z: number; r: number } | null = null;
+  const shop = buildCoffeeShop(windows, glow);
+  const meet = place(shop.object, shop.colliders, world.cafe.x, world.cafe.z, world.cafe.rot);
+  const cafe = { ...meet(shop.meet.x, shop.meet.z), r: shop.meet.r };
   if (world.id === "valley") {
     place(centre.object, centre.colliders, CAMP_CENTRE.x, CAMP_CENTRE.z, 0);
     // The arch spans the road east out of camp, which runs along x. It stands outside the levelled camp, where the
@@ -102,9 +104,6 @@ function placeCamp(world: World, windows: THREE.Material, glow: THREE.Material) 
     const [gx, gz, rot] = [CAMP_GATE.x + 24, CAMP_GATE.z, Math.PI / 2];
     const gate = buildCampGate(across(world, gx, gz, rot));
     place(gate.object, gate.colliders, gx, gz, rot);
-    const shop = buildCoffeeShop(windows, glow);
-    const at = place(shop.object, shop.colliders, CAFE.x, CAFE.z, CAFE.rot);
-    cafe = { ...at(shop.meet.x, shop.meet.z), r: shop.meet.r };
   } else {
     const fire = islandFire(world);
     place(centre.object, centre.colliders, fire.x, fire.z, world.camp.heading);

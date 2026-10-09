@@ -3,7 +3,7 @@ import { planeObstacles } from "./flight";
 import { LANDMARK_BLEND, LANDMARK_CLEAR, LANDMARK_FLAT, chooseLandmarks, type Landmark } from "./landmarks";
 import { planMissions, type Mission } from "./missions";
 import { makeRandom } from "./noise";
-import { buildTerrain, CAMP, CELL, START, campPitches, level, sampleGrid, WORLD, type Pitch, type Terrain, type WorldId } from "./terrain";
+import { buildTerrain, CAFE, CAMP, CELL, START, campPitches, level, sampleGrid, WORLD, type Pitch, type Terrain, type WorldId } from "./terrain";
 import { bridgeObstacles } from "./track";
 
 export {
@@ -49,6 +49,8 @@ export type World = Ground & Terrain & {
   pitches: Pitch[];
   /** The middle of the camp and the way it looks out. The opening shot hangs behind it. */
   camp: { x: number; z: number; heading: number };
+  /** Where the café stands, where friends are made. */
+  cafe: { x: number; z: number; rot: number };
   /** Every world has an airstrip; a flight goes from one to another (ADR 0014). */
   airport: Airport;
   /** True where the only water is the sea: one level sheet out to the horizon. */
@@ -225,7 +227,7 @@ export function buildWorld(seed = 20261006): World {
   for (const o of planeObstacles(airport)) solid.add(o);
 
   return {
-    ...terrain, id: "valley", trees, bushes, rocks, missions, landmarks, courseDist, airport,
+    ...terrain, id: "valley", cafe: CAFE, trees, bushes, rocks, missions, landmarks, courseDist, airport,
     start: START, pitches: campPitches(), camp: { x: CAMP.x, z: CAMP.z, heading: 0 },
     sea: false, mapSpan: WORLD.limit * 2.1,
     height: ground, waterAt, obstaclesNear: solid.near, limit: WORLD.limit,
