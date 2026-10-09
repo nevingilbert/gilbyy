@@ -70,6 +70,7 @@ apps, you are in the wrong repo.
       garage interior).
     - Missions: `mission-models.ts`.
   - `map.ts`: the 2D map, its fog of war, and the found places that show through it.
+    `fog.ts` (pure, unit-tested) is the grid the fog is saved as (ADR 0013).
   - React: `Game.tsx` (loop, modes, HUD), `GarageMenu.tsx` (the shop), `Panels.tsx`
     (starter picker, banner, sign-in, name, leaderboard).
 - `supabase/`: the migrations (schema, RLS, the functions every write goes through,
@@ -148,7 +149,7 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - a 30-tent campground spawn and a café;
 - eight rigs, and eight garages that sell rigs and parts for miles;
 - four missions, a convoy and a race for two to four friends (ADR 0010, 0011), and first-time guidance;
-- a map with fog of war, where the garages and café you've found stay marked and are counted (ADR 0008);
+- a map with fog of war, where the garages and café you've found stay marked and are counted (ADR 0008), and signed in the cleared fog is saved too (ADR 0013);
 - achievements for the first garage and the café, shown on the leaderboard (ADR 0009);
 - optional sign-in for saved progress, a shared valley, friends, chat and a leaderboard (ADR 0007);
 - since 2026-10-08: a bank, a church, a school and a casino hidden in the valley, each linking to one of the owner's other projects (ADR 0012).

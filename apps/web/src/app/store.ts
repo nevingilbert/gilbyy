@@ -1,12 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONVOY_MAX } from "./convoy";
+import { EXPLORE_MAX, FOG_CELLS, decodeCells } from "./fog";
 import type { Mission } from "./missions";
 import { countFound } from "./places";
 import { STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, type Loadout, type Progress } from "./shop";
 import type { VehicleId } from "./vehicles";
 
 /**
- * Where your miles and garage live. Single player keeps them in memory, so they're gone
+ * Where your miles, garage and map live. Single player keeps them in memory, so they're gone
  * when you leave (the banner says so). Signed in, every change goes through the
  * database's checked functions (supabase/migrations), so the server decides prices,
  * mission payouts and how fast miles can grow.
@@ -40,6 +41,10 @@ export interface Store {
   markGoal(goal: string): void;
   /** The truck has come up to a garage or a café for the first time. */
   discover(key: string): void;
+  /** The truck has driven into a new cell of the map's fog (fog.ts). Saved with the next flush. */
+  explore(cell: number): void;
+  /** The cells explored so far, earlier visits included. */
+  explored(): number[];
   setName(name: string): Promise<string | null>;
   /** Asks to be friends; "friends" if they'd already asked you. */
   requestFriend(id: string): Promise<"pending" | "friends" | { error: string }>;
@@ -58,6 +63,7 @@ export class LocalStore implements Store {
   private asked = new Set<string>();
   private asking = new Set<string>();
   private friendIds = new Map<string, string>();
+  private cells = new Set<number>();
 
   constructor(id = "local", name: string | null = null) {
     this.p = { ...freshProgress(), id, name, goals: [], found: [] };
@@ -118,6 +124,11 @@ export class LocalStore implements Store {
     if (!this.p.found.includes(key)) this.set({ found: [...this.p.found, key] });
   }
 
+  explore(cell: number) {
+    this.cells.add(cell);
+  }
+  explored = () => [...this.cells];
+
   async setName(name: string) {
     if (!NAME_PATTERN.test(name.trim())) return NAME_RULE;
     this.set({ name: name.trim() });
@@ -176,15 +187,19 @@ export class SupabaseStore implements Store {
   private p: Profile;
   private pending = 0;
   private listeners = new Set<() => void>();
+  private cells: Set<number>;
+  private unsent: number[] = [];
 
-  private constructor(private sb: SupabaseClient, row: Row) {
+  private constructor(private sb: SupabaseClient, row: Row, cells: number[]) {
     this.p = toProfile(row);
+    this.cells = new Set(cells);
   }
 
   static async open(sb: SupabaseClient) {
-    const { data, error } = await sb.rpc("me");
+    const [{ data, error }, fog] = await Promise.all([sb.rpc("me"), sb.rpc("explored")]);
     if (error || !data) throw new Error(error?.message ?? "No profile");
-    return new SupabaseStore(sb, data as Row);
+    // A map that won't load is no reason to refuse the garage: it just starts fogged.
+    return new SupabaseStore(sb, data as Row, fog.error ? [] : decodeCells(fog.data as string | null));
   }
 
   get = () => ({ ...this.p, lifetime: this.p.lifetime + this.pending, balance: this.p.balance + this.pending });
@@ -211,12 +226,23 @@ export class SupabaseStore implements Store {
   }
 
   async flush() {
+    await Promise.all([this.flushMiles(), this.flushFog()]);
+  }
+
+  private async flushMiles() {
     if (this.pending <= 0) return;
     const sending = this.pending;
     this.pending = 0;
     const error = await this.call("add_miles", { p_miles: sending });
     // The server banks what it believes; a failed call puts the miles back to try again.
     if (error) this.pending += sending;
+  }
+
+  private async flushFog() {
+    if (!this.unsent.length) return;
+    const sending = this.unsent.splice(0, EXPLORE_MAX);
+    const { error } = await this.sb.rpc("explore", { p_cells: sending });
+    if (error) this.unsent.unshift(...sending);
   }
 
   buy = (key: string) => this.call("buy", { p_key: key });
@@ -244,6 +270,13 @@ export class SupabaseStore implements Store {
     this.notify();
     void this.call("discover", { p_key: key });
   }
+
+  explore(cell: number) {
+    if (!Number.isInteger(cell) || cell < 0 || cell >= FOG_CELLS || this.cells.has(cell)) return;
+    this.cells.add(cell);
+    this.unsent.push(cell);
+  }
+  explored = () => [...this.cells];
 
   async setName(name: string) {
     const error = await this.call("set_name", { p_name: name });

@@ -111,9 +111,10 @@ Rendering and UI:
     they were taking (`guessPose` in `net.ts`), with any correction faded in;
   - the garage interior: `showroom.ts`.
 - `map.ts`: a parchment topo map drawn once at load, under a fog layer cleared as you
-  drive. The fog is kept in memory only, so it resets every visit. The garages and
-  café you've found (`places.ts`) are drawn over it regardless, and signed in they are
-  saved (`decisions/0008-found-places.md`).
+  drive. The garages and café you've found (`places.ts`) are drawn over it regardless,
+  and signed in they are saved (`decisions/0008-found-places.md`). So is the fog, as
+  the cells of a coarse grid the truck has been in (`fog.ts`,
+  `decisions/0013-saved-fog.md`); single player's fog lasts the visit.
 - `Game.tsx`: a fixed 120 Hz physics loop, the modes (picking a rig, driving, garage,
   map) and the HUD. `GarageMenu.tsx` is the shop. `Panels.tsx` holds the starter
   picker, the single-player banner, sign-in, the name prompt and the leaderboard.
@@ -150,6 +151,8 @@ for sign-in (Google only), and Realtime for the shared valley. See
   `complete_convoy()`, which pays only when a friend is among the crew;
   `complete_mission()` now refuses courses that take a crew (ADR 0010).
 - `20261007230000_race.sql` adds the race's row; `complete_convoy()` pays it (ADR 0011).
+- `20261009120000_saved_fog.sql` adds the `fog` table, `explore()` and `explored()`,
+  which save the map's fog (ADR 0013).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

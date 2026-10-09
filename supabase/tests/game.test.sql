@@ -145,6 +145,27 @@ update public.profiles set discovered = '{garage:workshop,garage:barn,garage:quo
 reset role;
 select pg_temp.check((select cardinality(discovered) from public.profiles where id::text like '%a') = 2, 'players cannot write what they have found');
 
+-- The map's fog: cells are only ever added, each player has their own, and nobody reads the table.
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check(public.explored() is null, 'a new player has explored nothing');
+select public.explore('{0,30}');
+select pg_temp.check(public.explored() = '01000040' || repeat('00', 2044), 'explored cells are kept, a bit each');
+select public.explore('{30,16383}');
+select pg_temp.check(public.explored() = '01000040' || repeat('00', 2043) || '80', 'more are added to what was there');
+select public.explore('{}');
+select pg_temp.fails($$ select public.explore('{16384}') $$, 'cells off the map are refused');
+select pg_temp.fails($$ select public.explore('{-1}') $$, 'and ones before it');
+select pg_temp.fails($$ select public.explore('{1,null}') $$, 'and ones that are nothing');
+select pg_temp.fails($$ select public.explore(array(select generate_series(0, 512))) $$, 'too many at once are refused');
+select pg_temp.check((select count(*) from public.fog) = 0, 'the fog table cannot be read directly');
+select pg_temp.fails($$ insert into public.fog (id, cells) values ((select auth.uid()), decode(repeat('ff', 2048), 'hex')) $$, 'nor written');
+reset role;
+select pg_temp.as_player('b');
+set role authenticated;
+select pg_temp.check(public.explored() is null, 'one player''s map is not another''s');
+reset role;
+
 -- Realtime channels.
 insert into realtime.messages (topic, extension, payload) values
   ('world', 'broadcast', '{}'),
@@ -174,7 +195,8 @@ select pg_temp.check(not public.is_chat_member('chat:not-a-uuid:also-not'), 'gar
 -- Only the game's own functions can be called, and only when signed in.
 select pg_temp.check(not has_function_privilege('anon', 'public.me()', 'execute'), 'signed-out visitors cannot call the game''s functions');
 select pg_temp.check(not has_function_privilege('anon', 'public.discover(text)', 'execute') and not has_function_privilege('anon', 'public.leaderboard()', 'execute')
-  and not has_function_privilege('anon', 'public.complete_convoy(text, numeric, uuid[])', 'execute'), 'nor the ones added since');
+  and not has_function_privilege('anon', 'public.complete_convoy(text, numeric, uuid[])', 'execute')
+  and not has_function_privilege('anon', 'public.explore(int[])', 'execute') and not has_function_privilege('anon', 'public.explored()', 'execute'), 'nor the ones added since');
 select pg_temp.check(not has_function_privilege('anon', 'public.is_chat_member(text)', 'execute'), 'signed-out visitors cannot probe chat membership');
 select pg_temp.check(has_function_privilege('authenticated', 'public.is_chat_member(text)', 'execute'), 'the chat policies can still check membership');
 select pg_temp.check(not has_function_privilege('authenticated', 'public.handle_new_user()', 'execute'), 'the new-account trigger cannot be called directly');

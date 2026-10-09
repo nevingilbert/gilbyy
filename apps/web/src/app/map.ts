@@ -1,14 +1,16 @@
+import { cellAt, cellCentre } from "./fog";
 import { PALETTE } from "./palette";
 import { CAFE_KEY, garageKey, placesOf } from "./places";
 import { CAFE, CAMP, HALF, WORLD, sampleGrid, type Mission, type World } from "./world";
 
 /**
  * The map: a parchment topo sheet of the valley, drawn once, under a grey fog that
- * clears wherever you've driven. The fog lives only in memory, so every visit starts
- * unexplored. The camp is marked from the start. Garages and the café appear once the
- * truck has been near them, and then stay for good, fog or no fog: `onFound` is told
- * when one is found and `setFound` puts back the ones saved from earlier visits.
- * Mission starts appear the same way but are forgotten with the fog.
+ * clears wherever you've driven. The camp is marked from the start. Garages and the
+ * café appear once the truck has been near them, and then stay for good, fog or no fog:
+ * `onFound` is told when one is found and `setFound` puts back the ones saved from
+ * earlier visits. The fog is remembered as the grid cells the truck has been in
+ * (fog.ts): `onExplored` is told each new one and `setExplored` clears the saved ones
+ * again. Mission starts show wherever the fog has cleared.
  */
 const SIZE = 512;
 const PX = SIZE / WORLD.size;
@@ -192,7 +194,7 @@ export type Spot = { x: number; z: number; heading: number };
 /** Other things on the map this frame: the train (if seen), other players, and where the guidance is pointing. */
 export type Extras = { train?: Spot; players?: (Spot & { friend: boolean })[] };
 
-export function createMap(world: World, onFound: (key: string) => void = () => {}) {
+export function createMap(world: World, onFound: (key: string) => void = () => {}, onExplored: (cell: number) => void = () => {}) {
   const base = paintBase(world);
   const fog = document.createElement("canvas");
   fog.width = fog.height = SIZE;
@@ -202,14 +204,11 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
   const places = placesOf(world.sites);
   const found = new Set<string>();
   const seenMissions = new Set<Mission>();
+  const cells = new Set<number>();
   let lastX = Infinity;
   let lastZ = Infinity;
 
-  /** Clears the fog around the truck. Cheap to call every frame. */
-  function reveal(x: number, z: number) {
-    if (Math.hypot(x - lastX, z - lastZ) < 12) return;
-    lastX = x;
-    lastZ = z;
+  function clear(x: number, z: number) {
     const r = SIGHT * PX;
     const grad = f.createRadialGradient(toPx(x), toPx(z), r * 0.45, toPx(x), toPx(z), r);
     grad.addColorStop(0, ERASE);
@@ -218,6 +217,19 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
     f.fillStyle = grad;
     f.fillRect(toPx(x) - r, toPx(z) - r, r * 2, r * 2);
     f.globalCompositeOperation = "source-over";
+  }
+
+  /** Clears the fog around the truck. Cheap to call every frame. */
+  function reveal(x: number, z: number) {
+    if (Math.hypot(x - lastX, z - lastZ) < 12) return;
+    lastX = x;
+    lastZ = z;
+    clear(x, z);
+    const cell = cellAt(x, z);
+    if (!cells.has(cell)) {
+      cells.add(cell);
+      onExplored(cell);
+    }
     for (const p of places) {
       if (found.has(p.key) || Math.hypot(p.x - x, p.z - z) >= SIGHT * 0.8) continue;
       found.add(p.key);
@@ -296,7 +308,28 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
     for (const k of keys) found.add(k);
   }
 
-  return { reveal, drawMini, drawFull, explored, setFound };
+  /**
+   * The cells already explored. `fresh` puts the fog back first (a different player's
+   * progress has loaded); otherwise they're cleared on top of what the map has.
+   */
+  function setExplored(saved: number[], fresh = false) {
+    if (fresh) {
+      f.fillStyle = PALETTE.map.fog;
+      f.fillRect(0, 0, SIZE, SIZE);
+      cells.clear();
+      seenMissions.clear();
+      lastX = lastZ = Infinity;
+    }
+    for (const cell of saved) {
+      if (cells.has(cell)) continue;
+      cells.add(cell);
+      const c = cellCentre(cell);
+      clear(c.x, c.z);
+    }
+    for (const m of world.missions) if (explored(m.start.x, m.start.z)) seenMissions.add(m);
+  }
+
+  return { reveal, drawMini, drawFull, explored, setFound, setExplored };
 }
 
 export type GameMap = ReturnType<typeof createMap>;
