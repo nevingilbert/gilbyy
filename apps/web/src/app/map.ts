@@ -130,15 +130,29 @@ function paintBase(world: World) {
   return canvas;
 }
 
-/** A tent for the camp. */
+/**
+ * A little house for the camp: home. It was a triangle, which read as a second truck
+ * beside the truck's own arrow. Outlined in paper, with a roof that overhangs and a small
+ * door, so it isn't mistaken for a garage's wide one either.
+ */
 function drawCamp(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
   g.fillStyle = PALETTE.map.camp;
+  g.strokeStyle = PALETTE.map.paper;
+  g.lineWidth = Math.max(1, s * 0.22);
+  g.lineJoin = "round";
   g.beginPath();
-  g.moveTo(x - s, y + s * 0.7);
-  g.lineTo(x, y - s * 0.9);
-  g.lineTo(x + s, y + s * 0.7);
+  g.moveTo(x, y - s * 1.05);
+  g.lineTo(x + s * 1.15, y - s * 0.05);
+  g.lineTo(x + s * 0.75, y - s * 0.05);
+  g.lineTo(x + s * 0.75, y + s * 0.9);
+  g.lineTo(x - s * 0.75, y + s * 0.9);
+  g.lineTo(x - s * 0.75, y - s * 0.05);
+  g.lineTo(x - s * 1.15, y - s * 0.05);
   g.closePath();
+  g.stroke();
   g.fill();
+  g.fillStyle = PALETTE.map.paper;
+  g.fillRect(x - s * 0.2, y + s * 0.25, s * 0.4, s * 0.65);
 }
 
 /** A mug for the café. */
