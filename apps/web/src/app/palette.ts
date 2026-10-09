@@ -75,6 +75,8 @@ export const PALETTE = {
     sunsetOrange: "#e2702f",
     midnight: "#26303d",
     forestGreen: "#3d5a3e",
+    /** Not for sale: the Sandfly's own colour. */
+    coral: "#ee6f5b",
   },
   lightBar: "#2a2826",
 
@@ -157,6 +159,45 @@ export const PALETTE = {
   casinoCarpet: "#a8322e",
   dieWhite: "#f2ece2",
 
+  // The island (ADR 0014): a pale beach, golden dunes, a turquoise sea and a deep green
+  // jungle. A different place under the same sky, so the haze still holds it together.
+  beach: ["#f3e3c0", "#eedbb0", "#f6ead0"],
+  wetSand: "#d6bb8e",
+  dune: ["#e9c282", "#f0cd90", "#e2b572", "#f3d59c"],
+  /** Sand going green where the jungle begins. */
+  scrub: ["#cdb768", "#b7ad5a"],
+  jungleFloor: ["#44703a", "#3a6634", "#507c3c"],
+  /** The seabed, shallow to deep: it shows through the water, so the shallows are pale. */
+  seabed: ["#f0e2b8", "#9fcdb4", "#3f8f96", "#245f72"],
+  sea: "#3fb0b4",
+  seaSpecular: "#fff0d2",
+  palmFrond: ["#3f8a3c", "#4c9a40", "#2f7a3a", "#5aa648"],
+  palmTrunk: "#8f6f4f",
+  canopy: ["#1f6b3a", "#277a42", "#186046", "#308a46", "#3d9140"],
+  /** A few trees in flower, the way the valley has a few larches. */
+  flameTree: ["#e2552f", "#f07a32"],
+  fern: ["#3f8f3f", "#2f7f45", "#58a045", "#8fae4a"],
+  thatch: ["#c9a55a", "#b8924a"],
+  bamboo: "#c9b06a",
+  surfboard: ["#ee6f5b", "#3fb0b4", "#f3d59c", "#efe6d6"],
+
+  // Airstrips and the plane.
+  tarmac: "#77716b",
+  tarmacPatch: "#6a655f",
+  runwayPaint: "#efe6d6",
+  apron: "#9a948a",
+  terminalWall: "#efe7d8",
+  terminalTrim: "#2f6f78",
+  jetWhite: "#f4efe6",
+  jetBelly: "#cfc7ba",
+  jetStripe: "#1f5564",
+  jetGold: "#d6a43a",
+  jetGlass: "#22313c",
+  jetIntake: "#3a3a3e",
+  navRed: "#ff4a3a",
+  navGreen: "#5fe08a",
+  cloud: ["#fff7ec", "#ffe9d4", "#f6d9c4"],
+
   // Missions: start arches, gate flags (next, ahead, passed), finish banners.
   flag: "#e2702f",
   flagNext: "#ffd36b",
@@ -185,6 +226,9 @@ export const PALETTE = {
     player: "#f2efe6",
     friend: "#ffd36b",
     rim: "rgba(255,246,232,0.55)",
+    /** The island's sheet: sand where the valley's is meadow. */
+    sand: "#f2e3bd",
+    runway: "#6f675d",
   },
 
   // HUD — quiet, low contrast, cornered.

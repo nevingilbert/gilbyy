@@ -1,22 +1,26 @@
 import * as THREE from "three";
+import { buildAirport } from "./airport-model";
 import { buildCampCentre, buildCampGate, buildTentSite, mergeByMaterial } from "./campground-model";
 import { buildCar, type CarModel } from "./car-model";
 import { buildCoffeeShop } from "./coffee-shop-model";
 import { hourAt, skyAt } from "./daylight";
+import { standPose, type Frame } from "./flight";
 import { buildLandmark } from "./landmark-models";
-import { buildGarage, type Circle, type GarageModel } from "./garages";
+import { buildGarage, isShared, type Circle, type GarageModel } from "./garages";
+import { islandFire } from "./island";
 import { buildFinishArch, buildGate, buildStartArch, type GateState } from "./mission-models";
 import { PALETTE } from "./palette";
 import type { Car, CarSpec } from "./physics";
+import { buildPlane } from "./plane-model";
 import { buildRailway } from "./railway";
 import { createRemotes } from "./remote";
-import { buildBushes, buildRocks, buildTrees } from "./scenery";
+import { buildBushes, buildClouds, buildRocks, buildTrees } from "./scenery";
 import type { Loadout } from "./shop";
 import { buildShowroom } from "./showroom";
 import { buildSky } from "./sky";
 import { buildGrass, buildTerrainMesh, buildWaterMesh, makeSurface } from "./terrain-mesh";
 import type { VehicleId } from "./vehicles";
-import { CAFE, CAMP, CAMP_CENTRE, CAMP_GATE, campPitches, sampleGrid, type Obstacle, type SiteStyle, type World } from "./world";
+import { CAFE, CAMP_CENTRE, CAMP_GATE, sampleGrid, type Ground, type Obstacle, type SiteStyle, type World } from "./world";
 
 const SHADOW_SPAN = 55;
 const FAR = 2600;
@@ -31,6 +35,9 @@ export type Garage = {
   heading: number;
   sink: number;
 };
+
+/** One frame of the flight's film (flight.ts), and the ground the truck stands on in it: the ramp and the hold as well as the apron. */
+export type Film = { frame: Frame; ground: Ground };
 
 /** Puts a model on the ground at (x, z) turned by `rot`, and its colliders into the world. */
 function placer(world: World, group: THREE.Group, colliders: Obstacle[]) {
@@ -69,7 +76,10 @@ function placeGarages(world: World, windows: THREE.Material) {
   return { group, models, garages };
 }
 
-/** The campground (thirty pitches, the fire pit, the gate) and the café down the road. */
+/**
+ * The camp: thirty pitches and a fire. In the valley, also the gate and the café down the
+ * road; on the island the pitches are a row on the beach and the fire is further down it.
+ */
 function placeCamp(world: World, windows: THREE.Material, glow: THREE.Material) {
   const group = new THREE.Group();
   const colliders: Obstacle[] = [];
@@ -77,23 +87,30 @@ function placeCamp(world: World, windows: THREE.Material, glow: THREE.Material) 
   // Thirty pitches share their materials, so they bake down to a handful of meshes.
   const pitches = new THREE.Group();
   const pitch = placer(world, pitches, colliders);
-  for (const p of campPitches()) {
-    const site = buildTentSite(p.index, glow);
-    // Pitches sit on the levelled camp; their bays line up with the spawn points in terrain.ts.
-    pitch(site.object, site.colliders, p.parking.x - site.parking.x, p.parking.z - site.parking.z, 0);
+  for (const p of world.pitches) {
+    const site = buildTentSite(p.index, glow, world.id === "island" ? PALETTE.wetSand : undefined);
+    // Each stands on the levelled camp, turned so its bay is where terrain.ts or island.ts put it.
+    pitch(site.object, site.colliders, p.x, p.z, p.rot);
   }
   group.add(mergeByMaterial(pitches));
   const centre = buildCampCentre(glow);
-  place(centre.object, centre.colliders, CAMP_CENTRE.x, CAMP_CENTRE.z, 0);
-  // The arch spans the road east out of camp, which runs along x. It stands outside the levelled camp, where the
-  // ground falls away across the road.
-  const [gx, gz, rot] = [CAMP_GATE.x + 24, CAMP_GATE.z, Math.PI / 2];
-  const gate = buildCampGate(across(world, gx, gz, rot));
-  place(gate.object, gate.colliders, gx, gz, rot);
-  const cafe = buildCoffeeShop(windows, glow);
-  const at = place(cafe.object, cafe.colliders, CAFE.x, CAFE.z, CAFE.rot);
+  let cafe: { x: number; z: number; r: number } | null = null;
+  if (world.id === "valley") {
+    place(centre.object, centre.colliders, CAMP_CENTRE.x, CAMP_CENTRE.z, 0);
+    // The arch spans the road east out of camp, which runs along x. It stands outside the levelled camp, where the
+    // ground falls away across the road.
+    const [gx, gz, rot] = [CAMP_GATE.x + 24, CAMP_GATE.z, Math.PI / 2];
+    const gate = buildCampGate(across(world, gx, gz, rot));
+    place(gate.object, gate.colliders, gx, gz, rot);
+    const shop = buildCoffeeShop(windows, glow);
+    const at = place(shop.object, shop.colliders, CAFE.x, CAFE.z, CAFE.rot);
+    cafe = { ...at(shop.meet.x, shop.meet.z), r: shop.meet.r };
+  } else {
+    const fire = islandFire(world);
+    place(centre.object, centre.colliders, fire.x, fire.z, world.camp.heading);
+  }
   world.addObstacles(colliders);
-  return { group, cafe: { ...at(cafe.meet.x, cafe.meet.z), r: cafe.meet.r } };
+  return { group, cafe };
 }
 
 /** The bank, the church, the schoolhouse and the casino, and where to stop in front of each (ADR 0012). */
@@ -107,6 +124,17 @@ function placeLandmarks(world: World, windows: THREE.Material, glow: THREE.Mater
   });
   world.addObstacles(colliders);
   return { group, doors };
+}
+
+/** The airstrip's runway, lights and terminal (ADR 0014). The plane is the view's, not the world's. */
+function placeAirport(world: World, windows: THREE.Material, lamps: THREE.Material) {
+  const group = new THREE.Group();
+  const colliders: Obstacle[] = [];
+  const model = buildAirport(windows, lamps);
+  const a = world.airport;
+  placer(world, group, colliders)(model.object, model.colliders, a.x, a.z, a.heading, a.y);
+  world.addObstacles(colliders);
+  return { group, update: model.update };
 }
 
 /**
@@ -165,8 +193,10 @@ const GLIDE_BACK = 120;
 const GLIDE_UP = 46;
 const HOVER_DRIFT = 5;
 const GLIDE_TIME = 3.4;
+/** How fast the plane's ramp shuts by itself once a flight is over, per second. */
+const RAMP_SHUTS = 0.6;
 
-export function createView(canvas: HTMLCanvasElement, world: World, vehicle: VehicleId, loadout: Loadout) {
+export function createView(canvas: HTMLCanvasElement, first: World, vehicle: VehicleId, loadout: Loadout) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.shadowMap.enabled = true;
@@ -194,27 +224,68 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
   const windows = new THREE.MeshLambertMaterial({ color: PALETTE.windowGlow, emissive: PALETTE.windowGlow, emissiveIntensity: 0.1 });
   const lamps = new THREE.MeshLambertMaterial({ color: PALETTE.headlight, emissive: PALETTE.headlight, emissiveIntensity: 0.4 });
   const embers = new THREE.MeshLambertMaterial({ color: PALETTE.ember, emissive: PALETTE.ember, emissiveIntensity: 0.6 });
+  const kept = new Set<THREE.Material>([windows, lamps, embers]);
 
   const sky = buildSky(FAR * 0.92);
-  const surface = makeSurface(world);
-  const grass = buildGrass(world, surface);
-  const water = buildWaterMesh(world);
-  const railway = buildRailway(world, lamps);
-  const sites = placeGarages(world, windows);
-  const camp = placeCamp(world, windows, embers);
-  const courses = placeMissions(world, lamps);
-  const landmarks = placeLandmarks(world, windows, embers);
-  scene.add(
-    sky.object, buildTerrainMesh(world, surface), grass.object, water.object,
-    buildTrees(world.trees, (x, z) => sampleGrid(world.snow, x, z)), buildBushes(world.bushes), buildRocks(world.rocks),
-    railway.object, sites.group, camp.group, courses.group, landmarks.group,
-  );
+  scene.add(sky.object);
+
+  /**
+   * Everything that belongs to one world: its ground, what grows and stands on it, and
+   * the other players in it. A flight takes one down and puts another up (`setWorld`).
+   */
+  function stageFor(world: World) {
+    const group = new THREE.Group();
+    const surface = makeSurface(world);
+    const grass = buildGrass(world, surface);
+    const water = buildWaterMesh(world);
+    const railway = world.track.xs.length ? buildRailway(world, lamps) : null;
+    const sites = placeGarages(world, windows);
+    const camp = placeCamp(world, windows, embers);
+    const courses = placeMissions(world, lamps);
+    const landmarks = placeLandmarks(world, windows, embers);
+    const airport = placeAirport(world, windows, lamps);
+    group.add(
+      buildTerrainMesh(world, surface), grass.object, water.object,
+      buildTrees(world.trees, (x, z) => sampleGrid(world.snow, x, z)),
+      buildBushes(world.bushes, world.id === "island" ? PALETTE.fern : PALETTE.bush), buildRocks(world.rocks),
+      sites.group, camp.group, courses.group, landmarks.group, airport.group,
+    );
+    if (railway) group.add(railway.object);
+    scene.add(group);
+    const remotes = createRemotes(scene, world);
+
+    /** Gives back the graphics memory. Materials shared with what outlives this world are left alone. */
+    function dispose() {
+      remotes.dispose();
+      scene.remove(group);
+      group.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        o.geometry.dispose();
+        for (const m of [o.material].flat()) if (!kept.has(m) && !isShared(m)) m.dispose();
+      });
+    }
+    return { world, grass, water, railway, sites, camp, courses, landmarks, airport, remotes, dispose };
+  }
+
+  let world = first;
+  let stage = stageFor(world);
 
   let car: CarModel = buildCar(vehicle);
   car.setLoadout(loadout);
   scene.add(car.object);
-  const remotes = createRemotes(scene, world);
   const showroom = buildShowroom();
+
+  // The plane stands on the airstrip of whichever world this is, until a flight moves it.
+  const plane = buildPlane(windows);
+  scene.add(plane.object);
+  const clouds = buildClouds();
+  scene.add(clouds);
+  let rampOpen = 0;
+  const park = () => {
+    plane.pose(standPose(world.airport));
+    plane.setGear(1);
+  };
+  park();
 
   // Chase camera: high and behind, like Over the Hill's, easing after the car.
   let camYaw = NaN;
@@ -226,6 +297,8 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
   let night = 0;
   let hour = 0;
   let orbit = 0;
+  /** Which shot of the film the camera is on, so a new one is a cut. */
+  let shot = -1;
   // The opening. The camera hangs high over the camp, drifting in, with the truck not yet
   // shown, until the game knows which tent the truck is at; then it glides down to it.
   // `hover` and `glide` are seconds into each, or -1.
@@ -235,9 +308,13 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
   let hover = -1;
   let glide = -1;
   const hang = () => {
-    const ground = world.height(CAMP.x, CAMP.z);
-    camPos.set(CAMP.x, ground + GLIDE_UP, CAMP.z - GLIDE_BACK + hover * HOVER_DRIFT);
-    aim.set(CAMP.x, ground, CAMP.z + 30);
+    // Behind the camp, looking the way it looks: south down the valley, or out to sea from the beach.
+    const { x, z, heading } = world.camp;
+    const [dx, dz] = [Math.sin(heading), Math.cos(heading)];
+    const ground = world.height(x, z);
+    const back = GLIDE_BACK - hover * HOVER_DRIFT;
+    camPos.set(x - dx * back, ground + GLIDE_UP, z - dz * back);
+    aim.set(x + dx * 30, ground, z + dz * 30);
   };
 
   function resize() {
@@ -252,8 +329,9 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
   /**
    * One frame of the world. `time` is seconds of game time, which drives the day and the
    * train. `circling` swings the camera slowly round the parked truck, for picking a rig.
+   * During a flight, `film` is the frame to show: it places the plane and directs the camera.
    */
-  function render(state: Car, dt: number, time: number, spec: CarSpec, circling = false) {
+  function render(state: Car, dt: number, time: number, spec: CarSpec, circling = false, film: Film | null = null) {
     hour = hourAt(time);
     const daylight = skyAt(hour);
     night = daylight.night;
@@ -263,11 +341,28 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
     lamps.emissiveIntensity = 0.4 + night * 2.2;
     embers.emissiveIntensity = 0.6 + night * 1.8 + Math.sin(time * 7) * 0.15;
 
-    car.update(state, world, dt, spec);
-    remotes.update(dt, performance.now() / 1000, night);
-    grass.update(state.x, state.z, time);
-    water.update(time);
-    railway.update(time, dt, night);
+    car.update(state, film?.ground ?? world, dt, spec);
+    stage.remotes.update(dt, performance.now() / 1000, night);
+    stage.grass.update(state.x, state.z, time);
+    stage.water.update(time);
+    stage.railway?.update(time, dt, night);
+    stage.airport.update(time, night);
+
+    // The plane: where the film has it, or on its stand with the ramp coming shut behind the truck.
+    if (film) {
+      plane.pose(film.frame.plane);
+      plane.setGear(film.frame.gear);
+      rampOpen = film.frame.ramp;
+      if (film.frame.cruising && !clouds.visible) {
+        // Laid along the way it's flying, a little ahead, once: the plane moves through them.
+        const p = film.frame.plane;
+        clouds.position.set(p.x + Math.sin(p.heading) * 160, p.y, p.z + Math.cos(p.heading) * 160);
+        clouds.rotation.y = p.heading;
+      }
+    } else rampOpen = Math.max(0, rampOpen - dt * RAMP_SHUTS);
+    clouds.visible = Boolean(film?.frame.cruising);
+    plane.setRamp(rampOpen);
+    plane.update(time, night);
 
     const ease = (rate: number) => 1 - Math.exp(-rate * dt);
     if (Number.isNaN(camYaw)) camYaw = state.heading;
@@ -288,8 +383,27 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
       camera.position.copy(camPos);
       camera.lookAt(aim);
     };
-    car.object.visible = hover < 0;
-    if (hover >= 0) {
+    car.object.visible = hover < 0 && (!film || film.frame.truck !== null);
+    if (film) {
+      const c = film.frame.camera;
+      look.set(c.to.x, c.to.y, c.to.z);
+      // A phone held upright sees a narrow slice, so where there's room the camera stands further back.
+      const back = c.wide ? Math.min(2.4, Math.max(1, 1.25 / camera.aspect)) : 1;
+      want.set(c.from.x, c.from.y, c.from.z).sub(look).multiplyScalar(back).add(look);
+      // A new shot is a cut. Within one the camera is where the film says, unless it's easing in.
+      if (c.shot !== shot || c.ease === 0 || camPos.lengthSq() === 0) {
+        camPos.copy(want);
+        aim.copy(look);
+      } else {
+        camPos.lerp(want, ease(c.ease));
+        aim.lerp(look, ease(c.ease));
+      }
+      shot = c.shot;
+      camera.position.copy(camPos);
+      camera.lookAt(aim);
+      // Afterwards the chase camera picks up from here, behind the truck wherever it's facing.
+      camYaw = NaN;
+    } else if (hover >= 0) {
       hover += dt;
       hang();
       camera.position.copy(camPos);
@@ -313,14 +427,17 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
       look.set(state.x + fx * 4, state.y + 0.4, state.z + fz * 4);
       follow(4);
     }
+    if (!film) shot = -1;
 
-    // The shadow box follows the car; snapping it to texels stops it shimmering.
+    // The shadow box follows the car, or the plane while it's the one to watch; snapping
+    // it to texels stops it shimmering.
+    const focus = film ? film.frame.plane : state;
     const texel = (SHADOW_SPAN * 2) / sun.shadow.mapSize.x;
-    const tx = Math.round(state.x / texel) * texel;
-    const tz = Math.round(state.z / texel) * texel;
+    const tx = Math.round(focus.x / texel) * texel;
+    const tz = Math.round(focus.z / texel) * texel;
     lightDir.set(...daylight.lightDir);
-    sun.target.position.set(tx, state.y, tz);
-    sun.position.set(tx, state.y, tz).addScaledVector(lightDir, 400);
+    sun.target.position.set(tx, focus.y, tz);
+    sun.position.set(tx, focus.y, tz).addScaledVector(lightDir, 400);
     sun.target.updateMatrixWorld();
 
     sky.object.position.copy(camera.position);
@@ -339,6 +456,19 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
     car.setLights(night);
   }
 
+  /** Takes this world down and puts another up, the plane on its airstrip. The camera starts over. */
+  function setWorld(next: World) {
+    stage.dispose();
+    world = next;
+    stage = stageFor(world);
+    park();
+    rampOpen = 0;
+    camPos.set(0, 0, 0);
+    camYaw = NaN;
+    hover = glide = -1;
+    shot = -1;
+  }
+
   /** A world point on screen, in CSS pixels; null when behind the camera or off-screen. */
   function project(x: number, y: number, z: number) {
     projected.set(x, y, z).project(camera);
@@ -351,7 +481,8 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
   }
 
   function dispose() {
-    remotes.dispose();
+    stage.remotes.dispose();
+    plane.dispose();
     scene.traverse((o) => {
       if (o instanceof THREE.Mesh) {
         o.geometry.dispose();
@@ -365,6 +496,7 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
   resize();
   return {
     render,
+    setWorld,
     /** Puts the camera straight where it belongs on the next frame, for when the truck was moved, not driven. */
     cut: () => {
       camPos.set(0, 0, 0);
@@ -391,14 +523,26 @@ export function createView(canvas: HTMLCanvasElement, world: World, vehicle: Veh
     /** Tries a rig or part on the truck in the showroom without fitting it. */
     previewShowroom: (v: VehicleId, l: Loadout) => showroom.setRig(v, l),
     setRig,
-    setDoor: (i: number, open: number) => sites.models[i]?.setDoor(open),
-    showRun: courses.show,
-    garages: sites.garages,
-    cafe: camp.cafe,
-    landmarks: landmarks.doors,
-    remotes,
-    trainCars: () => railway.cars(),
+    setDoor: (i: number, open: number) => stage.sites.models[i]?.setDoor(open),
+    showRun: (mission: number, next: number, time: number) => stage.courses.show(mission, next, time),
+    /** These belong to the world that's up, so they are asked for each time rather than kept. */
+    get garages() {
+      return stage.sites.garages;
+    },
+    /** Where friends meet. Only the valley has one. */
+    get cafe() {
+      return stage.camp.cafe;
+    },
+    get landmarks() {
+      return stage.landmarks.doors;
+    },
+    get remotes() {
+      return stage.remotes;
+    },
+    trainCars: () => stage.railway?.cars() ?? [],
     hour: () => hour,
+    /** The colour the distance fades to just now, as CSS: what a cloud looks like from inside. */
+    haze: () => fog.color.getStyle(),
     carTop: () => car.top,
     project,
     resize,

@@ -10,7 +10,9 @@ rigs and parts for the miles you drive, optional missions, and a map you uncover
 go. With no sign-in it is single player and nothing is saved. Signed in, progress
 persists and everyone shares the valley: you spawn at a 30-tent campground, make friends
 by meeting at the café, chat with friends nearby (ADR 0007), and drive a convoy course
-together (ADR 0010) or race each other (ADR 0011). That is the entire product.
+together (ADR 0010) or race each other (ADR 0011). Over the river, hidden, is an
+airstrip: 300 miles buys a flight, truck and all, to an island of beach, dunes and
+jungle, and 300 more buys the flight home (ADR 0014). That is the entire product.
 
 It is not a hub, a menu, or a launcher. See `docs/vision.md` and
 `docs/decisions/0004-gilbyy-is-just-a-driving-game.md` — this has been misunderstood
@@ -40,7 +42,7 @@ apps, you are in the wrong repo.
     - `world.ts`: scatter (trees, rocks, bushes), obstacles, and the `Ground` the physics
       reads.
     - `physics.ts`: a pure `step(car, input, dt, ground, spec)`.
-    - `vehicles.ts` (the eight rigs), `shop.ts` (parts, prices, `specFor`),
+    - `vehicles.ts` (the eight rigs, and the Sandfly, sold only on the island), `shop.ts` (parts, prices, `specFor`),
       `missions.ts` and `mission-run.ts` (courses and runs), `goals.ts` (first-time
       guidance: the compass mark leads to a garage, then the café), `achievements.ts`
       (those two steps as achievements, ADR 0009).
@@ -52,6 +54,14 @@ apps, you are in the wrong repo.
       (ADR 0008).
     - `landmarks.ts`: the four easter-egg buildings, what each card says and links to,
       and where they stand (ADR 0012).
+    - `worlds.ts`: the worlds there are (the valley and the island) and what the flight
+      to each costs (ADR 0014).
+    - `airport.ts`: an airstrip's runway and apron in "field space", where the valley's
+      is hidden (`valleyAirfield`), and the bank and screen of pines that hide it.
+    - `island.ts`: the island as the same `World` shape as the valley: sea, beach, dunes,
+      jungle, thirty pitches on the beach, its airstrip and its one garage.
+    - `flight.ts`: the flight as a film, each frame a pure function of the airstrip and
+      the time (the plane, its ramp, the truck, the camera), and the plane's measurements.
   - Online, also unit-tested:
     - `store.ts`: progress, either `LocalStore` (in memory) or `SupabaseStore`
       (database functions).
@@ -68,9 +78,12 @@ apps, you are in the wrong repo.
     - Buildings: `garages.ts`, `campground-model.ts`, `coffee-shop-model.ts`,
       `landmark-models.ts` (the bank, church, school and casino), `showroom.ts` (the
       garage interior).
+    - Flying: `airport-model.ts` (runway, lights, terminal), `plane-model.ts` (the jet and
+      its ramp).
     - Missions: `mission-models.ts`.
-  - `map.ts`: the 2D map, its fog of war, and the found places that show through it.
-    `fog.ts` (pure, unit-tested) is the grid the fog is saved as (ADR 0013).
+  - `map.ts`: the 2D map of the world you're in, its fog of war, and the found places
+    that show through it. `fog.ts` (pure, unit-tested) is the grid the fog is saved as
+    (ADR 0013), kept per world.
   - React: `Game.tsx` (loop, modes, HUD), `GarageMenu.tsx` (the shop), `Panels.tsx`
     (starter picker, banner, sign-in, name, leaderboard).
 - `supabase/`: the migrations (schema, RLS, the functions every write goes through,
@@ -117,6 +130,7 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't add a paid service without explicit confirmation.
 - Don't add links, menus, or navigation to the other apps. gilbyy.com is a game, not a launcher. The four easter-egg cards (ADR 0012) are the only links out; don't put those buildings on the map or the compass, count them, or pay for finding them.
 - Don't let the client write progress directly. Every change to miles, purchases and friendships goes through a checked `security definer` function in `supabase/migrations/`; keep prices and mission payouts in sync with `shop.ts`/`missions.ts` (`shop.test.ts` enforces it). Only the publishable key ever reaches the browser.
+- Don't let the client say which world it's in. A flight goes through `fly()`, which takes the fare; the fares live in `worlds.ts` and `public.worlds`, and what's sold in one world only in `vehicles.ts` and `shop_items.world` (`flight.test.ts` holds both together). The valley's airstrip is hidden: don't put it on the compass or count it as a found place (ADR 0014).
 - Don't make sign-in required. Single player with no account must keep working, and say clearly that nothing is saved.
 - Don't reach for a game engine, a physics engine, react-three-fiber or a post-processing stack. three.js is the one rendering dependency (ADR 0005); the physics is ours and stays a pure, tested function. Anything more needs its own ADR.
 - Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
@@ -153,5 +167,7 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - achievements for the first garage and the café, shown on the leaderboard (ADR 0009);
 - optional sign-in for saved progress, a shared valley, friends, chat and a leaderboard (ADR 0007);
 - since 2026-10-08: a bank, a church, a school and a casino hidden in the valley, each linking to one of the owner's other projects (ADR 0012).
+- since 2026-10-09: an airstrip hidden over the river, a flight for 300 miles each way, and an island (beach, dunes, jungle, tents on the beach, one garage) where the Sandfly dune buggy is sold (ADR 0014). Its migration is on the live project and it was merged to `main` the same day. Nobody has flown signed in yet: the fare is more miles than any player has.
+- decided 2026-10-09 for the next MR, not built: courses and more garages on the island, and found-counts for the world you're in that also count its airstrip and, in the valley, the four easter eggs (found when you look inside), shown on the leaderboard too. That reverses "don't count them" below for the easter eggs and the airstrip, and needs its own ADR. The scope and the owner's answers are in `docs/sessions/2026-10-09-airports-and-the-island.md`.
 
 The online half is connected (2026-10-07): the Supabase project `gilbyy` has every migration in `supabase/migrations/` (the convoy and race ones since 2026-10-08), Google sign-in works, and the whole list (name, tent, seeing each other, friending at the café, chat, leaderboard, a purchase and a mission payout that persist) was played from two browsers. It was merged to `main` the same day, so gilbyy.com offers sign-in. The convoy and the race were merged to `main` and went live on 2026-10-08; the database tests pass against the live project, but neither has been played signed in from two accounts yet. A tab left hidden for five minutes, or untouched for fifteen, gives its tent back and takes one again on return. Sign-in is Google only; the email-link option was removed because Supabase's built-in mailer only reaches members of the Supabase org. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.

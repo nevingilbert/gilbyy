@@ -34,9 +34,10 @@ const STATS = [
   { label: "Wade", of: span((v) => v.wade) },
 ];
 
-function rowsFor(category: Category, vehicle: VehicleId): Row[] {
+function rowsFor(category: Category, vehicle: VehicleId, profile: Profile): Row[] {
   if (category === "vehicle") {
-    return VEHICLES.map((v) => ({
+    // A rig sold in one world only is on that world's list, and on yours anywhere once it's bought.
+    return VEHICLES.filter((v) => !v.only || v.only === profile.world || owns(profile, itemKey("vehicle", v.id))).map((v) => ({
       key: itemKey("vehicle", v.id), id: v.id, name: v.name, blurb: v.blurb, price: v.price, stats: STATS.map((s) => s.of(v)),
     }));
   }
@@ -64,13 +65,15 @@ export function GarageMenu({
   const vehicle = profile.vehicle ?? "bluff";
   /** Each tab opens on what's fitted now. */
   const fittedRow = (c: Category) =>
-    Math.max(0, rowsFor(c, vehicle).findIndex((r) => r.id === (c === "vehicle" ? vehicle : profile.loadout[c as PartCategory])));
+    Math.max(0, rowsFor(c, vehicle, profile).findIndex((r) => r.id === (c === "vehicle" ? vehicle : profile.loadout[c as PartCategory])));
   const [tab, setTab] = useState(0);
   const [row, setRow] = useState(() => fittedRow(TABS[0].id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const category = TABS[tab].id;
-  const rows = useMemo(() => rowsFor(category, vehicle), [category, vehicle]);
+  // What's for sale depends on the world and on what's owned, not on the miles, which change as you watch.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rows = useMemo(() => rowsFor(category, vehicle, profile), [category, vehicle, profile.world, profile.owned]);
 
   // What the selected row would look like fitted: shown on the truck, not yet bought.
   const trial = (r: Row | undefined): [VehicleId, Loadout] => {

@@ -48,6 +48,10 @@ unhurried exploration in a classic 4x4.
 - Four buildings that aren't about driving (a bank, a church, a schoolhouse, a casino)
   are easter eggs (ADR 0012). They keep to the palette and add nothing to the HUD but
   the usual prompt at the door.
+- A second place under the same sky (ADR 0014): an island of pale beach, golden dunes,
+  a turquoise sea and deep green jungle. Its colours are its own (`palette.ts`), but
+  the haze, the low sun, the flat shading and the HUD are the valley's, so it reads as
+  the same game somewhere else. The flight there is a short film with no HUD at all.
 - Driving together, as in the trailer's co-op shots: other players' trucks share the
   valley, name tags float over them, and chat appears as small speech bubbles.
 
@@ -55,8 +59,9 @@ unhurried exploration in a classic 4x4.
 
 - Winching, planks, deformable mud and snow, the photo compendium.
 - Weather. Rain, lightning and fog banks are the strongest candidates to add next.
-- Multiple maps. There is one valley (with a snowy plateau in the north) and eight
-  rigs, each inspired by a real off-roader.
+- More than two maps. There is the valley (with a snowy plateau in the north) and,
+  since 2026-10-09, an island a flight away (ADR 0014), and nine rigs, each inspired by
+  a real off-roader.
 - Scope in general. It is a shipped commercial game; this is a hobby page.
 
 ## Where the current build sits

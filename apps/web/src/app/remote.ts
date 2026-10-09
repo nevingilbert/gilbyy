@@ -3,11 +3,10 @@ import { buildCar, type CarModel } from "./car-model";
 import { guessPose, staleAfter, type Peer, type Pose } from "./net";
 import { makeCar, type Car, type CarSpec } from "./physics";
 import { specFor } from "./shop";
-import { campPitches, type Obstacle, type World } from "./world";
+import type { Obstacle, World } from "./world";
 
 /** How fast a correction fades, per second: the truck drifts back onto its true path rather than jumping. */
 const SETTLE = 6;
-const pitches = campPitches();
 
 /** How far the drawn truck is from where its poses say, fading away. */
 type Offset = { x: number; y: number; z: number; heading: number };
@@ -34,6 +33,7 @@ const angleBetween = (from: number, to: number) => Math.atan2(Math.sin(to - from
  * keeps being drawn where it was and the difference fades, so it never jumps.
  */
 export function createRemotes(scene: THREE.Scene, world: World) {
+  const pitches = world.pitches;
   const remotes = new Map<string, Remote>();
   /** Where each player was last heard of, kept after they drop out in case they reconnect. */
   const lastKnown = new Map<string, Pose>();

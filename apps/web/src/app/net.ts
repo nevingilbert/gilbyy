@@ -1,11 +1,13 @@
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { readConvoy, type ConvoyMsg } from "./convoy";
 import type { Loadout } from "./shop";
-import { CAMP_PITCHES } from "./terrain";
+import { CAMP_PITCHES, type WorldId } from "./terrain";
 import type { VehicleId } from "./vehicles";
 
 /**
- * Everyone signed in drives the same valley. This is how they hear about each other:
+ * Everyone signed in drives the same valley, or the same island (ADR 0014): each world is
+ * its own channel with its own thirty tents, and players in one never hear from the other.
+ * This is how those in the same world hear about each other:
  * who's here and which tent is theirs (presence), where their truck is (poses), friend
  * requests, convoys (convoy.ts), and chat between friends.
  *
@@ -67,6 +69,11 @@ export interface Net {
 }
 
 export const MAX_PLAYERS = CAMP_PITCHES;
+/**
+ * The channel a world's players share. The valley's is plain `world`, as it was before
+ * there was anywhere else. Must match the realtime policies in the migrations.
+ */
+export const worldTopic = (world: WorldId) => (world === "valley" ? "world" : `world:${world}`);
 /**
  * There are only thirty tents, so a player who isn't really here gives theirs back: after
  * this long with the tab out of sight, or this long without touching the game. Seconds.
@@ -334,7 +341,7 @@ export class SupabaseNet extends Base {
   private left = false;
   private reopening = false;
 
-  constructor(private sb: SupabaseClient, private myId: string, on: NetHandlers) {
+  constructor(private sb: SupabaseClient, private myId: string, on: NetHandlers, private topic = worldTopic("valley")) {
     super(on);
   }
 
@@ -361,7 +368,7 @@ export class SupabaseNet extends Base {
 
   /** One attempt at joining the valley's channel. Leaves no channel behind if it fails. */
   private async subscribe() {
-    const channel = this.sb.channel("world", {
+    const channel = this.sb.channel(this.topic, {
       config: { private: true, presence: { key: this.myId }, broadcast: { self: false, ack: false } },
     });
     channel
@@ -482,7 +489,7 @@ export class LocalNet extends Base {
   private beat = 0;
   private friends = new Set<string>();
 
-  constructor(private myId: string, on: NetHandlers) {
+  constructor(private myId: string, on: NetHandlers, private topic = worldTopic("valley")) {
     super(on);
   }
 
@@ -491,7 +498,7 @@ export class LocalNet extends Base {
   }
 
   protected async open() {
-    this.bus = new BroadcastChannel("gilbyy-local-world");
+    this.bus = new BroadcastChannel(`gilbyy-local-${this.topic}`);
     this.bus.onmessage = ({ data }) => {
       const { event, payload } = data as { event: string; payload: Record<string, unknown> };
       const peer = payload as unknown;

@@ -4,7 +4,7 @@ import { PALETTE } from "./palette";
 import type { Vehicle, VehicleId } from "./vehicles";
 
 /**
- * The bodies of the eight rigs in vehicles.ts, built from boxes, cylinders and extrusions:
+ * The bodies of the rigs in vehicles.ts, built from boxes, cylinders and extrusions:
  * chunky, flat-shaded, a few strong colours (see docs/art-direction.md). Each reads as its
  * real counterpart without borrowing a badge or a trademarked grille.
  *
@@ -884,7 +884,97 @@ function duneclaw(r: Rig) {
   r.ditchLights(a, b, belt);
 }
 
-const BUILDERS: Record<VehicleId, (r: Rig) => void> = { ridgeback, bluff, mule, overlander, prairie, highland, summit, duneclaw };
+/**
+ * A 1960s fibreglass dune buggy on a shortened floor pan: an open tub, a roll cage, lamps on
+ * stalks, and the engine hung out the back with its pipes in the air. No doors, no glass but
+ * a flat screen. Sold only on the island (ADR 0014).
+ */
+function sandfly(r: Rig) {
+  const { F, roof } = r;
+  const floor = -0.5, cowl = 0.72, back = -0.62, side = 0.6, wheel = r.v.track / 2;
+  const seat = lambert(PALETTE.carTrim), engine = lambert(PALETTE.bumperBlack);
+  const top = roof - 0.04;
+  // The floor pan, the tub's flanks, and a hood that slopes down to a blunt nose.
+  r.box(r.dark, 2 * side, 0.06, 2.7, 0, floor, -0.05);
+  r.both((s) => r.box(r.paint, 0.24, 0.36, 1.42, s * (side - 0.02), -0.3, 0.02));
+  r.add(r.paint, hexa((sx, sy, sz) => [sx * (sz > 0 ? 0.4 : side + 0.1), sy > 0 ? (sz > 0 ? -0.24 : 0.02) : floor - 0.02, sz > 0 ? F - 0.2 : cowl - 0.04]));
+  r.add(r.paint, hexa((sx, sy, sz) => [sx * (side + 0.1), sy > 0 ? (sz > 0 ? 0.02 : -0.06) : -0.42, sz > 0 ? cowl - 0.04 : cowl - 0.32]));
+  r.add(r.dark, rod(0.5, 0.012, [0, -0.06, cowl + 0.08], [0, -0.2, F - 0.34]));
+  // The rear deck over the gearbox, and wide flat wings over the back wheels.
+  r.add(r.paint, hexa((sx, sy, sz) => [sx * (sz > 0 ? side + 0.1 : 0.5), sy > 0 ? (sz > 0 ? -0.04 : -0.1) : -0.46, sz > 0 ? back : back - 0.46]));
+  r.both((s) => {
+    r.k.box(r.paint, 0.44, 0.05, 0.82, s * wheel, -0.02, -r.v.wheelbase / 2 + 0.02);
+    r.k.box(r.paint, 0.44, 0.05, 0.3, s * wheel, -0.09, -r.v.wheelbase / 2 - 0.5, 0.5);
+    r.k.box(r.paint, 0.44, 0.05, 0.26, s * wheel, -0.07, -r.v.wheelbase / 2 + 0.52, -0.42);
+    // Cycle wings on the fronts, on stays.
+    r.k.box(r.paint, 0.34, 0.045, 0.56, s * wheel, -0.03, r.v.wheelbase / 2 - 0.02);
+    r.k.box(r.paint, 0.34, 0.045, 0.3, s * wheel, -0.1, r.v.wheelbase / 2 + 0.4, 0.5);
+    r.k.box(r.paint, 0.34, 0.045, 0.3, s * wheel, -0.1, r.v.wheelbase / 2 - 0.44, -0.5);
+    r.add(r.black, tube(0.02, [s * (side - 0.1), -0.2, r.v.wheelbase / 2 - 0.1], [s * (wheel - 0.1), -0.05, r.v.wheelbase / 2]));
+  });
+  // A flat screen in a chrome frame, folded back a little.
+  const [sw, sh, rake] = [0.56, 0.4, 0.22];
+  r.k.box(r.chrome, 2 * sw + 0.06, sh + 0.06, 0.03, 0, 0.02 + sh / 2, cowl - 0.2 - (sh / 2) * rake, -rake);
+  r.k.box(r.glass, 2 * sw, sh, 0.034, 0, 0.02 + sh / 2, cowl - 0.2 - (sh / 2) * rake, -rake);
+  // Two buckets and a wheel.
+  r.both((s) => {
+    r.box(seat, 0.4, 0.12, 0.44, s * 0.29, -0.38, -0.1);
+    r.k.box(seat, 0.4, 0.56, 0.1, s * 0.29, -0.1, -0.4, -0.16);
+    r.box(seat, 0.3, 0.14, 0.09, s * 0.29, 0.24, -0.46);
+  });
+  r.add(r.black, tube(0.018, [0.29, -0.22, cowl - 0.3], [0.29, -0.02, 0.36]));
+  r.k.add(r.black, new THREE.TorusGeometry(0.15, 0.022, 5, 12), 0.29, -0.01, 0.35, 0.95);
+  // The cage: a hoop behind the seats, a hoop at the screen, bars between and stays down to the back.
+  const [mx, mz, ax, az] = [0.52, -0.56, 0.5, 0.2];
+  r.both((s) => {
+    r.add(r.black, tube(0.035, [s * (side - 0.02), -0.14, mz - 0.02], [s * mx, top, mz], 0.02));
+    r.add(r.black, tube(0.035, [s * (side - 0.02), -0.02, cowl - 0.14], [s * ax, top - 0.02, az], 0.02));
+    r.add(r.black, tube(0.032, [s * ax, top - 0.02, az], [s * mx, top, mz], 0.02));
+    r.add(r.black, tube(0.03, [s * mx, top - 0.04, mz], [s * 0.46, -0.08, -F + 0.42], 0.02));
+  });
+  for (const [x, y, z] of [[mx, top, mz], [ax, top - 0.02, az]]) r.add(r.black, tube(0.035, [-x, y, z], [x, y, z], 0.03));
+  r.add(r.black, tube(0.028, [-mx, 0.16, mz - 0.01], [mx, 0.16, mz - 0.01]));
+  // The engine: a flat block under a round air cleaner, a fan housing, and two pipes kicked up behind.
+  r.box(engine, 0.62, 0.3, 0.52, 0, -0.26, -F + 0.42);
+  r.k.cyl(engine, 0.2, 0.3, 0, -0.02, -F + 0.56, Math.PI / 2, 0, 10);
+  r.k.cyl(r.chrome, 0.13, 0.12, 0, 0.0, -F + 0.3, 0, 0, 10);
+  r.both((s) => {
+    r.box(engine, 0.16, 0.14, 0.4, s * 0.36, -0.3, -F + 0.42);
+    r.add(r.chrome, tube(0.035, [s * 0.36, -0.36, -F + 0.3], [s * 0.3, -0.4, -F + 0.08], 0.01));
+    r.add(r.chrome, tube(0.045, [s * 0.3, -0.4, -F + 0.08], [s * 0.26, 0.08, -F - 0.1], 0.02));
+  });
+  // Round lamps on stalks either side of the nose, a nudge bar under them, and lamps on the back wings.
+  const [lx, ly, lz] = [0.5, -0.1, F - 0.3];
+  r.both((s) => {
+    r.add(r.black, tube(0.02, [s * (lx - 0.12), -0.26, lz - 0.1], [s * lx, ly - 0.1, lz - 0.02]));
+    r.k.cyl(r.chrome, 0.125, 0.12, s * lx, ly, lz, Math.PI / 2, 0, 12);
+    r.k.cyl(r.lamp, 0.1, 0.03, s * lx, ly, lz + 0.065, Math.PI / 2, 0, 12);
+    r.k.cyl(r.tail, 0.06, 0.03, s * wheel, -0.12, -r.v.wheelbase / 2 - 0.66, Math.PI / 2, 0, 8);
+    r.add(r.chrome, tube(0.03, [s * 0.34, -0.42, F - 0.34], [s * 0.34, -0.42, F - 0.06]));
+  });
+  r.add(r.chrome, tube(0.035, [-0.56, -0.42, F - 0.05], [0.56, -0.42, F - 0.05], 0.02));
+  r.add(r.chrome, tube(0.03, [-0.5, -0.36, -F + 0.02], [0.5, -0.36, -F + 0.02], 0.02));
+  r.beams.low.set(0, ly, lz + 0.1);
+
+  // Extras. The snorkel is a stack up the right of the back hoop; the rest bolt to the cage and the nudge bar.
+  const k = r.xk.snorkel;
+  r.add(r.trim, tube(0.055, [-0.3, -0.12, -F + 0.5], [-mx - 0.07, 0.0, mz - 0.02], 0.02), k);
+  r.add(r.trim, tube(0.055, [-mx - 0.07, 0.0, mz - 0.02], [-mx - 0.07, top + 0.2, mz], 0.03), k);
+  r.box(r.trim, 0.16, 0.16, 0.26, -mx - 0.07, top + 0.26, mz + 0.05, k);
+  r.box(r.dark, 0.12, 0.1, 0.02, -mx - 0.07, top + 0.26, mz + 0.19, k);
+  r.raise(top + 0.34);
+  r.fogLamps(0.22, -0.42, F - 0.07, 0.07);
+  r.lightBar(0.86, top + 0.13, az + 0.02, top);
+  const d = r.xk.ditchLights;
+  r.both((s) => {
+    const [x, y, z] = [s * (side + 0.04), 0.1, cowl - 0.08];
+    r.box(r.black, 0.04, 0.12, 0.04, x, y - 0.06, z, d);
+    r.box(r.black, 0.13, 0.12, 0.1, x, y + 0.04, z, d);
+    r.box(r.lamp, 0.1, 0.09, 0.02, x, y + 0.04, z + 0.055, d);
+  });
+}
+
+const BUILDERS: Record<VehicleId, (r: Rig) => void> = { ridgeback, bluff, mule, overlander, prairie, highland, summit, duneclaw, sandfly };
 
 /** One rig's body, painted with `materials.paint` (the caller recolours it) and lit with `materials.lamp`. */
 export function buildVehicleBody(v: Vehicle, materials: { paint: THREE.Material; lamp: THREE.Material }): BodyParts {

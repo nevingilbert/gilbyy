@@ -4,23 +4,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { achievementFor } from "./achievements";
 import { CONVOY_MAX, Convoys, GATHER_REACH, lineUp, type ConvoyEvent } from "./convoy";
 import { secondsUntil } from "./daylight";
+import { ARRIVE, BOARD_REACH, DEPART, arrival, boardSpot, deckAt, departure, leaveSpot, rideOnDeck } from "./flight";
 import { GarageMenu, fmtMiles } from "./GarageMenu";
 import { currentGoal } from "./goals";
+import { buildWorldOf } from "./island";
 import { LANDMARKS, type LandmarkKind } from "./landmarks";
 import { createMap } from "./map";
 import { fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
-import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, type Net, type NetHandlers, type Peer } from "./net";
-import { LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
+import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
+import { FlightCard, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
 import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
 import { countFound, foundLine } from "./places";
-import { createView, type Garage } from "./scene";
+import { createView, type Film, type Garage } from "./scene";
 import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "./shop";
 import { GARAGE_NAMES } from "./showroom";
 import { LocalStore, SupabaseStore, type Profile, type Store } from "./store";
 import { currentSession, onSessionChange, onlineConfigured, signInWithGoogle, signOut, supabase } from "./supabase";
 import { trainObstacles } from "./track";
 import { VEHICLES, type VehicleId } from "./vehicles";
-import { buildWorld, campPitches, START, type Ground, type Mission, type Obstacle, type SiteStyle } from "./world";
+import type { Ground, Mission, Obstacle, SiteStyle, WorldId } from "./world";
+import { WORLDS, flightFrom, isWorld } from "./worlds";
 
 /** Physics runs at a fixed rate, independent of the display's refresh rate. */
 const STEP = 1 / 120;
@@ -39,6 +42,27 @@ const CAFE_SLACK = 6;
 const FRIEND_REACH = 16;
 /** When the campground was full, try again this often. */
 const RETRY_JOIN = 60;
+/**
+ * Where this browser last saw a signed-in player's truck, so a reload builds that world
+ * first and not the valley and then the island. Only ever a guess: the profile decides.
+ */
+const WORLD_HINT = "gilbyy:world";
+const hintedWorld = (): WorldId | null => {
+  try {
+    const v = window.localStorage.getItem(WORLD_HINT);
+    return isWorld(v) ? v : null;
+  } catch {
+    return null;
+  }
+};
+const hintWorld = (world: WorldId | null) => {
+  try {
+    if (world) window.localStorage.setItem(WORLD_HINT, world);
+    else window.localStorage.removeItem(WORLD_HINT);
+  } catch {
+    // Storage is off: the next load builds the valley first, and swaps if it has to.
+  }
+};
 
 const COMPASS = ["N", "·", "NE", "·", "E", "·", "SE", "·", "S", "·", "SW", "·", "W", "·", "NW", "·"];
 const COMPASS_ITEM = 28;
@@ -46,7 +70,7 @@ const COMPASS_VIEW = COMPASS_ITEM * 8;
 /** Metres a second to miles an hour, for the speedometer. */
 const MPH = 3600 / METRES_PER_MILE;
 
-type Mode = "boot" | "pick" | "drive" | "entering" | "garage" | "leaving" | "map";
+type Mode = "boot" | "pick" | "drive" | "entering" | "garage" | "leaving" | "map" | "flying";
 type Presence = "solo" | "local" | "joining" | "online" | "full" | "away";
 type Prompt =
   | { kind: "garage"; style: SiteStyle }
@@ -54,6 +78,8 @@ type Prompt =
   | { kind: "friend"; id: string; name: string; asked: boolean }
   /** At the door of the bank, church, school or casino (ADR 0012). */
   | { kind: "landmark"; id: LandmarkKind }
+  /** On the apron behind the plane's tail (ADR 0014). */
+  | { kind: "flight"; to: WorldId }
   /** At the convoy's arch, or gathering one: `lead` in bold, then `rest`. `act` if E does something. */
   | { kind: "convoy"; lead: string; rest: string; act: boolean }
   | null;
@@ -69,6 +95,8 @@ type Actions = {
   pick(v: VehicleId): void;
   preview(v: VehicleId, l: Loadout): void;
   buy(key: string): Promise<string | null>;
+  /** Pays the fare and boards. Resolves to why not, or null once the truck is on its way up the ramp. */
+  fly(): Promise<string | null>;
   fit(v: VehicleId, l: Loadout): void;
   setName(name: string): Promise<string | null>;
   leaderboard(): ReturnType<Store["leaderboard"]>;
@@ -101,6 +129,7 @@ export function Game() {
   const speedRef = useRef<HTMLSpanElement>(null);
   const markRef = useRef<HTMLDivElement>(null);
   const fadeRef = useRef<HTMLDivElement>(null);
+  const cloudRef = useRef<HTMLDivElement>(null);
   const tagsRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<Input>(noInput());
   const modeRef = useRef<Mode>("boot");
@@ -109,7 +138,7 @@ export function Game() {
   /** Things the UI asks the game loop to do; the loop owns all the state. */
   const actions = useRef<Actions>({
     act: noop, leave: noop, toggleMap: noop, look: noop, pick: noop, preview: noop, fit: noop, say: noop,
-    buy: async () => null, setName: async () => null, leaderboard: async () => [], chatOpen: () => false,
+    buy: async () => null, fly: async () => null, setName: async () => null, leaderboard: async () => [], chatOpen: () => false,
   });
   const turnRef = useRef(0);
 
@@ -127,6 +156,7 @@ export function Game() {
   const [signingIn, setSigningIn] = useState(false);
   const [board, setBoard] = useState(false);
   const [visiting, setVisiting] = useState<LandmarkKind | null>(null);
+  const [boarding, setBoarding] = useState<WorldId | null>(null);
   const [run, setRun] = useState<RunHud>(null);
   const [count, setCount] = useState<number | null>(null);
   const [typing, setTyping] = useState(false);
@@ -136,8 +166,8 @@ export function Game() {
 
   useEffect(() => {
     typingRef.current = typing;
-    panelRef.current = naming || signingIn || board || visiting !== null;
-  }, [typing, naming, signingIn, board, visiting]);
+    panelRef.current = naming || signingIn || board || visiting !== null || boarding !== null;
+  }, [typing, naming, signingIn, board, visiting, boarding]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -145,22 +175,30 @@ export function Game() {
     let cancelled = false;
 
     // For checking things by screenshot: ?hour=22 starts the clock there, ?garage=2 parks
-    // you at a garage's door, ?at=x,z,heading drops you anywhere, ?rig= skips the picker,
+    // you at a garage's door, ?at=x,z,heading drops you anywhere, ?airport parks you behind
+    // the plane, ?world=island starts single player there, ?rig= skips the picker,
     // ?miles= starts single player with miles to spend, ?net=local plays across tabs of
     // this browser with no account. Not linked from anywhere.
     const params = new URLSearchParams(window.location.search);
     const localNet = params.get("net") === "local";
+    const worldParam = params.get("world");
+    /** Where single player starts: the valley, unless the address says otherwise. Nothing is saved, so nowhere else. */
+    const soloWorld: WorldId = isWorld(worldParam) ? worldParam : "valley";
 
-    const world = buildWorld();
-    const courses = world.missions.filter((m) => m.crew === 1);
-    const crewCourses = world.missions.filter((m) => m.crew > 1);
-    let store: Store = new LocalStore();
+    // Signed in, the truck is wherever its last flight left it. The profile says where, but
+    // not for a moment yet, so start with this browser's best guess and swap if it's wrong.
+    let world = buildWorldOf(isWorld(worldParam) ? worldParam : ((onlineConfigured && !localNet && hintedWorld()) || "valley"));
+    let courses = world.missions.filter((m) => m.crew === 1);
+    let crewCourses = world.missions.filter((m) => m.crew > 1);
+    let store: Store = new LocalStore("local", null, soloWorld);
     let net: Net | null = null;
+    /** A channel for one world's players, once it's known who this is. Each world has its own (net.ts). */
+    let netFor: ((world: WorldId) => Net) | null = null;
     const rigParam = VEHICLES.find((v) => v.id === params.get("rig"))?.id ?? null;
     let rig: VehicleId = rigParam ?? "bluff";
     let loadout: Loadout = { ...STOCK_LOADOUT };
     let spec = specFor(rig, loadout);
-    const car = makeCar(world, START.x, START.z, START.heading, spec);
+    const car = makeCar(world, world.start.x, world.start.z, world.start.heading, spec);
     let view: ReturnType<typeof createView>;
     try {
       view = createView(canvas, world, rig, loadout);
@@ -168,14 +206,15 @@ export function Game() {
       if (fadeRef.current) fadeRef.current.style.opacity = "0";
       return; // No WebGL. The fog-coloured backdrop is all there is to see.
     }
-    const map = createMap(world, (key) => store.discover(key), (cell) => store.explore(cell));
-    const pitches = campPitches();
+    const mapOf = () => createMap(world, (key) => store.discover(key), (cell) => store.explore(cell));
+    let map = mapOf();
+    let pitches = world.pitches;
 
     // The opening. Signed in, the truck belongs at a tent, and which one isn't known for a
     // second or two. So the picture comes up on a shot high over the camp, and the camera
     // comes down to the truck once it is where it belongs (`land`). If the truck is put
     // somewhere new after that, the picture dips to black so the move isn't seen (`dip`).
-    let opening = onlineConfigured && !localNet && !params.has("at") && !params.has("garage");
+    let opening = onlineConfigured && !localNet && !params.has("at") && !params.has("garage") && !params.has("airport");
     let rising = opening ? 0 : -1;
     if (fadeRef.current) fadeRef.current.style.opacity = opening ? "1" : "0";
     if (opening) view.flyIn();
@@ -195,10 +234,11 @@ export function Game() {
 
     // The physics sees the train and other players' trucks as obstacles on top of the static world.
     let moving: Obstacle[] = [];
+    // Through `world`, not a copy of it: a flight puts another world up.
     const ground: Ground = {
-      height: world.height,
-      waterAt: world.waterAt,
-      slipAt: world.slipAt,
+      height: (x, z) => world.height(x, z),
+      waterAt: (x, z) => world.waterAt(x, z),
+      slipAt: (x, z) => world.slipAt(x, z),
       limit: world.limit,
       obstaclesNear: (x, z) => {
         const still = world.obstaclesNear(x, z);
@@ -226,6 +266,15 @@ export function Game() {
     let flushClock = 0;
     let nearGarage = -1;
     let landmarkHere: LandmarkKind | null = null;
+    /** Whether the truck is waiting behind the plane, where E opens the flight's card. */
+    let flightHere = false;
+    /**
+     * A flight in progress (ADR 0014): which half of its film is showing (`out` of this
+     * world, or `in` to the next), how far into it, and where the truck was when it boarded.
+     */
+    let trip: { to: WorldId; leg: "out" | "in"; t: number; from: { x: number; z: number; heading: number } } | null = null;
+    /** The truck came here by plane, so it isn't moved to its tent when one is found. */
+    let landed = false;
     let cut = { garage: -1, t: 0, from: { x: 0, z: 0, heading: 0 } };
     let toastTimer = 0;
     let running: Run | null = null;
@@ -247,7 +296,8 @@ export function Game() {
     let chatKey = 0;
     // A convoy or a race: what E does at its arch, my time through its finish while the
     // others come in, and a race's results once everyone is through.
-    const convoys = new Convoys(() => store.get().id, (msg) => net?.convoy(msg), world.missions);
+    const convoysOf = () => new Convoys(() => store.get().id, (msg) => net?.convoy(msg), world.missions);
+    let convoys = convoysOf();
     let convoyAct: (() => void) | null = null;
     let throughIn: number | null = null;
     let raceOver: string | null = null;
@@ -317,7 +367,7 @@ export function Game() {
       const sync = () => {
         const p = store.get();
         map.setFound(p.found);
-        const look = `${p.vehicle}|${JSON.stringify(p.loadout)}|${p.owned.length}|${p.goals.length}|${p.found.length}|${p.name}`;
+        const look = `${p.vehicle}|${JSON.stringify(p.loadout)}|${p.owned.length}|${p.goals.length}|${p.found.length}|${p.name}|${p.world}`;
         if (Math.floor(p.balance * 10) !== shownMiles || look !== shownLook) {
           shownMiles = Math.floor(p.balance * 10);
           shownLook = look;
@@ -329,6 +379,28 @@ export function Game() {
       setOnline(store.online);
     };
     attach(store);
+
+    /**
+     * Takes down the world that's up and puts up another: its ground, its map, its courses
+     * and its tents. The truck is put at its start, to be moved from there.
+     */
+    const enterWorld = (id: WorldId) => {
+      world = buildWorldOf(id);
+      view.setWorld(world);
+      map = mapOf();
+      map.setFound(store.get().found, true);
+      map.setExplored(store.explored(), true);
+      courses = world.missions.filter((m) => m.crew === 1);
+      crewCourses = world.missions.filter((m) => m.crew > 1);
+      convoys = convoysOf();
+      pitches = world.pitches;
+      moving = [];
+      nearGarage = -1;
+      landmarkHere = friendHere = target = null;
+      flightHere = false;
+      shownPrompt = STALE;
+      placeOnGround(world.start.x, world.start.z, world.start.heading, 0);
+    };
 
     /** An achievement just earned, announced once the truck is back on the road. */
     let cheer: string | null = null;
@@ -421,7 +493,7 @@ export function Game() {
       const bay = pitches[tent].parking;
       const m = modeRef.current;
       const placed = params.has("at") || params.has("garage");
-      if (!placed && (m === "boot" || m === "pick" || (m === "drive" && car.distance < 30))) {
+      if (!placed && !landed && (m === "boot" || m === "pick" || (m === "drive" && car.distance < 30))) {
         placeOnGround(bay.x, bay.z, bay.heading, 0);
         // During the opening the truck hasn't been shown yet, and `boot` lands the camera on it.
         if (!opening) dip();
@@ -476,21 +548,30 @@ export function Game() {
     const boot = async () => {
       if (localNet) {
         const id = `tab-${Math.random().toString(36).slice(2, 8)}`;
-        attach(new LocalStore(id, null));
-        net = new LocalNet(id, handlers);
+        attach(new LocalStore(id, null, soloWorld));
+        netFor = (w) => new LocalNet(id, handlers, worldTopic(w));
       } else {
         const session = await currentSession();
         const sb = supabase();
         if (session && sb) {
           try {
             attach(await SupabaseStore.open(sb));
-            net = new SupabaseNet(sb, session.user.id, handlers);
+            netFor = (w) => new SupabaseNet(sb, session.user.id, handlers, worldTopic(w));
           } catch {
             say("Couldn't load your garage. Driving solo for now.");
           }
         }
+        hintWorld(store.online ? store.get().world : null);
       }
       if (cancelled) return;
+      // The world that was built first was a guess. If the truck is somewhere else, go
+      // there before anything more is shown.
+      if (store.get().world !== world.id) {
+        enterWorld(store.get().world);
+        dip();
+        if (opening) view.flyIn();
+      }
+      if (netFor) net = netFor(world.id);
       const miles = Number(params.get("miles"));
       if (!store.online && miles > 0) store.addMiles(miles);
       if (store.online) shared = true;
@@ -543,6 +624,36 @@ export function Game() {
       if (!err) goal("buy");
       return err;
     };
+    actions.current.fly = async () => {
+      const spot = boardSpot(world.airport);
+      if (modeRef.current !== "drive" || trip || running || convoys.state || Math.hypot(car.x - spot.x, car.z - spot.z) > BOARD_REACH + 2) {
+        return "Pull up behind the plane first.";
+      }
+      const to = flightFrom(world.id);
+      inputRef.current = noInput();
+      // What's been driven since the last bank counts toward the fare.
+      store.addMiles(unbanked);
+      unbanked = 0;
+      const err = await store.fly(to);
+      if (err || cancelled) return err;
+      if (store.online) hintWorld(to);
+      // Aboard. The others here see the truck go: each world's players have their own channel.
+      if (net) {
+        net.leave();
+        net = null;
+        tent = -1;
+        peers.clear();
+        view.remotes.sync([]);
+        setPeople(1);
+        present("joining");
+      }
+      trip = { to, leg: "out", t: 0, from: { x: car.x, z: car.z, heading: car.heading } };
+      setPrompt(null);
+      shownPrompt = "";
+      setBoarding(null);
+      setModeBoth("flying");
+      return null;
+    };
     actions.current.fit = (v, l) => {
       void store.equip(v, l).then((err) => {
         if (err) return say(err);
@@ -594,6 +705,11 @@ export function Game() {
         lastPose = { x: car.x, z: car.z };
         setPrompt(null);
         shownPrompt = "";
+        return;
+      }
+      if (flightHere) {
+        inputRef.current = noInput();
+        setBoarding(flightFrom(world.id));
         return;
       }
       if (landmarkHere && !running && !convoys.state) {
@@ -812,7 +928,63 @@ export function Game() {
 
     if (params.has("garage") && startGarage) {
       placeOnGround(startGarage.approach.x, startGarage.approach.z, startGarage.heading + Math.PI, 0);
+    } else if (params.has("airport")) {
+      const spot = boardSpot(world.airport);
+      placeOnGround(spot.x, spot.z, spot.heading, 0);
     } else if (at.length >= 2 && at.every(Number.isFinite)) placeOnGround(at[0], at[1], at[2] ?? 0, 0);
+
+    // ——— The flight ———
+
+    /** What the truck's wheels stand on during the film: the ramp and the hold's floor, as well as the apron. */
+    const deck: Ground = { ...ground, height: (x, z) => world.height(x, z) + deckAt(world.airport, x, z) };
+
+    /** The film is over: the truck is on the apron of the other world, and is the player's again. */
+    const arrive = () => {
+      const spot = leaveSpot(world.airport);
+      placeOnGround(spot.x, spot.z, spot.heading, 0);
+      trip = null;
+      landed = true;
+      lastDistance = car.distance;
+      lastPose = { x: car.x, z: car.z };
+      if (cloudRef.current) cloudRef.current.style.opacity = "0";
+      setModeBoth("drive");
+      say(world.id === "island" ? `The island. The flight home is ${WORLDS.valley.fare} mi, whenever you have them.` : "Back in the valley.", 8);
+      if (netFor && store.get().name) {
+        net = netFor(world.id);
+        void join();
+      }
+    };
+
+    /**
+     * Runs the flight's film on by `dt` and says what to show. The truck goes where the
+     * film puts it; the other world is put up while the picture is lost in cloud.
+     */
+    const flyOn = (dt: number): Film | null => {
+      if (!trip) return null;
+      trip.t += dt;
+      if (trip.leg === "out" && trip.t >= DEPART.end) {
+        enterWorld(trip.to);
+        trip = { ...trip, leg: "in", t: 0 };
+      }
+      const a = world.airport;
+      const frame = trip.leg === "out" ? departure(a, trip.from, trip.t) : arrival(a, Math.min(trip.t, ARRIVE.end));
+      if (frame.truck) {
+        const on = rideOnDeck(a, frame.truck, spec.wheelbase, spec.ride);
+        const moved = Math.hypot(frame.truck.x - car.x, frame.truck.z - car.z);
+        Object.assign(car, frame.truck, {
+          y: on.y, pitch: on.pitch, roll: 0, vy: 0, side: 0, steer: 0, pitchV: 0, rollV: 0, grounded: true, groundY: on.y - spec.ride,
+          // Not driven, but its wheels should turn as if it were.
+          speed: Math.min(12, moved / Math.max(dt, 1e-3)),
+        });
+      }
+      const cloud = cloudRef.current;
+      if (cloud) {
+        cloud.style.opacity = String(frame.cloud);
+        cloud.style.backgroundColor = view.haze();
+      }
+      if (trip.leg === "in" && trip.t >= ARRIVE.end) arrive();
+      return { frame, ground: deck };
+    };
 
     // ——— Garages ———
 
@@ -914,7 +1086,8 @@ export function Game() {
       targetClock -= dt;
       if (targetClock <= 0) {
         targetClock = 0.5;
-        const g = currentGoal(store.get().goals, store.online || localNet);
+        // The guidance is about the valley: its garages, its café.
+        const g = world.id === "valley" ? currentGoal(store.get().goals, store.online || localNet) : null;
         const nearest = (list: { x: number; z: number }[]) =>
           list.reduce<{ x: number; z: number } | null>((best, p) => (!best || Math.hypot(p.x - car.x, p.z - car.z) < Math.hypot(best.x - car.x, best.z - car.z) ? p : best), null);
         // A friend gathering a convoy or a race comes before the guidance; once in one, the course leads.
@@ -927,7 +1100,8 @@ export function Game() {
           : g.target === "garage" ? nearest(view.garages.map((x) => x.approach))
           : g.target === "cafe" ? view.cafe
           : null;
-        if (g?.id === "cafe" && Math.hypot(view.cafe.x - car.x, view.cafe.z - car.z) < view.cafe.r + CAFE_SLACK) goal("cafe");
+        const cafe = view.cafe;
+        if (g?.id === "cafe" && cafe && Math.hypot(cafe.x - car.x, cafe.z - car.z) < cafe.r + CAFE_SLACK) goal("cafe");
       }
       const mark = markRef.current;
       if (!mark) return;
@@ -958,11 +1132,13 @@ export function Game() {
       const together = found < 0 && !m ? convoyPrompt() : null;
 
       const still = !running && !convoys.state && found < 0 && !m && !together && Math.abs(car.speed) < 5;
-      landmarkHere = (still && view.landmarks.find((l) => Math.hypot(car.x - l.x, car.z - l.z) < 7)?.kind) || null;
+      const board = boardSpot(world.airport);
+      flightHere = still && Math.hypot(car.x - board.x, car.z - board.z) < BOARD_REACH;
+      landmarkHere = (still && !flightHere && view.landmarks.find((l) => Math.hypot(car.x - l.x, car.z - l.z) < 7)?.kind) || null;
 
       friendHere = null;
       const cafe = view.cafe;
-      if (!running && found < 0 && !m && !together && net && Math.hypot(car.x - cafe.x, car.z - cafe.z) < cafe.r + CAFE_SLACK) {
+      if (cafe && !running && found < 0 && !m && !together && net && Math.hypot(car.x - cafe.x, car.z - cafe.z) < cafe.r + CAFE_SLACK) {
         let best = FRIEND_REACH;
         for (const p of view.remotes.positions()) {
           const d = Math.hypot(p.x - car.x, p.z - car.z);
@@ -977,6 +1153,7 @@ export function Game() {
         found >= 0 ? { kind: "garage", style: view.garages[found].style }
         : m ? { kind: "mission", mission: m }
         : together ? together
+        : flightHere ? { kind: "flight", to: flightFrom(world.id) }
         : landmarkHere ? { kind: "landmark", id: landmarkHere }
         : friendHere ? { kind: "friend", id: friendHere.id, name: friendHere.name, asked: askedBy.has(friendHere.id) }
         : null;
@@ -985,6 +1162,7 @@ export function Game() {
         : next.kind === "mission" ? `mission:${next.mission.id}`
         : next.kind === "convoy" ? `convoy:${next.lead}${next.rest}${next.act}`
         : next.kind === "landmark" ? `landmark:${next.id}`
+        : next.kind === "flight" ? `flight:${next.to}`
         : `friend:${next.id}${next.asked}`;
       if (key !== shownPrompt) {
         shownPrompt = key;
@@ -1088,6 +1266,8 @@ export function Game() {
           map.drawFull(g, full.width, car, { train, players });
         }
       } else {
+        // A flight: the film places the truck and the plane, and directs the camera.
+        const film = m === "flying" ? flyOn(dt) : null;
         if (m === "drive") {
           moving = [...trainObstacles(view.trainCars(), world.height), ...view.remotes.obstacles()];
           lastPose = { x: car.x, z: car.z };
@@ -1133,8 +1313,8 @@ export function Game() {
           }
         }
 
-        map.reveal(car.x, car.z);
-        view.render(car, dt, time, spec, m === "boot" || m === "pick");
+        if (!film) map.reveal(car.x, car.z);
+        view.render(car, dt, time, spec, m === "boot" || m === "pick", film);
         drawTags(now);
         aim(dt);
         if (Math.floor(now * 2) !== Math.floor((now - dt) * 2)) setCanChat(nearbyFriends().length > 0);
@@ -1228,7 +1408,8 @@ export function Game() {
   const loadBoard = useCallback(() => actions.current.leaderboard(), []);
 
   const driving = mode === "drive" || mode === "entering" || mode === "leaving";
-  const goal = profile ? currentGoal(profile.goals, online || presence === "local") : null;
+  // The guidance is about the valley's garages and café; the island has none.
+  const goal = profile?.world === "valley" ? currentGoal(profile.goals, online || presence === "local") : null;
   const solo = !online && presence !== "local";
 
   return (
@@ -1239,6 +1420,8 @@ export function Game() {
         className={`block h-full w-full touch-none transition-opacity duration-[1500ms] ${ready ? "opacity-100" : "opacity-0"}`}
       />
       <div ref={tagsRef} className={`pointer-events-none absolute inset-0 overflow-hidden ${driving ? "" : "hidden"}`} />
+      {/* Cloud: the colour of the haze, over everything, while a flight changes worlds (ADR 0014). The loop sets both. */}
+      <div ref={cloudRef} className="pointer-events-none absolute inset-0 opacity-0" />
       {/* Black from the first paint when there may be a tent to wait for; the effect lifts it. */}
       <div ref={fadeRef} className={`pointer-events-none absolute inset-0 bg-black ${onlineConfigured ? "opacity-100" : "opacity-0"}`} />
 
@@ -1413,6 +1596,12 @@ export function Game() {
             )}
             {prompt.kind === "friend" && (prompt.asked ? <>Accept {prompt.name}&apos;s friend request</> : <>Ask {prompt.name} to be friends</>)}
             {prompt.kind === "landmark" && <>Look in at {LANDMARKS[prompt.id].place}</>}
+            {prompt.kind === "flight" && (
+              <>
+                Board the plane to <b className="font-semibold">{WORLDS[prompt.to].name}</b>
+                <span className="text-[rgba(255,246,232,0.6)]"> · {fmtMiles(WORLDS[prompt.to].fare)} mi</span>
+              </>
+            )}
             {prompt.kind === "convoy" && (
               <>
                 <b className="font-semibold">{prompt.lead}</b>
@@ -1427,7 +1616,7 @@ export function Game() {
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={() => actions.current.toggleMap()}>
           <canvas ref={fullRef} className="aspect-square w-[min(88vw,82dvh)] rounded-2xl shadow-2xl" />
           <p className="absolute bottom-4 text-center text-xs text-[rgba(255,246,232,0.6)]">
-            {profile && <span className="block tabular-nums text-[rgba(255,246,232,0.85)]">{foundLine(countFound(profile.found))} found</span>}
+            {profile?.world === "valley" && <span className="block tabular-nums text-[rgba(255,246,232,0.85)]">{foundLine(countFound(profile.found))} found</span>}
             M or Esc to close
           </p>
         </div>
@@ -1449,6 +1638,9 @@ export function Game() {
       {naming && <NamePanel onSave={(name) => actions.current.setName(name)} />}
       {signingIn && <SignInPanel onGoogle={signInWithGoogle} onClose={() => setSigningIn(false)} />}
       {visiting && <LandmarkCard kind={visiting} onClose={() => setVisiting(null)} />}
+      {boarding && profile && (
+        <FlightCard to={boarding} balance={profile.balance} saved={online} onBoard={() => actions.current.fly()} onClose={() => setBoarding(null)} />
+      )}
       {board && (
         <Leaderboard
           online={online || presence === "local"}

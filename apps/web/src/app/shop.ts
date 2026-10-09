@@ -99,6 +99,12 @@ export function priceOf(key: string) {
   return item ? item.price : Infinity;
 }
 
+/** The one world whose garages sell this, or null if they all do. */
+export function soldOnlyIn(key: string) {
+  const [category, id] = key.split(":");
+  return (category === "vehicle" && VEHICLES.find((v) => v.id === id)?.only) || null;
+}
+
 /** Everything that changes how the rig drives, from the rig and its fitted parts. */
 export function specFor(vehicle: VehicleId, l: Loadout): CarSpec {
   const v = vehicleById(vehicle);

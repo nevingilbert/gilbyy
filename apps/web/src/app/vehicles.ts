@@ -3,12 +3,14 @@
  * but named for itself: the real names are trademarks.
  *
  * Starters are free; you pick one when you first arrive. The rest cost miles at a
- * garage. Pure data: shapes for car-model.ts and vehicle-models.ts, handling for the
- * physics (combined with the fitted tyres in shop.ts).
+ * garage, and one of them only at the garage on the island (ADR 0014). Pure data: shapes
+ * for car-model.ts and vehicle-models.ts, handling for the physics (combined with the
+ * fitted tyres in shop.ts).
  */
 import type { PALETTE } from "./palette";
+import type { WorldId } from "./terrain";
 
-export type VehicleId = "ridgeback" | "bluff" | "mule" | "overlander" | "prairie" | "highland" | "summit" | "duneclaw";
+export type VehicleId = "ridgeback" | "bluff" | "mule" | "overlander" | "prairie" | "highland" | "summit" | "duneclaw" | "sandfly";
 
 export type Vehicle = {
   id: VehicleId;
@@ -41,6 +43,8 @@ export type Vehicle = {
   wade: number;
   /** Its colour before any repaint. */
   factoryPaint: keyof typeof PALETTE.paint;
+  /** The one world whose garages sell it. Once bought it's yours anywhere. */
+  only?: WorldId;
 };
 
 export const VEHICLES: Vehicle[] = [
@@ -91,6 +95,13 @@ export const VEHICLES: Vehicle[] = [
     id: "duneclaw", name: "Duneclaw", blurb: "Wide-body desert pickup with long-travel suspension. Fast.",
     price: 55, starter: false, length: 5.9, width: 2.2, height: 2.0, wheelbase: 3.7, track: 1.9,
     wheelRadius: 0.47, ride: 1.28, travel: 0.48, accel: 7.2, maxSpeed: 23, grip: 1.15, clearance: 0.75, wade: 1.3, factoryPaint: "sunsetOrange",
+  },
+  // Inspired by the 1960s Meyers Manx and the sand rails that followed it: a tub, a cage and an engine out the back.
+  {
+    id: "sandfly", name: "Sandfly", blurb: "Open-frame dune buggy. Light, quick, airborne off every crest. Sold only on the island.",
+    price: 30, starter: false, length: 3.5, width: 1.86, height: 1.6, wheelbase: 2.45, track: 1.56,
+    wheelRadius: 0.4, ride: 0.92, travel: 0.5, accel: 7.6, maxSpeed: 24.5, grip: 1.16, clearance: 0.6, wade: 0.95, factoryPaint: "coral",
+    only: "island",
   },
 ];
 

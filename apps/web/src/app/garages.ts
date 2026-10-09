@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { PALETTE } from "./palette";
 
-export type GarageStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch";
-export const GARAGE_STYLES: readonly GarageStyle[] = ["workshop", "barn", "bunker", "quonset", "cabin", "container", "hangar", "ranch"];
+export type GarageStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack";
+export const GARAGE_STYLES: readonly GarageStyle[] = ["workshop", "barn", "bunker", "quonset", "cabin", "container", "hangar", "ranch", "shack"];
 
 export type Circle = { x: number; z: number; r: number };
 
@@ -36,6 +36,9 @@ export function lambert(color: THREE.ColorRepresentation, side: THREE.Side = THR
   if (!m) materials.set(key, (m = new THREE.MeshLambertMaterial({ color: c, flatShading: true, side })));
   return m;
 }
+
+/** Whether a material is one of those: shared by everything built from a kit, so not any one model's to dispose of. */
+export const isShared = (m: THREE.Material) => [...materials.values()].includes(m as THREE.MeshLambertMaterial);
 
 /** A palette colour, lighter or darker, for shading variety. */
 export const tone = (color: THREE.ColorRepresentation, k: number) => new THREE.Color(color).multiplyScalar(k);
@@ -621,7 +624,80 @@ const ranch: Build = (root, k, glass) => {
   return { setDoor, colliders: ring([...colliders, ...props], -W / 2, W / 2, -F, F), ...entry(F, 16.5) };
 };
 
-const BUILDERS: Record<GarageStyle, Build> = { workshop, barn, bunker, quonset, cabin, container: containers, hangar, ranch };
+/** A surfboard stood on its tail, leaning back against whatever is behind it. */
+function surfboard(k: Kit, color: THREE.ColorRepresentation, x: number, z: number, lean: number, len = 2.3) {
+  const board = new THREE.CylinderGeometry(0.28, 0.28, len, 10).scale(1, 1, 0.12);
+  // Pinched toward the nose and the tail.
+  const p = board.getAttribute("position");
+  for (let i = 0; i < p.count; i++) {
+    const t = Math.abs(p.getY(i)) / (len / 2);
+    p.setX(i, p.getX(i) * (1 - 0.72 * t * t));
+  }
+  k.add(lambert(color), board, x, (len / 2) * Math.cos(lean) + 0.02, z - (len / 2) * Math.sin(lean), -lean);
+  k.box(lambert(tone(color, 0.7)), 0.03, len * 0.8, 0.045, x, (len / 2) * Math.cos(lean) + 0.02, z - (len / 2) * Math.sin(lean) + 0.012, -lean);
+}
+
+/** The island's garage: cane walls under a deep thatched roof, boards leaning by the door, bulbs strung along the eaves. */
+const shack: Build = (root, k, glass) => {
+  const W = 9, D = 8, H = 3.9, DW = 3.8, DH = 3.4, F = D / 2, RISE = 2.9;
+  const cane = lambert(PALETTE.bamboo), seam = lambert(tone(PALETTE.bamboo, 0.76)), wood = lambert(PALETTE.timber), woodDark = lambert(tone(PALETTE.timber, 0.75));
+  const thatch = lambert(PALETTE.thatch[0]), thatchDark = lambert(PALETTE.thatch[1]);
+  shell(k, cane, W, D, H, DW, DH);
+  // Cane seams on every wall, round posts at the corners and the door.
+  for (let x = -W / 2 + 0.25; x < W / 2; x += 0.5) {
+    k.box(seam, 0.05, H, 0.05, x, H / 2, -F - 0.015);
+    if (Math.abs(x) > DW / 2 + 0.2) k.box(seam, 0.05, H, 0.05, x, H / 2, F + 0.015);
+  }
+  for (let z = -F + 0.25; z < F; z += 0.5) for (const s of [1, -1]) k.box(seam, 0.05, H, 0.05, s * (W / 2 + 0.015), H / 2, z);
+  for (const sx of [1, -1]) for (const sz of [1, -1]) k.cyl(wood, 0.16, H, sx * (W / 2 - 0.02), H / 2, sz * (F - 0.02), 0, 0, 7);
+  for (const s of [1, -1]) k.cyl(wood, 0.13, DH + 0.2, s * (DW / 2 + 0.13), (DH + 0.2) / 2, F + 0.08, 0, 0, 7);
+  k.cyl(wood, 0.13, DW + 0.9, 0, DH + 0.2, F + 0.08, 0, Math.PI / 2, 7);
+  // The thatch: a steep gable with deep eaves, a darker under-layer showing at its edge, a pole along the ridge.
+  const gable = [[W / 2, H], [0, H + RISE], [-W / 2, H]];
+  k.add(cane, prism(gable, D), 0, 0, 0);
+  roof(k, thatchDark, gable, D + 1.7, 0.2, 1.0);
+  roof(k.at(0, 0.2, 0), thatch, gable, D + 1.4, 0.24, 0.75);
+  k.cyl(woodDark, 0.12, D + 2.0, 0, H + RISE + 0.42, 0, Math.PI / 2, 0, 7);
+  // A blank board over the door, hung on two ropes.
+  k.box(woodDark, 3.2, 0.8, 0.08, 0, H + 0.75, F + 0.5);
+  k.box(lambert(PALETTE.trimCream), 2.9, 0.55, 0.1, 0, H + 0.75, F + 0.52);
+  // Bulbs strung along the front eave, lit with the windows.
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12, sag = 0.28 * (1 - (2 * t - 1) ** 2);
+    k.add(glass, new THREE.IcosahedronGeometry(0.09, 0), -W / 2 - 0.6 + t * (W + 1.2), H - 0.12 - sag, F + 0.95);
+  }
+  for (const s of [1, -1]) k.cyl(wood, 0.07, H + 0.1, s * (W / 2 + 0.6), (H + 0.1) / 2, F + 0.95, 0, 0, 6);
+  pane(k.at(W / 2 + 0.02, 2.2, -0.8, Math.PI / 2), glass, 1.3, 0.9, PALETTE.timber);
+  pane(k.at(-W / 2 - 0.02, 2.2, 0.6, -Math.PI / 2), glass, 1.3, 0.9, PALETTE.timber);
+  // Boards leaning on the wall by the door, a bench down the side, drums and tyres round the back.
+  PALETTE.surfboard.forEach((c, i) => surfboard(k, c, DW / 2 + 0.95 + i * 0.62, F + 0.72, 0.22 + (i % 2) * 0.05, 2.1 + (i % 3) * 0.2));
+  bench(k.at(-W / 2 - 0.75, 0, -0.6, Math.PI / 2));
+  drum(k, -W / 2 - 0.8, 2.3, PALETTE.surfboard[1]);
+  drum(k, -W / 2 - 0.9, 3.05, PALETTE.surfboard[0]);
+  tyres(k, W / 2 + 0.9, -2.6, 3);
+  // Two torches by the door.
+  for (const s of [1, -1]) {
+    const tx = s * (DW / 2 + 1.0);
+    k.cyl(woodDark, 0.05, 1.9, tx, 0.95, F + 3.1, 0, 0, 6);
+    k.cyl(cane, 0.11, 0.3, tx, 1.95, F + 3.1, 0, 0, 7);
+    k.add(glass, new THREE.ConeGeometry(0.1, 0.34, 5), tx, 2.27, F + 3.1);
+  }
+  lining(k, DW + 0.6, DH + 0.2, 6.6, F - 0.25);
+  // A cane blind that rolls up under the lintel.
+  const door = part(root, 0, DH, F - 0.3, (dk) => {
+    dk.box(cane, DW, DH, 0.07, 0, -DH / 2, 0);
+    for (let y = 0.2; y < DH; y += 0.28) dk.box(seam, DW, 0.04, 0.09, 0, -y, 0.01);
+    for (const x of [-DW / 4, DW / 4]) dk.box(woodDark, 0.06, DH, 0.1, x, -DH / 2, 0.02);
+  });
+  const props = [
+    { x: DW / 2 + 1.6, z: F + 0.45, r: 1.0 }, { x: -W / 2 - 0.8, z: -0.6, r: 1.1 }, { x: -W / 2 - 0.85, z: 2.7, r: 0.8 },
+    { x: W / 2 + 0.9, z: -2.6, r: 0.5 }, { x: DW / 2 + 1.0, z: F + 3.1, r: 0.2 }, { x: -DW / 2 - 1.0, z: F + 3.1, r: 0.2 },
+  ];
+  for (const s of [1, -1]) props.push({ x: s * (W / 2 + 0.6), z: F + 0.95, r: 0.2 });
+  return { setDoor: (t) => (door.scale.y = 1 - 0.95 * t), colliders: ring(props, -W / 2, W / 2, -F, F), ...entry(F, 9.5) };
+};
+
+const BUILDERS: Record<GarageStyle, Build> = { workshop, barn, bunker, quonset, cabin, container: containers, hangar, ranch, shack };
 
 /** A garage the car can drive into. `windowMaterial` is shared and owned by the caller; it glows at night. */
 export function buildGarage(style: GarageStyle, windowMaterial: THREE.Material): GarageModel {

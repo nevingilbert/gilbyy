@@ -80,7 +80,7 @@ function domeTent(k: Kit, color: THREE.ColorRepresentation, rope: THREE.Material
  * One pitch, about 10 m wide (x) by 16 m deep (z). Origin at the pitch centre, ground level. The gravel parking bay
  * is at +z (3.4 m by 6 m, centred on z = 4), the tent behind it at −z; the table and fire swap sides every other pair.
  */
-export function buildTentSite(index: number, glow: THREE.Material): {
+export function buildTentSite(index: number, glow: THREE.Material, pad: THREE.ColorRepresentation = PALETTE.dirt[1]): {
   object: THREE.Group;
   colliders: Circle[];
   /** Where a car parks, in local space: the middle of the bay, facing +z (out toward the camp road). */
@@ -92,7 +92,8 @@ export function buildTentSite(index: number, glow: THREE.Material): {
   // Shifted by one each lap of the palette, so every colour turns up as both a ridge tent and a dome.
   const color = PALETTE.tent[(index + Math.floor(index / n)) % n];
   const side = Math.floor(index / 2) % 2 ? -1 : 1;
-  const wood = lambert(PALETTE.picnic), line = lambert(PALETTE.parkingLine), gravel = lambert(PALETTE.dirt[1]);
+  // The bay and the tent's pad are gravel in the valley; on the beach they are packed sand.
+  const wood = lambert(PALETTE.picnic), line = lambert(PALETTE.parkingLine), gravel = lambert(pad);
 
   // Gravel bay with two lines and a log stop at the back; a gravel tent pad framed in timber.
   k.box(gravel, BAY_W + 0.5, 0.3, BAY_D + 0.4, 0, -0.13, BAY_Z);

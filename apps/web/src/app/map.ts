@@ -1,16 +1,19 @@
+import { APRON, RUNWAY, fromField } from "./airport";
+import { PLANE } from "./flight";
 import { cellAt, cellCentre } from "./fog";
 import { PALETTE } from "./palette";
 import { CAFE_KEY, garageKey, placesOf } from "./places";
-import { CAFE, CAMP, HALF, WORLD, sampleGrid, type Mission, type World } from "./world";
+import { CAFE, HALF, WORLD, sampleGrid, type Mission, type Site, type World } from "./world";
 
 /**
- * The map: a parchment topo sheet of the valley, drawn once, under a grey fog that
- * clears wherever you've driven. The camp is marked from the start. Garages and the
- * café appear once the truck has been near them, and then stay for good, fog or no fog:
- * `onFound` is told when one is found and `setFound` puts back the ones saved from
- * earlier visits. The fog is remembered as the grid cells the truck has been in
- * (fog.ts): `onExplored` is told each new one and `setExplored` clears the saved ones
- * again. Mission starts show wherever the fog has cleared.
+ * The map: a parchment topo sheet of the world you're in, drawn once, under a grey fog
+ * that clears wherever you've driven. The camp is marked from the start. In the valley,
+ * garages and the café appear once the truck has been near them, and then stay for good,
+ * fog or no fog: `onFound` is told when one is found and `setFound` puts back the ones
+ * saved from earlier visits. The fog is remembered as the grid cells the truck has been
+ * in (fog.ts): `onExplored` is told each new one and `setExplored` clears the saved ones
+ * again. Mission starts, the airstrip and the island's garage show wherever the fog has
+ * cleared, which is how they are remembered too.
  */
 const SIZE = 512;
 const PX = SIZE / WORLD.size;
@@ -43,6 +46,7 @@ function paintBase(world: World) {
   const water = rgb(C.water);
   const deep = rgb(C.waterDeep);
   const ice = rgb(C.ice);
+  const sand = rgb(C.sand);
   const step = 1 / PX;
   const heights = new Float32Array(SIZE * SIZE);
   for (let py = 0; py < SIZE; py++) {
@@ -62,6 +66,8 @@ function paintBase(world: World) {
       // Hillshade lit from the north-west, the way paper maps are.
       const lit = Math.max(0, Math.min(1, 0.62 + (dx + dz) * -0.35 - Math.hypot(dx, dz) * 0.15));
       let c = mix(shade, paper, lit);
+      // The island's sheet is sand where it isn't trees.
+      if (world.sea) c = mix(c, sand, 0.45);
       const depth = sampleGrid(world.water, x, z) - h;
       if (sampleGrid(world.ice, x, z) > 0.5) c = mix(c, ice, 0.85);
       else if (depth > 0) c = mix(water, deep, Math.min(1, depth / 12));
@@ -88,14 +94,31 @@ function paintBase(world: World) {
 
   // The railway, as a dashed line.
   const t = world.track;
-  g.strokeStyle = C.track;
-  g.lineWidth = 1.5;
-  g.setLineDash([3, 2]);
-  g.beginPath();
-  t.xs.forEach((x, i) => (i ? g.lineTo(toPx(x), toPx(t.zs[i])) : g.moveTo(toPx(x), toPx(t.zs[i]))));
-  g.closePath();
-  g.stroke();
-  g.setLineDash([]);
+  if (t.xs.length) {
+    g.strokeStyle = C.track;
+    g.lineWidth = 1.5;
+    g.setLineDash([3, 2]);
+    g.beginPath();
+    t.xs.forEach((x, i) => (i ? g.lineTo(toPx(x), toPx(t.zs[i])) : g.moveTo(toPx(x), toPx(t.zs[i]))));
+    g.closePath();
+    g.stroke();
+    g.setLineDash([]);
+  }
+
+  // The airstrip: its runway and apron, on the sheet like anything else, so under the fog until you've been.
+  const a = world.airport;
+  const corner = (lx: number, lz: number) => {
+    const p = fromField(a, lx, lz);
+    return [toPx(p.x), toPx(p.z)] as const;
+  };
+  g.fillStyle = C.runway;
+  for (const [x0, x1, z0, z1] of [[-RUNWAY.half, RUNWAY.half, 0, RUNWAY.length], [-APRON.half, APRON.half, -APRON.back, APRON.front]]) {
+    g.beginPath();
+    g.moveTo(...corner(x0, z0));
+    for (const [lx, lz] of [[x1, z0], [x1, z1], [x0, z1]]) g.lineTo(...corner(lx, lz));
+    g.closePath();
+    g.fill();
+  }
 
   // The camp's roads.
   g.strokeStyle = C.road;
@@ -171,6 +194,22 @@ function drawGarage(g: CanvasRenderingContext2D, x: number, y: number, s: number
   g.fillRect(x - s * 0.45, y + s * 0.05, s * 0.9, s * 0.75);
 }
 
+/** A little plane seen from above, nose the way the runway runs. */
+function drawPlane(g: CanvasRenderingContext2D, x: number, y: number, heading: number, s: number) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(Math.PI - heading);
+  g.fillStyle = PALETTE.map.garage;
+  g.beginPath();
+  g.moveTo(0, -s * 1.2);
+  for (const [px, py] of [[0.22, -0.3], [1.1, 0.35], [1.1, 0.6], [0.22, 0.3], [0.18, 0.85], [0.5, 1.15], [-0.5, 1.15], [-0.18, 0.85], [-0.22, 0.3], [-1.1, 0.6], [-1.1, 0.35], [-0.22, -0.3]]) {
+    g.lineTo(px * s, py * s);
+  }
+  g.closePath();
+  g.fill();
+  g.restore();
+}
+
 function drawCar(g: CanvasRenderingContext2D, x: number, y: number, heading: number, s: number) {
   g.save();
   g.translate(x, y);
@@ -201,9 +240,12 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
   const f = fog.getContext("2d", { willReadFrequently: true })!;
   f.fillStyle = PALETTE.map.fog;
   f.fillRect(0, 0, SIZE, SIZE);
-  const places = placesOf(world.sites);
+  // Only the valley's places are found and counted (ADR 0008). The island's garage shows once the fog is off it.
+  const places = world.id === "valley" ? placesOf(world.sites) : [];
   const found = new Set<string>();
   const seenMissions = new Set<Mission>();
+  const seenSites = new Set<Site>();
+  let seenAirport = false;
   const cells = new Set<number>();
   let lastX = Infinity;
   let lastZ = Infinity;
@@ -236,12 +278,17 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
       onFound(p.key);
     }
     for (const m of world.missions) if (Math.hypot(m.start.x - x, m.start.z - z) < SIGHT * 0.8) seenMissions.add(m);
+    for (const s of world.sites) if (Math.hypot(s.x - x, s.z - z) < SIGHT * 0.8) seenSites.add(s);
+    seenAirport ||= Math.hypot(stand.x - x, stand.z - z) < SIGHT * 0.8;
   }
 
+  /** Where the plane stands, which is where the airstrip's mark goes. */
+  const stand = fromField(world.airport, 0, PLANE.stand);
   const markers = (g: CanvasRenderingContext2D, place: (x: number, z: number) => [number, number], icon: number, extras: Extras) => {
-    drawCamp(g, ...place(CAMP.x, CAMP.z), icon * 1.1);
+    drawCamp(g, ...place(world.camp.x, world.camp.z), icon * 1.1);
     if (found.has(CAFE_KEY)) drawCafe(g, ...place(CAFE.x, CAFE.z), icon * 0.9);
-    for (const s of world.sites) if (found.has(garageKey(s.style))) drawGarage(g, ...place(s.x, s.z), icon);
+    for (const s of world.sites) if (places.length ? found.has(garageKey(s.style)) : seenSites.has(s)) drawGarage(g, ...place(s.x, s.z), icon);
+    if (seenAirport) drawPlane(g, ...place(stand.x, stand.z), world.airport.heading, icon * 1.15);
     for (const m of seenMissions) drawFlag(g, ...place(m.start.x, m.start.z), icon);
     if (extras.train) drawDot(g, ...place(extras.train.x, extras.train.z), icon * 0.55, PALETTE.map.train);
     for (const p of extras.players ?? []) drawDot(g, ...place(p.x, p.z), icon * 0.5, p.friend ? PALETTE.map.friend : PALETTE.map.player);
@@ -276,8 +323,8 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
 
   /** The whole valley, fitted into a `size` px square. */
   function drawFull(g: CanvasRenderingContext2D, size: number, car: Spot, extras: Extras = {}) {
-    // Crop to the valley itself; the square's corners are all mountain.
-    const span = WORLD.limit * 2.1;
+    // Crop to the valley itself, whose corners are all mountain, or to the island and a margin of sea.
+    const span = world.mapSpan;
     const scale = size / span;
     const sx = toPx(-span / 2);
     const sw = span * PX;
@@ -320,6 +367,8 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
       f.fillRect(0, 0, SIZE, SIZE);
       cells.clear();
       seenMissions.clear();
+      seenSites.clear();
+      seenAirport = false;
       lastX = lastZ = Infinity;
     }
     for (const cell of saved) {
@@ -329,6 +378,8 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
       clear(c.x, c.z);
     }
     for (const m of world.missions) if (explored(m.start.x, m.start.z)) seenMissions.add(m);
+    for (const s of world.sites) if (explored(s.x, s.z)) seenSites.add(s);
+    seenAirport ||= explored(stand.x, stand.z);
   }
 
   return { reveal, drawMini, drawFull, explored, setFound, setExplored };

@@ -6,7 +6,9 @@ import { fmtMiles } from "./GarageMenu";
 import { LANDMARKS, landmarkUrl, type LandmarkKind } from "./landmarks";
 import { foundLine } from "./places";
 import type { Standing } from "./store";
+import type { WorldId } from "./terrain";
 import { STARTERS, type VehicleId } from "./vehicles";
+import { WORLDS } from "./worlds";
 
 const panel =
   "pointer-events-auto rounded-2xl border border-white/10 bg-[rgba(24,20,17,0.8)] p-5 text-[rgba(255,246,232,0.86)] shadow-2xl backdrop-blur-md";
@@ -148,6 +150,80 @@ export function LandmarkCard({ kind, onClose }: { kind: LandmarkKind; onClose: (
           >
             Open {host} ↗
           </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const FLIGHTS: Record<WorldId, { title: string; blurb: string }> = {
+  island: { title: "Fly to the island", blurb: "Sea all round, a beach inside it, dunes behind the beach and jungle in the middle." },
+  valley: { title: "Fly back to the valley", blurb: "The lakes, the rivers, the railway and the snow, as you left them." },
+};
+
+/**
+ * At the plane's tail: what the flight costs, and a button to pay it. A fare is a lot of
+ * miles and the way back costs the same, so it asks before it takes them (ADR 0014).
+ */
+export function FlightCard({
+  to, balance, saved, onBoard, onClose,
+}: {
+  to: WorldId;
+  balance: number;
+  /** Signed in. Otherwise nothing is kept, and that includes where you are. */
+  saved: boolean;
+  onBoard: () => Promise<string | null>;
+  onClose: () => void;
+}) {
+  const { title, blurb } = FLIGHTS[to];
+  const fare = WORLDS[to].fare;
+  const short = Math.max(0, fare - balance);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function board() {
+    if (busy || short > 0) return;
+    setBusy(true);
+    const err = await onBoard();
+    setBusy(false);
+    if (err) setError(err);
+  }
+  // The game ignores keys while a panel is up, so this one answers its own.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (e.key === "Escape") onClose();
+      else if (e.key === "Enter") void board();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm" onClick={onClose}>
+      <div role="dialog" aria-label={title} className={`${panel} w-full max-w-sm`} onClick={(e) => e.stopPropagation()}>
+        <p className="text-xs uppercase tracking-[0.18em] text-[rgba(255,246,232,0.5)]">At the airstrip</p>
+        <h2 className="mt-2 text-xl font-semibold tracking-tight">{title}</h2>
+        <p className="mt-1 text-sm text-[rgba(255,246,232,0.6)]">{blurb} Your truck comes with you.</p>
+        <p className="mt-3 text-sm tabular-nums text-[rgba(255,246,232,0.86)]">
+          {fmtMiles(fare)} mi each way. You have {fmtMiles(balance)} mi
+          {short > 0 ? <span className="text-[rgba(255,246,232,0.6)]">, so {fmtMiles(Math.ceil(short * 10) / 10)} more to go.</span> : "."}
+        </p>
+        {!saved && (
+          <p className="mt-2 text-xs text-[rgba(255,246,232,0.45)]">Single player: nothing is saved, so the next visit starts back in the valley.</p>
+        )}
+        {error && <p className="mt-2 text-xs text-[rgba(255,210,170,0.9)]">{error}</p>}
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <button className="min-h-11 pr-3 text-xs text-[rgba(255,246,232,0.45)] hover:text-[rgba(255,246,232,0.8)]" onClick={onClose}>
+            Not now <span className="hidden sm:inline">· Esc</span>
+          </button>
+          <button
+            className={`${button} inline-flex min-h-11 items-center bg-white/10 outline-none focus-visible:border-white/60`}
+            disabled={busy || short > 0}
+            onClick={() => void board()}
+          >
+            {busy ? "Boarding…" : `Board · ${fmtMiles(fare)} mi`}
+          </button>
         </div>
       </div>
     </div>
