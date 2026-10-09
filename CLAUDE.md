@@ -11,8 +11,8 @@ go. With no sign-in it is single player and nothing is saved. Signed in, progres
 persists and everyone shares the valley: you spawn at a 30-tent campground, make friends
 by meeting at the café, chat with friends nearby (ADR 0007), and drive a convoy course
 together (ADR 0010) or race each other (ADR 0011). Over the river, hidden, is an
-airstrip: 300 miles buys a flight, truck and all, to an island of beach, dunes and
-jungle, and 300 more buys the flight home (ADR 0014). That is the entire product.
+airstrip: 150 miles buys a flight, truck and all, to an island of beach, dunes and
+jungle, and 150 more buys the flight home (ADR 0014). That is the entire product.
 
 It is not a hub, a menu, or a launcher. See `docs/vision.md` and
 `docs/decisions/0004-gilbyy-is-just-a-driving-game.md` — this has been misunderstood
@@ -169,7 +169,7 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - achievements for the first garage and the café, shown on the leaderboard (ADR 0009);
 - optional sign-in for saved progress, a shared valley, friends, chat and a leaderboard (ADR 0007);
 - since 2026-10-08: a bank, a church, a school and a casino hidden in the valley, each linking to one of the owner's other projects (ADR 0012).
-- since 2026-10-09: an airstrip hidden over the river, a flight for 300 miles each way, and an island (beach, dunes, jungle, tents on the beach, one garage) where the Sandfly dune buggy is sold (ADR 0014). Its migration is on the live project and it was merged to `main` the same day. Nobody has flown signed in yet: the fare is more miles than any player has.
+- since 2026-10-09: an airstrip hidden over the river, a flight for 150 miles each way (300 until later that day), and an island (beach, dunes, jungle, tents on the beach, one garage) where the Sandfly dune buggy is sold (ADR 0014). Its migration is on the live project and it was merged to `main` the same day. Nobody has flown signed in yet: the fare is more miles than any player has.
 - built 2026-10-09, **not merged and its migration not applied yet** (branch `feat/game-island-second-pass`): two more garages on the island (the Dune Outpost, the Jungle Lodge), a café on its beach, three courses there (Beach Run, Dune Dash, Jungle Loop), and found-counts for the world you're in that also count its airstrip and, in the valley, the four easter eggs (found when you look inside), shown on the leaderboard too (ADR 0016). Until `20261009230000_island_second_pass.sql` is applied the island's courses don't pay and airports and easter eggs aren't saved.
 
 The online half is connected (2026-10-07): the Supabase project `gilbyy` has every migration in `supabase/migrations/` (the convoy and race ones since 2026-10-08), Google sign-in works, and the whole list (name, tent, seeing each other, friending at the café, chat, leaderboard, a purchase and a mission payout that persist) was played from two browsers. It was merged to `main` the same day, so gilbyy.com offers sign-in. The convoy and the race were merged to `main` and went live on 2026-10-08; the database tests pass against the live project, but neither has been played signed in from two accounts yet. A tab left hidden for five minutes, or untouched for fifteen, gives its tent back and takes one again on return. Sign-in is Google only; the email-link option was removed because Supabase's built-in mailer only reaches members of the Supabase org. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.

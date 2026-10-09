@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import { APRON, RUNWAY, fieldDist, toField } from "./airport";
@@ -13,7 +13,9 @@ import { VEHICLES } from "./vehicles";
 import { buildWorld, type World } from "./world";
 import { WORLDS, WORLD_IDS, flightFrom, isWorld } from "./worlds";
 
-const migration = readFileSync(resolve(__dirname, "../../../../supabase/migrations/20261009180000_island.sql"), "utf8");
+const dir = resolve(__dirname, "../../../../supabase/migrations");
+/** Every migration, in the order they run. */
+const migration = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort().map((f) => readFileSync(resolve(dir, f), "utf8")).join("\n");
 
 const valley = buildWorld();
 const island = buildIsland();
@@ -218,8 +220,12 @@ describe("the worlds", () => {
 
 describe("the worlds and the server agree", () => {
   it("on what each flight costs", () => {
-    const block = migration.match(/insert into public\.worlds \([^)]*\) values([\s\S]*?);/)?.[1] ?? "";
-    const server = Object.fromEntries([...block.matchAll(/\('([^']+)',\s*([\d.]+)\)/g)].map((m) => [m[1], Number(m[2])]));
+    // A later migration's row for a world replaces an earlier one (`on conflict … do update`).
+    const server = Object.fromEntries(
+      [...migration.matchAll(/insert into public\.worlds \([^)]*\) values([\s\S]*?)(?:on conflict[\s\S]*?)?;/g)].flatMap(([, block]) =>
+        [...block.matchAll(/\('([^']+)',\s*([\d.]+)\)/g)].map((m) => [m[1], Number(m[2])]),
+      ),
+    );
     expect(server).toEqual(Object.fromEntries(WORLD_IDS.map((id) => [id, WORLDS[id].fare])));
   });
 

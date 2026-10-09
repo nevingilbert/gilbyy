@@ -193,6 +193,8 @@ for sign-in (Google only), and Realtime for the shared valley. See
   the design; `private.flight_log` has no policies because only the owner reads it;
   and the foreign keys to `worlds` have no index, because it has two rows that are
   never deleted.
+- `20261009233000_cheaper_flights.sql` lowers both fares in `worlds` to 150 miles each
+  way, the owner's call (ADR 0014).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

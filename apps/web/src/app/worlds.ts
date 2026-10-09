@@ -7,8 +7,8 @@ import type { WorldId } from "./terrain";
  * (flight.test.ts checks).
  */
 export const WORLDS: Record<WorldId, { name: string; fare: number }> = {
-  valley: { name: "the valley", fare: 300 },
-  island: { name: "the island", fare: 300 },
+  valley: { name: "the valley", fare: 150 },
+  island: { name: "the island", fare: 150 },
 };
 export const WORLD_IDS = Object.keys(WORLDS) as WorldId[];
 export const isWorld = (v: unknown): v is WorldId => typeof v === "string" && Object.hasOwn(WORLDS, v);
