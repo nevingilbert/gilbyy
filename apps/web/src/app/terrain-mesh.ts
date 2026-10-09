@@ -272,8 +272,7 @@ export function buildGrass(world: World, surface: SurfaceAt) {
     floor: { share: 0.3, tones: PALETTE.forestFloor.map(colour) },
     jungle: { share: 0.8, tones: PALETTE.fern.map(colour) },
     scrub: { share: 0.28, tones: PALETTE.scrub.map(colour) },
-    // A little marram on the dunes; the beach is bare.
-    sand: { share: 0.045, tones: PALETTE.scrub.map(colour) },
+    // The beach and the dunes are bare sand.
   };
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
