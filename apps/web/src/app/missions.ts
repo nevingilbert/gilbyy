@@ -5,7 +5,7 @@ import { CAFE, CAMP_GATE, FROZEN, LAKES, ROW, START, WORLD, nearest, sampleGrid,
  * Optional driving challenges, laid out on the real terrain at load. Drive to a start
  * arch, press E, and go through the gates in order. Finishing earns miles; there is
  * no failing, only giving up. Courses pay far better than the same minutes spent just
- * driving (ADR 0013). Pure data, no three.js.
+ * driving (ADR 0015). Pure data, no three.js.
  */
 export type Gate = { x: number; z: number; heading: number; width: number };
 export type Mission = {
@@ -408,14 +408,38 @@ function snowfield(t: Terrain, avoid: Float32Array): Mission | null {
   return lineCourse(line, 12, { id: "snowfield", name: "Snowfield", blurb: "Ten wide flags across the snow. Bring chains or studded tyres.", reward: 25, repeatReward: 8 });
 }
 
-/** Over the river, where only a snorkel gets you: a run through the far bank's trees. */
+/**
+ * Along the river's far bank, where only a snorkel gets you: seven flags that follow the
+ * water 65–95 m out. Within reach of `riverDist`, so it never takes the hollow the
+ * airstrip is hidden in, which has to be further off (`valleyAirfield`).
+ */
 function farBank(t: Terrain, avoid: Float32Array): Mission | null {
-  const { f, zone, slope } = helpers(t);
-  const line = flagLine(t, {
-    where: (x, z) => zone(x, z) === 2 && f(avoid, x, z) > 150,
-    score: (x, z) => Math.min(f(t.forest, x, z), 0.6) + (0.3 - slope(x, z)), least: 0.3, flags: 10, spacing: 45, side: 9, maxSlope: 0.32,
-  });
-  return lineCourse(line, 10, { id: "far-bank", name: "Far Bank", blurb: "Ten flags on the far side of the river. You'll need a snorkel to get there.", reward: 30, repeatReward: 10 });
+  const { f, zone, slope, clearAt, lineOk } = helpers(t);
+  // The far bank is steep in places, so this allows a bit more slope than the other lines.
+  const ok = (p: Pt) => zone(p.x, p.z) === 2 && f(t.riverDist, p.x, p.z) < 110 && f(avoid, p.x, p.z) > 150 && clearAt(p.x, p.z, 0.4);
+  let best: { start: Pt; heading: number; pts: Pt[]; score: number } | null = null;
+  for (const river of t.rivers) {
+    for (const side of [1, -1]) {
+      for (const out of [65, 80, 95]) {
+        // Every fourth point of the river (40 m apart), pushed out square to its course.
+        const bank: Pt[] = [];
+        for (let i = 2; i < river.xs.length - 2; i += 4) {
+          const dx = river.xs[i + 2] - river.xs[i - 2];
+          const dz = river.zs[i + 2] - river.zs[i - 2];
+          const d = Math.hypot(dx, dz) || 1;
+          bank.push({ x: river.xs[i] + (dz / d) * out * side, z: river.zs[i] - (dx / d) * out * side });
+        }
+        for (let i = 0; i + 8 <= bank.length; i++) {
+          const run = bank.slice(i, i + 8);
+          if (!run.every(ok)) continue;
+          const score = run.reduce((sum, p) => sum + Math.min(f(t.forest, p.x, p.z), 0.6) - slope(p.x, p.z), 0) / run.length;
+          if ((best && score <= best.score) || !lineOk(run, 0.42)) continue;
+          best = { start: run[0], heading: Math.atan2(run[1].x - run[0].x, run[1].z - run[0].z), pts: run.slice(1), score };
+        }
+      }
+    }
+  }
+  return lineCourse(best, 10, { id: "far-bank", name: "Far Bank", blurb: "Seven flags along the river's far bank. You'll need a snorkel to get there.", reward: 30, repeatReward: 10 });
 }
 
 const highRidge = (t: Terrain, avoid: Float32Array) => {
@@ -492,7 +516,7 @@ export function planMissions(t: Terrain) {
   const solo = [forestSlalom(t), ridgeRun(t), lakeshoreLoop(t), iceDrift(t)].filter((m): m is Mission => !!m);
   const withConvoy = [...solo, convoy(t, courseDistOf(solo, 60))].filter((m): m is Mission => !!m);
   const missions = [...withConvoy, race(t, courseDistOf(withConvoy, 60))].filter((m): m is Mission => !!m);
-  // The courses added with ADR 0013, each laid out clear of every course before it, so the
+  // The courses added with ADR 0015, each laid out clear of every course before it, so the
   // first six stay exactly where they were.
   const avoid = courseDistOf(missions, 160);
   for (const plan of [grandTour, hillRace, deepWoods, southernShore, highRidge, snowfield, farBank]) {

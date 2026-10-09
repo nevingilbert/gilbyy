@@ -22,6 +22,13 @@ describe("the saved fog", () => {
     expect(migration).toContain(`cardinality(p_cells) > ${EXPLORE_MAX}`);
   });
 
+  it("is still that size where explore() was rewritten to keep each world's apart", () => {
+    const island = readFileSync(resolve(__dirname, "../../../../supabase/migrations/20261009180000_island.sql"), "utf8");
+    expect(island).toContain(`repeat('00', ${FOG_CELLS / 8})`);
+    expect(island).toContain(`cell >= ${FOG_CELLS}`);
+    expect(island).toContain(`cardinality(p_cells) > ${EXPLORE_MAX}`);
+  });
+
   it("gives every spot in the valley a cell, and each cell's middle is in that cell", () => {
     expect(cellAt(-HALF, -HALF)).toBe(0);
     expect(cellAt(HALF - 1, HALF - 1)).toBe(FOG_CELLS - 1);

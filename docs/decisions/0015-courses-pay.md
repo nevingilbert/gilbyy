@@ -1,8 +1,9 @@
-# 0013 — Courses pay; driving around is the slow way
+# 0015 — Courses pay; driving around is the slow way
 
 Date: 2026-10-09
-Status: Accepted. Changes the numbers in `0007` (prices, mission payouts) and `0010`/`0011`
-(convoy and race payouts), and adds a check to how every course is paid. Their rules
+Status: Accepted. Changes the numbers in `0007` (prices, mission payouts), `0010`/`0011`
+(convoy and race payouts) and `0014` (the Sandfly's price, not the fares), and adds a
+check to how every course is paid. Their rules
 stand: miles are the one currency, courses are optional and never fail beyond giving
 up, and every finisher of a convoy or a race is paid the same.
 
@@ -22,7 +23,9 @@ much more.
 
 - **Prices are five times what they were.** The Duneclaw is 275 miles; the cheapest
   paints 2.5. A starter circling at its top speed (17 m/s, 38 mph) needs over seven
-  hours for the Duneclaw.
+  hours for the Duneclaw. The island's Sandfly (`0014`) is priced like the other rigs, 150.
+  The flight's fare is not a shop price: it stays the 300 miles each way the owner chose
+  in `0014`, and is now well within reach of someone who drives the courses.
 - **Courses pay eight to ten times more.** A first finish pays 12 to 40 miles and a
   repeat 4 to 12, still no more than once per course every ten minutes. Even a repeat
   pays at least five times the miles the course covers; the first finish of every
@@ -30,7 +33,9 @@ much more.
   the best rig in an evening; one who leaves the laptop circling, overnight.
 - **Thirteen courses, from six.** New to drive alone: Deep Woods (a second slalom),
   High Ridge (a second climb), Southern Shore (a loop by the south lake), Snowfield
-  (needs chains or studded tyres) and Far Bank (over the river, so it needs a snorkel).
+  (needs chains or studded tyres) and Far Bank (along the river's far bank, so it needs a
+  snorkel; it follows the water, never more than 110 m out, so it can't take the hollow
+  the valley's airstrip hides in).
   New for friends: Grand Tour (a long convoy from the big lake) and Hill Race (a second
   race, hillier, by the roadside workshop). The six courses that were there are laid out
   first and haven't moved; each new one keeps clear of the rest. The two that need gear
@@ -59,5 +64,7 @@ much more.
   could earn, each course once per ten minutes, and `private.miles_hourly` shows it
   (course miles arriving faster than anyone could drive between the starts).
 - The four easter-egg buildings (`0012`) moved, because they're placed clear of every
-  course.
+  course. The airstrip didn't: it is chosen last, and Far Bank stays out of its way.
+- The island has no courses yet; they're the next pass of `0014`. When they come, they
+  should pay on this scale.
 - Laying out seven more courses adds about 0.2 s to building the world at load.

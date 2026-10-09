@@ -6,8 +6,8 @@ import { VEHICLES, vehicleById, type VehicleId } from "./vehicles";
 /**
  * The garage shop. Miles you drive (and earn on missions) are money: spend them on
  * rigs and parts. Prices are set so the courses, which pay far better than driving
- * around, are the quick way to them (ADR 0013). Lifetime miles are separate and only ever go up; that is what the
- * leaderboard shows.
+ * around, are the quick way to them (ADR 0015). Lifetime miles are separate and only
+ * ever go up; that is what the leaderboard shows.
  *
  * Prices here must match `supabase/migrations/…_shop.sql`, which the server uses to
  * check purchases; `shop.test.ts` holds the two together.
@@ -98,6 +98,12 @@ export function priceOf(key: string) {
   if (category === "vehicle") return VEHICLES.find((v) => v.id === id)?.price ?? Infinity;
   const item = (PARTS[category] as readonly Base[] | undefined)?.find((p) => p.id === id);
   return item ? item.price : Infinity;
+}
+
+/** The one world whose garages sell this, or null if they all do. */
+export function soldOnlyIn(key: string) {
+  const [category, id] = key.split(":");
+  return (category === "vehicle" && VEHICLES.find((v) => v.id === id)?.only) || null;
 }
 
 /** Everything that changes how the rig drives, from the rig and its fitted parts. */

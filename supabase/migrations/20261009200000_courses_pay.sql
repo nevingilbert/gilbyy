@@ -1,4 +1,4 @@
--- Courses pay; driving around is the slow way. See docs/decisions/0013-courses-pay.md.
+-- Courses pay; driving around is the slow way. See docs/decisions/0015-courses-pay.md.
 --
 -- Everything in the shop costs five times what it did, every course pays eight to ten
 -- times more, and there are seven new courses: five to drive alone and two for friends.
@@ -10,6 +10,9 @@
 -- time. The server still can't see trucks, but a client can no longer claim a course it
 -- never drove.
 --
+-- The island's Sandfly is priced like every other rig. The fares (public.worlds) are
+-- the owner's own number and stay as they are.
+--
 -- Prices must match apps/web/src/app/shop.ts and vehicles.ts, and courses
 -- apps/web/src/app/missions.ts; shop.test.ts checks both.
 
@@ -18,7 +21,7 @@ alter table public.missions add column min_miles numeric(6, 2) not null default 
 
 insert into public.shop_items (key, price) values
   ('vehicle:overlander', 40), ('vehicle:prairie', 90), ('vehicle:highland', 140), ('vehicle:summit', 200),
-  ('vehicle:duneclaw', 275),
+  ('vehicle:duneclaw', 275), ('vehicle:sandfly', 150),
   ('paint:forestGreen', 5), ('paint:desertCream', 2.5), ('paint:rustRed', 2.5), ('paint:oliveDrab', 5),
   ('paint:skyBlue', 5), ('paint:mustard', 7.5), ('paint:lagoonTeal', 7.5), ('paint:chocolate', 10),
   ('paint:pearlWhite', 10), ('paint:sunsetOrange', 15), ('paint:midnight', 15),
@@ -40,7 +43,7 @@ insert into public.missions (id, reward, repeat_reward, cooldown_seconds, min_se
   ('southern-shore', 20, 7, 600, 78, 1, 0.66),
   ('high-ridge', 18, 6, 600, 15, 1, 0.13),
   ('snowfield', 25, 8, 600, 24, 1, 0.21),
-  ('far-bank', 30, 10, 600, 20, 1, 0.17)
+  ('far-bank', 30, 10, 600, 11, 1, 0.09)
 on conflict (id) do update set reward = excluded.reward, repeat_reward = excluded.repeat_reward,
   cooldown_seconds = excluded.cooldown_seconds, min_seconds = excluded.min_seconds, crew = excluded.crew,
   min_miles = excluded.min_miles;

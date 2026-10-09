@@ -3,8 +3,10 @@ import { CONVOY_MAX } from "./convoy";
 import { EXPLORE_MAX, FOG_CELLS, decodeCells } from "./fog";
 import type { Mission } from "./missions";
 import { countFound } from "./places";
-import { STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, type Loadout, type Progress } from "./shop";
+import { STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, soldOnlyIn, type Loadout, type Progress } from "./shop";
+import type { WorldId } from "./terrain";
 import type { VehicleId } from "./vehicles";
+import { WORLDS, isWorld } from "./worlds";
 
 /**
  * Where your miles, garage and map live. Single player keeps them in memory, so they're gone
@@ -18,6 +20,8 @@ export type Profile = Progress & {
   goals: string[];
   /** Keys of the garages and cafés found so far (places.ts). */
   found: string[];
+  /** Which world the truck is in. A flight changes it (ADR 0014). */
+  world: WorldId;
 };
 export type Friend = { id: string; name: string };
 
@@ -25,6 +29,10 @@ export type Friend = { id: string; name: string };
 export const NAME_PATTERN = /^[A-Za-z0-9 _-]{2,20}$/;
 const NAME_RULE = "2–20 letters, numbers, spaces, - or _.";
 export type Standing = { id: string; name: string; lifetime: number; me: boolean; garages: number; cafes: number; goals: string[] };
+
+const ONLY_SOLD = (world: WorldId) => `That's only sold on ${WORLDS[world].name}.`;
+/** One world's explored cells, started empty the first time it's asked for. */
+const cellsOf = (all: Map<WorldId, Set<number>>, world: WorldId) => all.get(world) ?? all.set(world, new Set()).get(world)!;
 
 export interface Store {
   readonly online: boolean;
@@ -41,10 +49,12 @@ export interface Store {
   markGoal(goal: string): void;
   /** The truck has come up to a garage or a café for the first time. */
   discover(key: string): void;
-  /** The truck has driven into a new cell of the map's fog (fog.ts). Saved with the next flush. */
+  /** The truck has driven into a new cell of the map's fog (fog.ts), in the world it's in. Saved with the next flush. */
   explore(cell: number): void;
-  /** The cells explored so far, earlier visits included. */
+  /** The cells explored so far in the world the truck is in, earlier visits included. */
   explored(): number[];
+  /** Pays the fare and moves the truck to another world. Resolves to why not, or null once it's aboard. */
+  fly(to: WorldId): Promise<string | null>;
   setName(name: string): Promise<string | null>;
   /** Asks to be friends; "friends" if they'd already asked you. */
   requestFriend(id: string): Promise<"pending" | "friends" | { error: string }>;
@@ -66,10 +76,10 @@ export class LocalStore implements Store {
   private asked = new Set<string>();
   private asking = new Set<string>();
   private friendIds = new Map<string, string>();
-  private cells = new Set<number>();
+  private cells = new Map<WorldId, Set<number>>();
 
-  constructor(id = "local", name: string | null = null) {
-    this.p = { ...freshProgress(), id, name, goals: [], found: [] };
+  constructor(id = "local", name: string | null = null, world: WorldId = "valley") {
+    this.p = { ...freshProgress(), id, name, goals: [], found: [], world };
   }
 
   get = () => this.p;
@@ -91,8 +101,18 @@ export class LocalStore implements Store {
     const price = priceOf(key);
     if (!Number.isFinite(price)) return "That isn't for sale.";
     if (owns(this.p, key)) return null;
+    const only = soldOnlyIn(key);
+    if (only && only !== this.p.world) return ONLY_SOLD(only);
     if (this.p.balance < price) return "Not enough miles yet.";
     this.set({ balance: this.p.balance - price, owned: [...this.p.owned, key] });
+    return null;
+  }
+
+  async fly(to: WorldId) {
+    if (!isWorld(to)) return "The plane doesn't go there.";
+    if (to === this.p.world) return null;
+    if (this.p.balance < WORLDS[to].fare) return "Not enough miles yet.";
+    this.set({ balance: this.p.balance - WORLDS[to].fare, world: to });
     return null;
   }
 
@@ -128,9 +148,9 @@ export class LocalStore implements Store {
   }
 
   explore(cell: number) {
-    this.cells.add(cell);
+    cellsOf(this.cells, this.p.world).add(cell);
   }
-  explored = () => [...this.cells];
+  explored = () => [...cellsOf(this.cells, this.p.world)];
 
   async setName(name: string) {
     if (!NAME_PATTERN.test(name.trim())) return NAME_RULE;
@@ -175,13 +195,15 @@ export class LocalStore implements Store {
 
 type Row = {
   id: string; name: string | null; lifetime: number; balance: number; owned: string[];
-  vehicle: VehicleId | null; loadout: Loadout; goals: string[]; discovered: string[];
+  vehicle: VehicleId | null; loadout: Loadout; goals: string[]; discovered: string[]; world?: string | null;
 };
 
 // The column is `discovered` because `found` means something else inside a database function.
+// A database that hasn't heard of the island yet sends no world: that's the valley.
 const toProfile = (r: Row): Profile => ({
   id: r.id, name: r.name, lifetime: Number(r.lifetime), balance: Number(r.balance), owned: r.owned ?? [],
   vehicle: r.vehicle, loadout: { ...STOCK_LOADOUT, ...(r.loadout ?? {}) }, goals: r.goals ?? [], found: r.discovered ?? [],
+  world: isWorld(r.world) ? r.world : "valley",
 });
 
 /** Progress on the server. Miles are batched and banked every few seconds. */
@@ -190,15 +212,16 @@ export class SupabaseStore implements Store {
   private p: Profile;
   private pending = 0;
   private listeners = new Set<() => void>();
-  private cells: Set<number>;
-  private unsent: number[] = [];
+  private cells = new Map<WorldId, Set<number>>();
+  private unsent: { world: WorldId; cell: number }[] = [];
 
   private constructor(private sb: SupabaseClient, row: Row, cells: number[]) {
     this.p = toProfile(row);
-    this.cells = new Set(cells);
+    this.cells.set(this.p.world, new Set(cells));
   }
 
   static async open(sb: SupabaseClient) {
+    // With no world named, `explored` answers for the one the player is in.
     const [{ data, error }, fog] = await Promise.all([sb.rpc("me"), sb.rpc("explored")]);
     if (error || !data) throw new Error(error?.message ?? "No profile");
     // A map that won't load is no reason to refuse the garage: it just starts fogged.
@@ -243,12 +266,37 @@ export class SupabaseStore implements Store {
 
   private async flushFog() {
     if (!this.unsent.length) return;
-    const sending = this.unsent.splice(0, EXPLORE_MAX);
-    const { error } = await this.sb.rpc("explore", { p_cells: sending });
+    // One world's cells at a time: each is saved against the world it was explored in.
+    const world = this.unsent[0].world;
+    const sending = this.unsent.filter((u) => u.world === world).slice(0, EXPLORE_MAX);
+    this.unsent = this.unsent.filter((u) => !sending.includes(u));
+    const p_cells = sending.map((u) => u.cell);
+    // The valley is the default, and named only by leaving it out, so this still saves
+    // against a database that hasn't heard of the island yet.
+    const { error } = await this.sb.rpc("explore", world === "valley" ? { p_cells } : { p_cells, p_world: world });
     if (error) this.unsent.unshift(...sending);
   }
 
-  buy = (key: string) => this.call("buy", { p_key: key });
+  async buy(key: string) {
+    const error = await this.call("buy", { p_key: key });
+    const only = soldOnlyIn(key);
+    return error?.includes("only sold") && only ? ONLY_SOLD(only) : error;
+  }
+
+  async fly(to: WorldId) {
+    // Whatever was driven and seen here is banked here first.
+    await this.flush();
+    if (this.unsent.length) await this.flushFog();
+    const error = await this.call("fly", { p_to: to });
+    if (error?.includes("not enough miles")) return "Not enough miles yet.";
+    // A database that hasn't had the island's migration yet has no such function.
+    if (error) return /could not find the function/i.test(error) ? "The plane isn't flying yet. Try again later." : error;
+    // The map of where it lands, if you've been there before.
+    const fog = await this.sb.rpc("explored", { p_world: to });
+    this.cells.set(to, new Set(fog.error ? [] : decodeCells(fog.data as string | null)));
+    return null;
+  }
+
   equip = (vehicle: VehicleId, loadout: Loadout) => this.call("equip", { p_vehicle: vehicle, p_loadout: loadout });
 
   async completeMission(m: Mission, seconds: number, crew: string[] = []) {
@@ -275,11 +323,12 @@ export class SupabaseStore implements Store {
   }
 
   explore(cell: number) {
-    if (!Number.isInteger(cell) || cell < 0 || cell >= FOG_CELLS || this.cells.has(cell)) return;
-    this.cells.add(cell);
-    this.unsent.push(cell);
+    const cells = cellsOf(this.cells, this.p.world);
+    if (!Number.isInteger(cell) || cell < 0 || cell >= FOG_CELLS || cells.has(cell)) return;
+    cells.add(cell);
+    this.unsent.push({ world: this.p.world, cell });
   }
-  explored = () => [...this.cells];
+  explored = () => [...cellsOf(this.cells, this.p.world)];
 
   async setName(name: string) {
     const error = await this.call("set_name", { p_name: name });
