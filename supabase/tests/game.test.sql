@@ -223,6 +223,23 @@ update public.profiles set discovered = '{garage:workshop,garage:barn,garage:quo
 reset role;
 select pg_temp.check((select cardinality(discovered) from public.profiles where id::text like '%a') = 2, 'players cannot write what they have found');
 
+-- Places are counted world by world, and an airstrip and an easter egg are places too (ADR 0016).
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select cardinality(discovered) from public.discover('airport:valley')) = 3, 'finding the airstrip is recorded');
+select pg_temp.check((select cardinality(discovered) from public.discover('egg:bank')) = 4, 'and so is looking inside an easter egg');
+select pg_temp.check((select cardinality(discovered) from public.discover('garage:shack')) = 5, 'and a garage on the island');
+select pg_temp.check((select cardinality(discovered) from public.discover('cafe:beach')) = 6, 'and the island''s café');
+select pg_temp.check((select garages = 1 and cafes = 1 and airports = 1 and eggs = 1 from public.leaderboard() where is_me),
+  'with no world named, the leaderboard counts the world you are in');
+select pg_temp.check((select garages = 1 and cafes = 1 and airports = 0 and eggs = 0 from public.leaderboard('island') where is_me),
+  'asked for the island, it counts only what is there');
+select pg_temp.check((select garages = 0 and cafes = 0 and airports = 0 and eggs = 0 from public.leaderboard('island') where not is_me), 'for your friend too');
+select pg_temp.check((select count(*) from public.leaderboard('island')) = 2, 'and is still you and your friends only');
+select pg_temp.check((select balance from public.profiles where id = (select auth.uid())) = (select balance from public.discover('egg:church')), 'finding pays nothing');
+reset role;
+select pg_temp.check((select count(*) from public.missions where id in ('beach-run', 'dune-dash', 'jungle-loop')) = 3, 'the island has its three courses');
+
 -- The map's fog: cells are only ever added, each player has their own, and nobody reads the table.
 select pg_temp.as_player('a');
 set role authenticated;
@@ -252,21 +269,21 @@ select pg_temp.refused($$ select public.fly('island') $$, 'not enough miles', 'c
 select pg_temp.refused($$ select public.fly('moon') $$, 'no such world', 'cannot fly somewhere that is not there');
 select pg_temp.refused($$ select public.fly(null) $$, 'no such world', 'nor to nowhere');
 reset role;
-update public.profiles set balance = 500 where id::text like '%a';
+update public.profiles set balance = 340 where id::text like '%a';
 select pg_temp.as_player('a');
 set role authenticated;
 select pg_temp.refused($$ select public.buy('vehicle:sandfly') $$, 'only sold in island', 'the Sandfly is not sold in the valley');
-select pg_temp.check((select balance = 500 and world = 'valley' from public.fly('valley')), 'flying to where you already are costs nothing');
-select pg_temp.check((select balance = 200 and world = 'island' from public.fly('island')), 'a flight takes the fare and takes you there');
-select pg_temp.check((select balance = 200 and world = 'island' from public.fly('island')), 'asking twice charges once');
+select pg_temp.check((select balance = 340 and world = 'valley' from public.fly('valley')), 'flying to where you already are costs nothing');
+select pg_temp.check((select balance = 190 and world = 'island' from public.fly('island')), 'a flight takes the fare and takes you there');
+select pg_temp.check((select balance = 190 and world = 'island' from public.fly('island')), 'asking twice charges once');
+select pg_temp.check((select balance from public.buy('vehicle:sandfly')) = 40, 'the Sandfly is sold on the island');
 select pg_temp.refused($$ select public.fly('valley') $$, 'not enough miles', 'the way home costs the same');
-select pg_temp.check((select balance from public.buy('vehicle:sandfly')) = 50, 'the Sandfly is sold on the island');
 select pg_temp.check((select vehicle from public.equip('sandfly', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}')) = 'sandfly', 'and can be driven once bought');
-select pg_temp.check((select balance from public.buy('tyres:allTerrain')) = 40, 'everything else is sold there too');
+select pg_temp.check((select balance from public.buy('tyres:allTerrain')) = 38, 'everything else is sold there too');
 update public.profiles set world = 'valley';
 reset role;
 select pg_temp.check((select world from public.profiles where id::text like '%a') = 'island', 'players cannot write where they are');
-select pg_temp.check((select count(*) = 1 and min(origin) = 'valley' and min(destination) = 'island' and sum(fare) = 300 from private.flight_log where user_id::text like '%a'),
+select pg_temp.check((select count(*) = 1 and min(origin) = 'valley' and min(destination) = 'island' and sum(fare) = 150 from private.flight_log where user_id::text like '%a'),
   'every flight is logged');
 
 -- The fog is kept for each world.
@@ -330,7 +347,7 @@ reset role;
 
 -- Only the game's own functions can be called, and only when signed in.
 select pg_temp.check(not has_function_privilege('anon', 'public.me()', 'execute'), 'signed-out visitors cannot call the game''s functions');
-select pg_temp.check(not has_function_privilege('anon', 'public.discover(text)', 'execute') and not has_function_privilege('anon', 'public.leaderboard()', 'execute')
+select pg_temp.check(not has_function_privilege('anon', 'public.discover(text)', 'execute') and not has_function_privilege('anon', 'public.leaderboard(text)', 'execute')
   and not has_function_privilege('anon', 'public.complete_convoy(text, numeric, uuid[])', 'execute')
   and not has_function_privilege('anon', 'public.explore(int[], text)', 'execute') and not has_function_privilege('anon', 'public.explored(text)', 'execute')
   and not has_function_privilege('anon', 'public.fly(text)', 'execute'), 'nor the ones added since');

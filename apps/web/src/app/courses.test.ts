@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { startRun, tick } from "./mission-run";
 import { makeCar, noInput, step } from "./physics";
-import { METRES_PER_MILE, STOCK_LOADOUT, specFor, type Loadout } from "./shop";
-import { STARTERS, vehicleById } from "./vehicles";
+import { buildIsland } from "./island";
+import { METRES_PER_MILE, PARTS, STOCK_LOADOUT, priceOf, specFor, type Loadout } from "./shop";
+import { STARTERS, VEHICLES, vehicleById } from "./vehicles";
 import { buildWorld, type Mission } from "./world";
 
 const world = buildWorld();
@@ -67,18 +68,30 @@ describe("the courses", () => {
 });
 
 describe("the economy", () => {
-  it("pays even a repeat run at least five times the miles it covers", () => {
-    for (const m of world.missions) expect(m.repeatReward, m.id).toBeGreaterThanOrEqual(5 * miles(m));
+  const everyCourse = [...world.missions, ...buildIsland().missions];
+  /** Miles an hour at the fastest starter's top speed: the most plain driving earns at first. */
+  const fastestStarter = (Math.max(...STARTERS.map((v) => v.maxSpeed)) * 3600) / METRES_PER_MILE;
+
+  it("pays even a repeat run at least five times the miles it covers, in both worlds", () => {
+    for (const m of everyCourse) expect(m.repeatReward, m.id).toBeGreaterThanOrEqual(5 * miles(m));
   });
 
   it("pays a first finish at least two and a half times a repeat", () => {
-    for (const m of world.missions) expect(m.reward, m.id).toBeGreaterThanOrEqual(2.5 * m.repeatReward);
+    for (const m of everyCourse) expect(m.reward, m.id).toBeGreaterThanOrEqual(2.5 * m.repeatReward);
   });
 
   it("puts the best rig hours of driving away, and every course's first finish together within reach of it", () => {
     const best = vehicleById("duneclaw").price;
-    const fastestStarter = Math.max(...STARTERS.map((v) => v.maxSpeed)) * 3600 / METRES_PER_MILE;
     expect(best / fastestStarter).toBeGreaterThan(6);
     expect(world.missions.reduce((sum, m) => sum + m.reward, 0)).toBeGreaterThan(best);
+  });
+
+  it("keeps the first upgrade of each kind a quarter of an hour's drive away, bar the snorkel and snow gear", () => {
+    const cheapest = (prices: number[]) => Math.min(...prices.filter((p) => p > 0));
+    const quarterHour = fastestStarter / 4;
+    expect(cheapest(VEHICLES.filter((v) => !v.only).map((v) => v.price))).toBeLessThanOrEqual(quarterHour);
+    for (const kind of ["paint", "tyres", "lights"] as const) expect(cheapest(PARTS[kind].map((p) => p.price)), kind).toBeLessThanOrEqual(quarterHour);
+    // The snorkel and the snow gear are for later, and courses pay for them.
+    for (const key of ["snorkel:snorkel", "winter:chains", "tyres:studded"]) expect(priceOf(key), key).toBeGreaterThan(quarterHour * 2);
   });
 });

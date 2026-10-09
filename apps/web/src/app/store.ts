@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONVOY_MAX } from "./convoy";
 import { EXPLORE_MAX, FOG_CELLS, decodeCells } from "./fog";
 import type { Mission } from "./missions";
-import { countFound } from "./places";
+import { countFound, type FoundCount } from "./places";
 import { STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, soldOnlyIn, type Loadout, type Progress } from "./shop";
 import type { WorldId } from "./terrain";
 import type { VehicleId } from "./vehicles";
@@ -28,7 +28,8 @@ export type Friend = { id: string; name: string };
 /** What a name may be. Must match the check on `profiles.name` in the migrations. */
 export const NAME_PATTERN = /^[A-Za-z0-9 _-]{2,20}$/;
 const NAME_RULE = "2–20 letters, numbers, spaces, - or _.";
-export type Standing = { id: string; name: string; lifetime: number; me: boolean; garages: number; cafes: number; goals: string[] };
+/** A row of the leaderboard. `found` is what they've found in `world`, the one the viewer is in. */
+export type Standing = { id: string; name: string; lifetime: number; me: boolean; world: WorldId; found: FoundCount; goals: string[] };
 
 const ONLY_SOLD = (world: WorldId) => `That's only sold on ${WORLDS[world].name}.`;
 /** One world's explored cells, started empty the first time it's asked for. */
@@ -188,8 +189,8 @@ export class LocalStore implements Store {
   }
 
   async leaderboard() {
-    const found = countFound(this.p.found);
-    return [{ id: this.p.id, name: this.p.name ?? "You", lifetime: this.p.lifetime, me: true, garages: found.garage, cafes: found.cafe, goals: this.p.goals }];
+    const { world } = this.p;
+    return [{ id: this.p.id, name: this.p.name ?? "You", lifetime: this.p.lifetime, me: true, world, found: countFound(this.p.found, world), goals: this.p.goals }];
   }
 }
 
@@ -354,9 +355,14 @@ export class SupabaseStore implements Store {
   }
 
   async leaderboard() {
-    const { data } = await this.sb.rpc("leaderboard");
-    return (data ?? []).map((r: { id: string; name: string; lifetime: number; is_me: boolean; garages: number; cafes: number; goals: string[] | null }) => ({
-      id: r.id, name: r.name, lifetime: Number(r.lifetime), me: r.is_me, garages: r.garages ?? 0, cafes: r.cafes ?? 0, goals: r.goals ?? [],
+    const { world } = this.p;
+    let { data } = await this.sb.rpc("leaderboard", { p_world: world });
+    // A database that can't count by world yet (before the island's second migration) still counts the valley.
+    if (!data) ({ data } = await this.sb.rpc("leaderboard"));
+    type Row = { id: string; name: string; lifetime: number; is_me: boolean; garages: number; cafes: number; airports?: number; eggs?: number; goals: string[] | null };
+    return (data ?? []).map((r: Row) => ({
+      id: r.id, name: r.name, lifetime: Number(r.lifetime), me: r.is_me, world,
+      found: { garage: r.garages ?? 0, cafe: r.cafes ?? 0, airport: r.airports ?? 0, egg: r.eggs ?? 0 }, goals: r.goals ?? [],
     }));
   }
 }

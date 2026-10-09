@@ -87,6 +87,8 @@ export const PALETTE = {
   carTrim: "#3a332e",
   tyre: "#26221f",
   rim: "#d8d0c4",
+  /** Snow chains: worn steel, light enough to read against the tyre at a distance. */
+  chains: "#a8a196",
   headlight: "#fff2d6",
   luggage: ["#3f6d8c", "#6b8f3a", "#d9a441"],
 
@@ -179,7 +181,47 @@ export const PALETTE = {
   fern: ["#3f8f3f", "#2f7f45", "#58a045", "#8fae4a"],
   thatch: ["#c9a55a", "#b8924a"],
   bamboo: "#c9b06a",
+  /** The dune outpost's sun-bleached planks, and the jungle lodge's roof. */
+  driftwood: "#a89a82",
+  jungleThatch: ["#8f7a44", "#6f5e36"],
   surfboard: ["#ee6f5b", "#3fb0b4", "#f3d59c", "#efe6d6"],
+
+  /**
+   * Animals (ADR 0015). Coats are cooler and darker than the ground under them, so a herd
+   * reads against the orange grass, the snow and the pale sand; the macaws are the one
+   * bright thing, the way the valley has a few larches.
+   */
+  animal: {
+    deerCoat: "#7a563f",
+    deerPale: "#eadcc2",
+    hoof: "#3d2d24",
+    antler: "#dccdb0",
+    hareCoat: "#8f7b62",
+    hareTail: "#f4efe6",
+    reindeerCoat: "#6a5f55",
+    reindeerPale: "#e6dfd2",
+    duckBody: "#7d6550",
+    duckHead: "#2f6048",
+    duckWing: "#8c8070",
+    bill: "#e0a23a",
+    crabShell: "#d4512e",
+    crabClaw: "#e9774b",
+    crabLeg: "#b8442a",
+    gullWhite: "#f5f2ec",
+    gullWing: "#a9aeb6",
+    gullTip: "#34343a",
+    boarCoat: "#5c4637",
+    boarBristle: "#2e2520",
+    boarSnout: "#a27e6c",
+    tusk: "#efe6d6",
+    macawRed: "#d4362a",
+    macawYellow: "#efb93a",
+    macawBlue: "#2f6fb5",
+    macawFace: "#f2ece2",
+    dolphinBack: "#6e7d8c",
+    dolphinBelly: "#d9dee2",
+    eye: "#1c1a1a",
+  },
 
   // Airstrips and the plane.
   tarmac: "#77716b",

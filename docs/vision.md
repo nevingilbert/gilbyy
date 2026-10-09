@@ -38,7 +38,7 @@ HUD that is nearly absent.
   that pay out miles; a convoy by the café for two to four friends, who drive it
   together and are paid when everyone is home; and a race by the camp, where every
   finisher is paid the same and the winner gets only the win. None of them is required.
-- An airstrip hidden over the river, where 300 miles buys a flight, truck and all, to an
+- An airstrip hidden over the river, where 150 miles buys a flight, truck and all, to an
   island: sea all round, a beach, dunes behind it and jungle in the middle, with its
   own camp on the beach and a garage that sells a dune buggy found nowhere else. The
   flight home costs the same. See `decisions/0014-airports-and-the-island.md`.

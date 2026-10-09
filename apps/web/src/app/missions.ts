@@ -5,7 +5,7 @@ import { CAFE, CAMP_GATE, FROZEN, LAKES, ROW, START, WORLD, nearest, sampleGrid,
  * Optional driving challenges, laid out on the real terrain at load. Drive to a start
  * arch, press E, and go through the gates in order. Finishing earns miles; there is
  * no failing, only giving up. Courses pay far better than the same minutes spent just
- * driving (ADR 0015). Pure data, no three.js.
+ * driving (ADR 0017). Pure data, no three.js.
  */
 export type Gate = { x: number; z: number; heading: number; width: number };
 export type Mission = {
@@ -73,7 +73,7 @@ function helpers(t: Terrain) {
 }
 
 /** Each gate faces along the path: from the point before it toward the point after it. */
-function gatesAlong(start: Pt, pts: Pt[], width: number): Gate[] {
+export function gatesAlong(start: Pt, pts: Pt[], width: number): Gate[] {
   return pts.map((p, i) => {
     const prev = i === 0 ? start : pts[i - 1];
     const next = pts[i + 1] ?? p;
@@ -94,8 +94,9 @@ const secondsFor = (metres: number) => Math.floor(metres / 23);
  * drove the course doesn't.
  */
 const milesFor = (metres: number) => Math.floor(((metres * 0.6) / METRES_PER_MILE) * 100) / 100;
-/** How long a course's line is, and the limits that follow from it. */
-const limits = (metres: number) => ({ minSeconds: secondsFor(metres), minMiles: milesFor(metres) });
+/** The limits that follow from how long a course's line is. */
+export const courseLimits = (metres: number) => ({ minSeconds: secondsFor(metres), minMiles: milesFor(metres) });
+const limits = courseLimits;
 
 /** Weaving between flags through the thickest forest within reach of camp. */
 function forestSlalom(t: Terrain): Mission | null {
@@ -506,7 +507,7 @@ const addCourse = (dist: Float32Array, m: Mission, reach: number) => {
 };
 
 /** Distance to the nearest course's driving line, out to `reach` metres. */
-const courseDistOf = (missions: Mission[], reach: number) => {
+export const courseDistOf = (missions: Mission[], reach: number) => {
   const dist = new Float32Array(ROW * ROW).fill(1000);
   for (const m of missions) addCourse(dist, m, reach);
   return dist;
@@ -516,7 +517,7 @@ export function planMissions(t: Terrain) {
   const solo = [forestSlalom(t), ridgeRun(t), lakeshoreLoop(t), iceDrift(t)].filter((m): m is Mission => !!m);
   const withConvoy = [...solo, convoy(t, courseDistOf(solo, 60))].filter((m): m is Mission => !!m);
   const missions = [...withConvoy, race(t, courseDistOf(withConvoy, 60))].filter((m): m is Mission => !!m);
-  // The courses added with ADR 0015, each laid out clear of every course before it, so the
+  // The courses added with ADR 0017, each laid out clear of every course before it, so the
   // first six stay exactly where they were.
   const avoid = courseDistOf(missions, 160);
   for (const plan of [grandTour, hillRace, deepWoods, southernShore, highRidge, snowfield, farBank]) {
@@ -528,3 +529,6 @@ export function planMissions(t: Terrain) {
   // Keep every course clear of trees and rocks along its driving line.
   return { missions, courseDist: courseDistOf(missions, 20) };
 }
+
+/** How far a course is to drive, from its start through every flag. */
+export const courseLength = length;

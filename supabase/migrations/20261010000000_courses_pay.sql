@@ -1,32 +1,37 @@
--- Courses pay; driving around is the slow way. See docs/decisions/0015-courses-pay.md.
+-- Courses pay; driving around is the slow way. See docs/decisions/0017-courses-pay.md.
 --
 -- Everything in the shop costs five times what it did, every course pays eight to ten
--- times more, and there are seven new courses: five to drive alone and two for friends.
--- Leaving a truck to circle on its own still banks miles, but a few courses now earn
--- more than an hour of that.
+-- times more (the island's too), and there are seven new valley courses: five to drive
+-- alone and two for friends. Leaving a truck to circle on its own still banks miles,
+-- but a few courses now earn more than an hour of that.
+--
+-- The first upgrade of each kind keeps its old price, so a newcomer can drive to it in
+-- a quarter of an hour: the Overlander (8), the two cheapest paints (0.5), all-terrain
+-- tyres (2) and halogen bulbs (1). The snorkel and the snow gear go up with the rest.
 --
 -- Because a course is worth more, its claim is checked harder: a run is paid only if
 -- the miles banked while it was on add up to most of the course, and only one run at a
 -- time. The server still can't see trucks, but a client can no longer claim a course it
 -- never drove.
 --
--- The island's Sandfly is priced like every other rig. The fares (public.worlds) are
--- the owner's own number and stay as they are.
+-- The island's Sandfly is priced like every other rig. The fares (public.worlds, 150
+-- each way since 20261009233000_cheaper_flights.sql) are the owner's own number and
+-- stay as they are.
 --
 -- Prices must match apps/web/src/app/shop.ts and vehicles.ts, and courses
--- apps/web/src/app/missions.ts; shop.test.ts checks both.
+-- apps/web/src/app/missions.ts and island.ts; shop.test.ts checks both.
 
 -- The miles a run must show for itself: three fifths of the line through its flags.
 alter table public.missions add column min_miles numeric(6, 2) not null default 0;
 
 insert into public.shop_items (key, price) values
-  ('vehicle:overlander', 40), ('vehicle:prairie', 90), ('vehicle:highland', 140), ('vehicle:summit', 200),
-  ('vehicle:duneclaw', 275), ('vehicle:sandfly', 150),
-  ('paint:forestGreen', 5), ('paint:desertCream', 2.5), ('paint:rustRed', 2.5), ('paint:oliveDrab', 5),
-  ('paint:skyBlue', 5), ('paint:mustard', 7.5), ('paint:lagoonTeal', 7.5), ('paint:chocolate', 10),
-  ('paint:pearlWhite', 10), ('paint:sunsetOrange', 15), ('paint:midnight', 15),
-  ('tyres:allTerrain', 10), ('tyres:mud', 20), ('tyres:studded', 25), ('tyres:big33', 45), ('tyres:crawler37', 75),
-  ('lights:halogen', 5), ('lights:driving', 15), ('lights:bar', 30), ('lights:fullRig', 50),
+  ('vehicle:prairie', 90), ('vehicle:highland', 140), ('vehicle:summit', 200), ('vehicle:duneclaw', 275),
+  ('vehicle:sandfly', 150),
+  ('paint:forestGreen', 5), ('paint:oliveDrab', 5), ('paint:skyBlue', 5), ('paint:mustard', 7.5),
+  ('paint:lagoonTeal', 7.5), ('paint:chocolate', 10), ('paint:pearlWhite', 10), ('paint:sunsetOrange', 15),
+  ('paint:midnight', 15),
+  ('tyres:mud', 20), ('tyres:studded', 25), ('tyres:big33', 45), ('tyres:crawler37', 75),
+  ('lights:driving', 15), ('lights:bar', 30), ('lights:fullRig', 50),
   ('snorkel:snorkel', 45), ('winter:chains', 30)
 on conflict (key) do update set price = excluded.price;
 
@@ -43,7 +48,10 @@ insert into public.missions (id, reward, repeat_reward, cooldown_seconds, min_se
   ('southern-shore', 20, 7, 600, 78, 1, 0.66),
   ('high-ridge', 18, 6, 600, 15, 1, 0.13),
   ('snowfield', 25, 8, 600, 24, 1, 0.21),
-  ('far-bank', 30, 10, 600, 11, 1, 0.09)
+  ('far-bank', 30, 10, 600, 11, 1, 0.09),
+  ('beach-run', 15, 5, 600, 46, 1, 0.4),
+  ('dune-dash', 20, 6, 600, 56, 1, 0.48),
+  ('jungle-loop', 35, 12, 600, 145, 1, 1.25)
 on conflict (id) do update set reward = excluded.reward, repeat_reward = excluded.repeat_reward,
   cooldown_seconds = excluded.cooldown_seconds, min_seconds = excluded.min_seconds, crew = excluded.crew,
   min_miles = excluded.min_miles;

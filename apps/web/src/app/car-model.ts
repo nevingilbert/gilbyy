@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { PALETTE } from "./palette";
 import { wheelGround, type Car, type CarSpec } from "./physics";
-import { lightsOf, paintColour, snorkelOf, tyresOf, type Loadout } from "./shop";
+import { lightsOf, paintColour, snorkelOf, tyresOf, winterOf, type Loadout } from "./shop";
 import { buildVehicleBody } from "./vehicle-models";
 import { vehicleById, type VehicleId } from "./vehicles";
 import type { Ground } from "./world";
@@ -13,6 +13,23 @@ function tyreGeometry(radius: number, width: number, lugs: number) {
   for (let i = 0; i < lugs; i++) {
     const lug = new THREE.BoxGeometry(0.07, width * 0.92, radius * 0.3).deleteAttribute("uv");
     parts.push(lug.translate(radius, 0, 0).rotateY((i / lugs) * Math.PI * 2));
+  }
+  return mergeGeometries(parts).rotateZ(Math.PI / 2);
+}
+
+/**
+ * Snow chains for a tyre: a ring of steel down each sidewall and ten cross chains over
+ * the tread between them, standing just proud of the tread and its lugs. Axle along x.
+ */
+function chainGeometry(radius: number, width: number, lugs: number) {
+  const out = radius * (lugs ? 1.15 : 1) + 0.015;
+  const parts: THREE.BufferGeometry[] = [];
+  for (const side of [-1, 1]) {
+    parts.push(new THREE.TorusGeometry(out - 0.04, 0.018, 4, 20).deleteAttribute("uv").rotateX(Math.PI / 2).translate(0, (side * width) / 2, 0));
+  }
+  for (let i = 0; i < 10; i++) {
+    const cross = new THREE.BoxGeometry(0.035, width + 0.04, 0.05).deleteAttribute("uv");
+    parts.push(cross.translate(out, 0, 0).rotateY((i / 10) * Math.PI * 2));
   }
   return mergeGeometries(parts).rotateZ(Math.PI / 2);
 }
@@ -47,6 +64,7 @@ export function buildCar(vehicle: VehicleId) {
   // Wheels hang off the root, not the body, so they can follow the ground on their own.
   const tyreMat = new THREE.MeshLambertMaterial({ color: PALETTE.tyre, flatShading: true });
   const rimMat = new THREE.MeshLambertMaterial({ color: PALETTE.rim, flatShading: true });
+  const chainMat = new THREE.MeshLambertMaterial({ color: PALETTE.chains, flatShading: true });
   const wheels = [
     [1, 1], [-1, 1], [1, -1], [-1, -1],
   ].map(([sx, sz]) => {
@@ -55,10 +73,13 @@ export function buildCar(vehicle: VehicleId) {
     const tyre = new THREE.Mesh(undefined, tyreMat);
     tyre.castShadow = true;
     const rim = new THREE.Mesh(undefined, rimMat);
-    spin.add(tyre, rim);
+    // On the spin group, so the chains turn with the tyre.
+    const chains = new THREE.Mesh(undefined, chainMat);
+    chains.visible = false;
+    spin.add(tyre, rim, chains);
     pivot.add(spin);
     root.add(pivot);
-    return { pivot, spin, tyre, rim, sx, z: (sz * v.wheelbase) / 2 };
+    return { pivot, spin, tyre, rim, chains, sx, z: (sz * v.wheelbase) / 2 };
   });
 
   let radius = v.wheelRadius;
@@ -84,13 +105,17 @@ export function buildCar(vehicle: VehicleId) {
       fittedTyres = t.id;
       const tyreGeo = tyreGeometry(radius, t.width, t.lugs);
       const rimGeo = new THREE.CylinderGeometry(radius * 0.52, radius * 0.52, t.width + 0.02, 8).rotateZ(Math.PI / 2);
+      const chainGeo = chainGeometry(radius, t.width, t.lugs);
       for (const w of wheels) {
         w.tyre.geometry.dispose();
         w.rim.geometry.dispose();
+        w.chains.geometry.dispose();
         w.tyre.geometry = tyreGeo;
         w.rim.geometry = rimGeo;
+        w.chains.geometry = chainGeo;
       }
     }
+    for (const w of wheels) w.chains.visible = winterOf(l).fitted;
     setLights(glow);
   }
 
@@ -141,7 +166,7 @@ export function buildCar(vehicle: VehicleId) {
     root.traverse((o) => {
       if (o instanceof THREE.Mesh) o.geometry.dispose();
     });
-    for (const m of [paint, lamp, tyreMat, rimMat]) m.dispose();
+    for (const m of [paint, lamp, tyreMat, rimMat, chainMat]) m.dispose();
   }
 
   return { object: root, vehicle, top: parts.top, update, setLoadout, setLights, park, dispose };

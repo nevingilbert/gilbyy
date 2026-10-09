@@ -6,8 +6,9 @@ import { VEHICLES, vehicleById, type VehicleId } from "./vehicles";
 /**
  * The garage shop. Miles you drive (and earn on missions) are money: spend them on
  * rigs and parts. Prices are set so the courses, which pay far better than driving
- * around, are the quick way to them (ADR 0015). Lifetime miles are separate and only
- * ever go up; that is what the leaderboard shows.
+ * around, are the quick way to them (ADR 0017), except the first upgrade of each kind,
+ * which a newcomer can drive to in a quarter of an hour. Lifetime miles are separate
+ * and only ever go up; that is what the leaderboard shows.
  *
  * Prices here must match `supabase/migrations/…_shop.sql`, which the server uses to
  * check purchases; `shop.test.ts` holds the two together.
@@ -36,8 +37,8 @@ export type Toggle = Base & { fitted: boolean };
 export const PAINTS: Paint[] = [
   { id: "factory", name: "Factory colour", blurb: "How it left the showroom.", price: 0, color: "" },
   { id: "forestGreen", name: "Forest Green", blurb: "Blends into the pines.", price: 5, color: PALETTE.paint.forestGreen },
-  { id: "desertCream", name: "Desert Cream", blurb: "Hides the dust.", price: 2.5, color: PALETTE.paint.desertCream },
-  { id: "rustRed", name: "Rust Red", blurb: "The classic.", price: 2.5, color: PALETTE.paint.rustRed },
+  { id: "desertCream", name: "Desert Cream", blurb: "Hides the dust.", price: 0.5, color: PALETTE.paint.desertCream },
+  { id: "rustRed", name: "Rust Red", blurb: "The classic.", price: 0.5, color: PALETTE.paint.rustRed },
   { id: "oliveDrab", name: "Olive Drab", blurb: "Surplus-store chic.", price: 5, color: PALETTE.paint.oliveDrab },
   { id: "skyBlue", name: "Sky Blue", blurb: "Like the brochure.", price: 5, color: PALETTE.paint.skyBlue },
   { id: "mustard", name: "Mustard", blurb: "Very 1974.", price: 7.5, color: PALETTE.paint.mustard },
@@ -50,7 +51,7 @@ export const PAINTS: Paint[] = [
 
 export const TYRES: Tyre[] = [
   { id: "road", name: "Road tyres", blurb: "Fine on grass. Small rocks only. Useless on snow.", price: 0, radiusAdd: 0, width: 0.32, lugs: 0, lift: 0, gripAdd: 0, clearanceAdd: 0, snowGrip: 0.2 },
-  { id: "allTerrain", name: "All-terrain", blurb: "A little more bite everywhere.", price: 10, radiusAdd: 0.03, width: 0.35, lugs: 12, lift: 0.04, gripAdd: 0.08, clearanceAdd: 0.15, snowGrip: 0.35 },
+  { id: "allTerrain", name: "All-terrain", blurb: "A little more bite everywhere.", price: 2, radiusAdd: 0.03, width: 0.35, lugs: 12, lift: 0.04, gripAdd: 0.08, clearanceAdd: 0.15, snowGrip: 0.35 },
   { id: "mud", name: "Mud-terrain", blurb: "Chunky lugs. Steeper hills.", price: 20, radiusAdd: 0.06, width: 0.39, lugs: 10, lift: 0.08, gripAdd: 0.16, clearanceAdd: 0.3, snowGrip: 0.4 },
   { id: "studded", name: "Studded snow tyres", blurb: "Bite on snow and ice. Small rocks only.", price: 25, radiusAdd: 0.02, width: 0.34, lugs: 14, lift: 0.02, gripAdd: 0.04, clearanceAdd: 0.05, snowGrip: 0.95 },
   { id: "big33", name: "33-inch mud", blurb: "Lifted. Rolls over boulders.", price: 45, radiusAdd: 0.12, width: 0.44, lugs: 10, lift: 0.18, gripAdd: 0.24, clearanceAdd: 0.65, snowGrip: 0.45 },
@@ -59,7 +60,7 @@ export const TYRES: Tyre[] = [
 
 export const LIGHTS: Lights[] = [
   { id: "stock", name: "Stock headlights", blurb: "Dim and yellow. Drive slowly.", price: 0, reach: 26, spread: 0.42, power: 1, fogLamps: false, bar: false, ditch: false },
-  { id: "halogen", name: "Halogen bulbs", blurb: "Whiter, further.", price: 5, reach: 42, spread: 0.45, power: 1.8, fogLamps: false, bar: false, ditch: false },
+  { id: "halogen", name: "Halogen bulbs", blurb: "Whiter, further.", price: 1, reach: 42, spread: 0.45, power: 1.8, fogLamps: false, bar: false, ditch: false },
   { id: "driving", name: "Bumper driving lamps", blurb: "Wide light low down.", price: 15, reach: 55, spread: 0.62, power: 2.5, fogLamps: true, bar: false, ditch: false },
   { id: "bar", name: "Roof light bar", blurb: "Night becomes day, mostly.", price: 30, reach: 90, spread: 0.58, power: 3.4, fogLamps: true, bar: true, ditch: false },
   { id: "fullRig", name: "Full rig", blurb: "Bar, driving lamps, ditch lights.", price: 50, reach: 115, spread: 0.72, power: 4.2, fogLamps: true, bar: true, ditch: true },

@@ -69,7 +69,7 @@ export const VEHICLES: Vehicle[] = [
   // Inspired by the Land Cruiser 70-series: the original red overlander from the trailers.
   {
     id: "overlander", name: "Overlander", blurb: "Classic expedition wagon with a roof rack. Goes anywhere slowly.",
-    price: 40, starter: false, length: 4.6, width: 1.9, height: 2.0, wheelbase: 2.6, track: 1.7,
+    price: 8, starter: false, length: 4.6, width: 1.9, height: 2.0, wheelbase: 2.6, track: 1.7,
     wheelRadius: 0.42, ride: 1.15, travel: 0.32, accel: 5.4, maxSpeed: 17.5, grip: 1.08, clearance: 0.55, wade: 1.4, factoryPaint: "rustRed",
   },
   // Inspired by the Toyota Tundra: a full-size crew-cab pickup.

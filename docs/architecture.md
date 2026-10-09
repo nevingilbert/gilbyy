@@ -101,6 +101,13 @@ Pure modules, no three.js, all unit-tested:
     a time: the plane's pose, its ramp and wheels, where the truck is, the camera, and
     how much is lost in cloud. Also the plane's measurements, which the model shares,
     and the parked plane's colliders.
+- `wildlife.ts`: the animals (`decisions/0015-wildlife.md`). `SPECIES` says which world
+  each kind lives in and how it behaves, `habitat()` where a herd can make its home,
+  `placeHerds()` puts every herd down from a fixed seed (the first ones in front of the
+  camp, for the opening shot), and `stepWildlife()` moves the herds within about 320 m
+  of the truck: grazing, following the herd, and running from trucks and the train, off
+  to the side of their path when they're coming this way. Birds fly off together and
+  settle again; macaws and dolphins go where the time says. Not shared between players.
 - `store.ts`: progress behind one interface. `LocalStore` is in memory for single
   player; `SupabaseStore` calls the database functions.
 - `net.ts`: presence, tents, poses, friend requests and chat. `SupabaseNet` runs over
@@ -127,6 +134,9 @@ Rendering and UI:
   - flying: `airport-model.ts` (runway, paint, lights, windsock, terminal) and
     `plane-model.ts` (the jet, its ramp and its wheels);
   - missions: `mission-models.ts`;
+  - animals: `animal-models.ts`, each species built from faceted lumps and sticks and
+    cut into the parts that move, one instanced mesh per part. `scene.ts` steps them
+    each frame from the truck, other players' trucks and the train;
   - other players' trucks: `remote.ts`, carried forward between poses along the bend
     they were taking (`guessPose` in `net.ts`), with any correction faded in;
   - the garage interior: `showroom.ts`.
@@ -193,11 +203,14 @@ for sign-in (Google only), and Realtime for the shared valley. See
   the design; `private.flight_log` has no policies because only the owner reads it;
   and the foreign keys to `worlds` have no index, because it has two rows that are
   never deleted.
-- `20261009200000_courses_pay.sql` raises every price fivefold (the Sandfly's too, but
-  not the fares) and every course's payout eightfold or more, adds the seven new
-  courses, and adds `missions.min_miles`. Both `complete_mission()` and
-  `complete_convoy()` now pay through `private.pay_run()`, which also refuses a run
-  that overlaps the last one or banked less than `min_miles` since it (ADR 0015).
+- `20261009233000_cheaper_flights.sql` lowers both fares in `worlds` to 150 miles each
+  way, the owner's call (ADR 0014).
+- `20261010000000_courses_pay.sql` raises prices fivefold, all but the first upgrade
+  of each kind (the Sandfly's too, but not the fares), and every course's payout
+  eightfold or more, the island's included; adds the seven new valley courses; and adds
+  `missions.min_miles`. Both `complete_mission()` and `complete_convoy()` now pay
+  through `private.pay_run()`, which also refuses a run that overlaps the last one or
+  banked less than `min_miles` since it (ADR 0017).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

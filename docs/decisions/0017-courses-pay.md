@@ -1,9 +1,9 @@
-# 0015 — Courses pay; driving around is the slow way
+# 0017 — Courses pay; driving around is the slow way
 
 Date: 2026-10-09
 Status: Accepted. Changes the numbers in `0007` (prices, mission payouts), `0010`/`0011`
-(convoy and race payouts) and `0014` (the Sandfly's price, not the fares), and adds a
-check to how every course is paid. Their rules
+(convoy and race payouts), `0014` (the Sandfly's price, not the fares) and `0016` (the
+island's course payouts), and adds a check to how every course is paid. Their rules
 stand: miles are the one currency, courses are optional and never fail beyond giving
 up, and every finisher of a convoy or a race is paid the same.
 
@@ -21,16 +21,25 @@ much more.
 
 ## Decision
 
-- **Prices are five times what they were.** The Duneclaw is 275 miles; the cheapest
-  paints 2.5. A starter circling at its top speed (17 m/s, 38 mph) needs over seven
-  hours for the Duneclaw. The island's Sandfly (`0014`) is priced like the other rigs, 150.
-  The flight's fare is not a shop price: it stays the 300 miles each way the owner chose
-  in `0014`, and is now well within reach of someone who drives the courses.
-- **Courses pay eight to ten times more.** A first finish pays 12 to 40 miles and a
-  repeat 4 to 12, still no more than once per course every ten minutes. Even a repeat
-  pays at least five times the miles the course covers; the first finish of every
-  course together is more than the Duneclaw costs. A player who drives the courses gets
-  the best rig in an evening; one who leaves the laptop circling, overnight.
+- **Prices are five times what they were,** bar the first upgrade of each kind. The
+  Duneclaw is 275 miles; a starter circling at its top speed (17 m/s, 38 mph) needs
+  over seven hours for it. The island's Sandfly (`0014`) is priced like the other rigs,
+  150. The flight's fare is not a shop price: it stays the owner's number (150 each way
+  since `20261009233000_cheaper_flights.sql`).
+- **The first upgrade of each kind keeps its old price,** so a newcomer who only drives
+  around still gets somewhere: the Overlander (8), Desert Cream and Rust Red paint
+  (0.5), all-terrain tyres (2) and halogen bulbs (1). Each is within a quarter of an
+  hour's driving on a starter. The owner's call: the snorkel and the snow gear (chains,
+  studded tyres) are not in that set, and go up with the rest.
+- **Courses pay eight to ten times more,** the island's three too. A first finish pays
+  12 to 40 miles and a repeat 4 to 12, still no more than once per course every ten
+  minutes. Even a repeat pays at least five times the miles the course covers; the first
+  finish of every valley course together is more than the Duneclaw costs. A player who
+  drives the courses gets the best rig in an evening; one who leaves the laptop
+  circling, overnight.
+- **Snow chains show.** They were the one part with nothing to see: now a steel ring
+  runs down each sidewall with ten cross chains over the tread, turning with the wheel
+  (`car-model.ts`), on your truck, in the showroom and on friends' trucks.
 - **Thirteen courses, from six.** New to drive alone: Deep Woods (a second slalom),
   High Ridge (a second climb), Southern Shore (a loop by the south lake), Snowfield
   (needs chains or studded tyres) and Far Bank (along the river's far bank, so it needs a
@@ -50,13 +59,13 @@ much more.
   An honest run banks about 1.7 times that (`courses.test.ts` drives every course with a
   starter rig to check). A convoy is claimed when the last friend is home, so a crew run
   looks back ten minutes further. Single player skips this check: nothing there is kept.
-- **First-time guidance points at the courses before the shop**, since driving a few
-  miles and spending them is now the slow way.
+- **First-time guidance points at the courses before the shop**, since past the first
+  upgrades, driving around and spending is now the slow way.
 
 ## Consequences
 
-- Balances already banked keep their miles but buy a fifth as much. Nothing owned is
-  taken away. Nobody's balance was scaled up: that would have handed the Duneclaw to the
+- Balances already banked keep their miles but, past the first upgrades, buy a fifth as
+  much. Nothing owned is taken away. Nobody's balance was scaled up: that would have handed the Duneclaw to the
   player who circled for it.
 - The check stops a console script claiming courses with the truck parked, or claiming
   thirteen at once. It doesn't stop a script that claims while the truck circles on its
@@ -65,6 +74,6 @@ much more.
   (course miles arriving faster than anyone could drive between the starts).
 - The four easter-egg buildings (`0012`) moved, because they're placed clear of every
   course. The airstrip didn't: it is chosen last, and Far Bank stays out of its way.
-- The island has no courses yet; they're the next pass of `0014`. When they come, they
-  should pay on this scale.
+- The island's courses (`0016`) pay on this scale too: Beach Run 15/5, Dune Dash 20/6,
+  Jungle Loop 35/12, with the same miles check.
 - Laying out seven more courses adds about 0.2 s to building the world at load.
