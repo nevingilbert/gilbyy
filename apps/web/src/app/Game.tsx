@@ -168,7 +168,7 @@ export function Game() {
       if (fadeRef.current) fadeRef.current.style.opacity = "0";
       return; // No WebGL. The fog-coloured backdrop is all there is to see.
     }
-    const map = createMap(world, (key) => store.discover(key));
+    const map = createMap(world, (key) => store.discover(key), (cell) => store.explore(cell));
     const pitches = campPitches();
 
     // The opening. Signed in, the truck belongs at a tent, and which one isn't known for a
@@ -313,6 +313,7 @@ export function Game() {
       unsubscribe();
       store = s;
       map.setFound(s.get().found, true);
+      map.setExplored(s.explored(), true);
       const sync = () => {
         const p = store.get();
         map.setFound(p.found);
