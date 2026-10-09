@@ -9,11 +9,11 @@ import type { Bush, Rock, Tree, TreeKind } from "./world";
 const colour = (hex: string) => new THREE.Color(hex);
 const pick = <T,>(list: readonly T[], t: number) => list[Math.min(list.length - 1, Math.floor(t * list.length))];
 
-/** Vertex-coloured geometry, so a tree's trunk and crown can share one draw call. */
 /** Untinted, so the per-instance colour comes through as-is. */
 const WHITE = new THREE.Color(1, 1, 1);
 
-function painted(geo: THREE.BufferGeometry, c: THREE.Color) {
+/** Vertex-coloured geometry, so a tree's trunk and crown can share one draw call. */
+export function painted(geo: THREE.BufferGeometry, c: THREE.Color) {
   const g = geo.index ? geo.toNonIndexed() : geo;
   const count = g.getAttribute("position").count;
   const col = new Float32Array(count * 3);

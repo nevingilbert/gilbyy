@@ -23,6 +23,8 @@ subdomains." Update the **You are here** marker as you progress.
 > an island with its own camp, garage and rig (`decisions/0014`). Its migration is on
 > the live project and it was merged to `main` the same day
 > (`sessions/2026-10-09-airports-and-the-island.md`).
+> Later that day, animals in both worlds (`decisions/0015`), on `feat/game-wildlife`
+> (`sessions/2026-10-09-wildlife.md`).
 > **Next:** the island's second pass, scoped in that checkpoint: courses and more
 > garages there, and found-counts per world that include the airstrip and the easter
 > eggs, on the leaderboard too. Still open from before: play one convoy and one race signed in from two Google accounts on the live

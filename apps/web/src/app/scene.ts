@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { buildAirport } from "./airport-model";
+import { buildWildlife } from "./animal-models";
 import { buildCampCentre, buildCampGate, buildTentSite, mergeByMaterial } from "./campground-model";
 import { buildCar, type CarModel } from "./car-model";
 import { buildCoffeeShop } from "./coffee-shop-model";
@@ -19,7 +20,9 @@ import type { Loadout } from "./shop";
 import { buildShowroom } from "./showroom";
 import { buildSky } from "./sky";
 import { buildGrass, buildTerrainMesh, buildWaterMesh, makeSurface } from "./terrain-mesh";
+import { TRAIN_SPEED } from "./track";
 import type { VehicleId } from "./vehicles";
+import type { Threat } from "./wildlife";
 import { CAFE, CAMP_CENTRE, CAMP_GATE, sampleGrid, type Ground, type Obstacle, type SiteStyle, type World } from "./world";
 
 const SHADOW_SPAN = 55;
@@ -244,11 +247,12 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     const courses = placeMissions(world, lamps);
     const landmarks = placeLandmarks(world, windows, embers);
     const airport = placeAirport(world, windows, lamps);
+    const wildlife = buildWildlife(world);
     group.add(
       buildTerrainMesh(world, surface), grass.object, water.object,
       buildTrees(world.trees, (x, z) => sampleGrid(world.snow, x, z)),
       buildBushes(world.bushes, world.id === "island" ? PALETTE.fern : PALETTE.bush), buildRocks(world.rocks),
-      sites.group, camp.group, courses.group, landmarks.group, airport.group,
+      sites.group, camp.group, courses.group, landmarks.group, airport.group, wildlife.object,
     );
     if (railway) group.add(railway.object);
     scene.add(group);
@@ -264,7 +268,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
         for (const m of [o.material].flat()) if (!kept.has(m) && !isShared(m)) m.dispose();
       });
     }
-    return { world, grass, water, railway, sites, camp, courses, landmarks, airport, remotes, dispose };
+    return { world, grass, water, railway, sites, camp, courses, landmarks, airport, wildlife, remotes, dispose };
   }
 
   let world = first;
@@ -347,6 +351,11 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     stage.water.update(time);
     stage.railway?.update(time, dt, night);
     stage.airport.update(time, night);
+    // The animals keep out of the way of every truck and the train.
+    const threats: Threat[] = [{ x: state.x, z: state.z, speed: state.speed, heading: state.heading }];
+    for (const p of stage.remotes.positions()) threats.push(p);
+    for (const c of stage.railway?.cars() ?? []) threats.push({ x: c.x, z: c.z, speed: TRAIN_SPEED, heading: c.yaw });
+    stage.wildlife.update(dt, time, threats, state);
 
     // The plane: where the film has it, or on its stand with the ramp coming shut behind the truck.
     if (film) {
