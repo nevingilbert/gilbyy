@@ -314,6 +314,8 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
    */
   function setExplored(saved: number[], fresh = false) {
     if (fresh) {
+      // Cleared first: the fog is see-through, and a second coat over the first would hide the paper.
+      f.clearRect(0, 0, SIZE, SIZE);
       f.fillStyle = PALETTE.map.fog;
       f.fillRect(0, 0, SIZE, SIZE);
       cells.clear();
