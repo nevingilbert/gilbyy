@@ -52,6 +52,12 @@ unhurried exploration in a classic 4x4.
   a turquoise sea and deep green jungle. Its colours are its own (`palette.ts`), but
   the haze, the low sun, the flat shading and the HUD are the valley's, so it reads as
   the same game somewhere else. The flight there is a short film with no HUD at all.
+- Animals, each where it belongs (ADR 0015): deer in the meadows, hares on the open
+  grass, reindeer on the snow, ducks on the lakes; crabs and gulls on the beach, boar
+  and macaws at the jungle's edge, dolphins offshore. Low-poly and faceted like the
+  trees, coats a shade cooler and darker than the ground so a herd reads against the
+  orange grass, and the macaws the one bright thing. They graze, wander, and get out
+  of the way; a parked truck can watch them. Nothing to hit, count or collect.
 - Driving together, as in the trailer's co-op shots: other players' trucks share the
   valley, name tags float over them, and chat appears as small speech bubbles.
 

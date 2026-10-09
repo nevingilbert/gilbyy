@@ -171,7 +171,7 @@ export function createRemotes(scene: THREE.Scene, world: World) {
     return [...remotes.values()].map((r) => ({ id: r.peer.id, name: r.peer.name, x: r.car.x, y: r.car.y + r.model.top + 1.1, z: r.car.z }));
   }
 
-  const positions = () => [...remotes.values()].map((r) => ({ id: r.peer.id, x: r.car.x, z: r.car.z, heading: r.car.heading }));
+  const positions = () => [...remotes.values()].map((r) => ({ id: r.peer.id, x: r.car.x, z: r.car.z, heading: r.car.heading, speed: r.car.speed }));
 
   function dispose() {
     for (const id of [...remotes.keys()]) drop(id);

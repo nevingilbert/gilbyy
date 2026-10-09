@@ -101,6 +101,13 @@ Pure modules, no three.js, all unit-tested:
     a time: the plane's pose, its ramp and wheels, where the truck is, the camera, and
     how much is lost in cloud. Also the plane's measurements, which the model shares,
     and the parked plane's colliders.
+- `wildlife.ts`: the animals (`decisions/0015-wildlife.md`). `SPECIES` says which world
+  each kind lives in and how it behaves, `habitat()` where a herd can make its home,
+  `placeHerds()` puts every herd down from a fixed seed (the first ones in front of the
+  camp, for the opening shot), and `stepWildlife()` moves the herds within about 320 m
+  of the truck: grazing, following the herd, and running from trucks and the train, off
+  to the side of their path when they're coming this way. Birds fly off together and
+  settle again; macaws and dolphins go where the time says. Not shared between players.
 - `store.ts`: progress behind one interface. `LocalStore` is in memory for single
   player; `SupabaseStore` calls the database functions.
 - `net.ts`: presence, tents, poses, friend requests and chat. `SupabaseNet` runs over
@@ -127,6 +134,9 @@ Rendering and UI:
   - flying: `airport-model.ts` (runway, paint, lights, windsock, terminal) and
     `plane-model.ts` (the jet, its ramp and its wheels);
   - missions: `mission-models.ts`;
+  - animals: `animal-models.ts`, each species built from faceted lumps and sticks and
+    cut into the parts that move, one instanced mesh per part. `scene.ts` steps them
+    each frame from the truck, other players' trucks and the train;
   - other players' trucks: `remote.ts`, carried forward between poses along the bend
     they were taking (`guessPose` in `net.ts`), with any correction faded in;
   - the garage interior: `showroom.ts`.
