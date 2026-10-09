@@ -151,6 +151,13 @@ for sign-in (Google only), and Realtime for the shared valley. See
   `complete_convoy()`, which pays only when a friend is among the crew;
   `complete_mission()` now refuses courses that take a crew (ADR 0010).
 - `20261007230000_race.sql` adds the race's row; `complete_convoy()` pays it (ADR 0011).
+- `20261009000000_drive_log.sql` logs every `add_miles()` call to `private.drive_log`
+  (claimed, paid, seconds since the last bank, rig) and sums driving and course miles per
+  player per hour in `private.miles_hourly`. The `private` schema isn't exposed by the
+  API and no game role can use it, so only the owner reads it, from the SQL editor or
+  the MCP. `me()` now locks the caller's row: before, calls sent at once each read the
+  same profile, so twenty `add_miles` calls in flight paid 20 miles instead of 5 and
+  ten mission claims paid five times.
 - `20261009120000_saved_fog.sql` adds the `fog` table, `explore()` and `explored()`,
   which save the map's fog (ADR 0013).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
@@ -246,6 +253,9 @@ that repo's problem, not this one's.
   projects one org may have**. Projects pause after a week with no activity
   (revivable in one click), so a quiet month means the first sign-in fails until
   someone resumes the project.
+  `private.drive_log` is the one table that grows with play: a row per bank, every
+  15 s while a truck moves, about 240 rows (roughly 30 kB) per hour of driving. A
+  thousand hours of play is around 30 MB, so nothing prunes it yet.
 - **Supabase Realtime free:**
   - **200 concurrent connections, 100 messages a second, and 2 million messages a
     month.** A broadcast counts once when it's sent and once for each player who
