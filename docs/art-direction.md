@@ -58,12 +58,16 @@ unhurried exploration in a classic 4x4.
   trees, coats a shade cooler and darker than the ground so a herd reads against the
   orange grass, and the macaws the one bright thing. They graze, wander, and get out
   of the way; a parked truck can watch them. Nothing to hit, count or collect.
+- A photo mode (ADR 0018): P stops the world, the camera goes round the truck, and the
+  shutter keeps the picture, HUD-free. On screen only a shutter, "back" and one line of
+  how-to. Not while on a course. Pictures aren't collected, counted or listed.
 - Driving together, as in the trailer's co-op shots: other players' trucks share the
   valley, name tags float over them, and chat appears as small speech bubbles.
 
 ## What we don't (yet)
 
-- Winching, planks, deformable mud and snow, the photo compendium.
+- Winching, planks, deformable mud and snow, the photo compendium (photo mode is in, a
+  list of things to photograph is not).
 - Weather. Rain, lightning and fog banks are the strongest candidates to add next.
 - More than two maps. There is the valley (with a snowy plateau in the north) and,
   since 2026-10-09, an island a flight away (ADR 0014), and nine rigs, each inspired by

@@ -14,7 +14,8 @@ together (ADR 0010) or race each other (ADR 0011). Over the river, hidden, is an
 airstrip: 150 miles buys a flight, truck and all, to an island of beach, dunes and
 jungle, and 150 more buys the flight home (ADR 0014). Both places have animals that keep
 out of your way: deer, hares, reindeer and ducks in the valley; crabs, gulls, boar,
-macaws and dolphins on the island (ADR 0015). That is the entire product.
+macaws and dolphins on the island (ADR 0015). Press P and the world stops while you
+take the camera round the truck for a picture (ADR 0018). That is the entire product.
 
 It is not a hub, a menu, or a launcher. See `docs/vision.md` and
 `docs/decisions/0004-gilbyy-is-just-a-driving-game.md` — this has been misunderstood
@@ -70,6 +71,8 @@ apps, you are in the wrong repo.
       the time (the plane, its ramp, the truck, the camera), and the plane's measurements.
     - `wildlife.ts`: the animals of each world, where their herds live, and how they
       graze, wander and get out of the way of trucks and the train (ADR 0015).
+    - `photo.ts`: photo mode's camera, an orbit round the truck that stays out of the
+      ground, and what a picture is called (ADR 0018).
   - Online, also unit-tested:
     - `store.ts`: progress, either `LocalStore` (in memory) or `SupabaseStore`
       (database functions).
@@ -143,7 +146,7 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't make sign-in required. Single player with no account must keep working, and say clearly that nothing is saved.
 - Don't reach for a game engine, a physics engine, react-three-fiber or a post-processing stack. three.js is the one rendering dependency (ADR 0005); the physics is ours and stays a pure, tested function. Anything more needs its own ADR.
 - Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
-- Don't add pressure. Miles are the one currency, missions are optional and never fail beyond giving up (they pay far better than plain driving, ADR 0017), and the leaderboard is you and your friends only (ADR 0007). Friends can drive a convoy together (ADR 0010) or race (ADR 0011), but every finisher is paid the same, winning pays nothing extra, and race results are a line on screen that isn't stored or ranked anywhere. Keep it that way unless a new ADR says otherwise. The leaderboard also says how many garages and cafés each of you has found (ADR 0008); finding them pays nothing and must stay that way. The same goes for the achievements beside each name (ADR 0009). Animals are scenery: they can't be hit, hunted, counted or collected, and they aren't on the map (ADR 0015). The game is meant to be calm; see `docs/art-direction.md`.
+- Don't add pressure. Miles are the one currency, missions are optional and never fail beyond giving up (they pay far better than plain driving, ADR 0017), and the leaderboard is you and your friends only (ADR 0007). Friends can drive a convoy together (ADR 0010) or race (ADR 0011), but every finisher is paid the same, winning pays nothing extra, and race results are a line on screen that isn't stored or ranked anywhere. Keep it that way unless a new ADR says otherwise. The leaderboard also says how many garages and cafés each of you has found (ADR 0008); finding them pays nothing and must stay that way. The same goes for the achievements beside each name (ADR 0009). Animals are scenery: they can't be hit, hunted, counted or collected, and they aren't on the map (ADR 0015). Photos likewise: photo mode keeps a picture on the player's own device and nowhere else, and isn't open during a course (ADR 0018). The game is meant to be calm; see `docs/art-direction.md`.
 - Don't spend the Realtime budget carelessly. Supabase's free plan counts every broadcast once per receiver; poses go through `PoseGate` in `net.ts` for that reason. Presence is stricter still: Realtime closes a client's channel after five presence updates in thirty seconds, so announcements go through `PresenceBudget`, and nothing that changes often goes in presence. See the free-tier notes in `docs/architecture.md`.
 - Don't judge frame rate from headless screenshots. Headless Chromium renders WebGL in software at ~3 fps; screenshots are fine for looks, nothing else.
 - Don't run autonomous agents that hit the Anthropic API without confirming first — currently we're staying in interactive Claude Code sessions only.
@@ -180,5 +183,6 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - since 2026-10-09: two more garages on the island (the Dune Outpost, the Jungle Lodge), a café on its beach, three courses there (Beach Run, Dune Dash, Jungle Loop), and found-counts for the world you're in that also count its airstrip and, in the valley, the four easter eggs (found when you look inside), shown on the leaderboard too (ADR 0016). Merged to `main` as pull request 10, and `20261009230000_island_second_pass.sql` is on the live project.
 - since 2026-10-09: animals in both worlds, nine species, each browser simulating its own (ADR 0015). Client only; no migration.
 - since 2026-10-09: prices five times higher bar the first upgrade of each kind, courses paying far more than plain driving (the island's too), seven new valley courses, snow chains you can see, and a server check that a run drove its course (ADR 0017). Merged to `main` and deployed, and `20261010000000_courses_pay.sql` is on the live project; not yet played signed in.
+- since 2026-10-10: photo mode (ADR 0018). P, or the photo button on a phone, stops the world; drag, the arrows, the wheel or a pinch move the camera round the truck; the shutter saves a PNG of the world without the HUD (the share sheet on a phone). Not during a run, a convoy or a race. Client only; no migration. On branch `claude/photo-mode-camera-rotation-wgotye`.
 
 The online half is connected (2026-10-07): the Supabase project `gilbyy` has every migration in `supabase/migrations/` (the convoy and race ones since 2026-10-08), Google sign-in works, and the whole list (name, tent, seeing each other, friending at the café, chat, leaderboard, a purchase and a mission payout that persist) was played from two browsers. It was merged to `main` the same day, so gilbyy.com offers sign-in. The convoy and the race were merged to `main` and went live on 2026-10-08; the database tests pass against the live project, but neither has been played signed in from two accounts yet. A tab left hidden for five minutes, or untouched for fifteen, gives its tent back and takes one again on return. Sign-in is Google only; the email-link option was removed because Supabase's built-in mailer only reaches members of the Supabase org. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.

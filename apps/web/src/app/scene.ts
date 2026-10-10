@@ -11,6 +11,7 @@ import { buildGarage, isShared, type Circle, type GarageModel } from "./garages"
 import { islandFire } from "./island";
 import { buildFinishArch, buildGate, buildStartArch, type GateState } from "./mission-models";
 import { PALETTE } from "./palette";
+import { LOOK_UP, cameraAt, easeOrbit, orbitFrom, type Orbit } from "./photo";
 import type { Car, CarSpec } from "./physics";
 import { buildPlane } from "./plane-model";
 import { buildRailway } from "./railway";
@@ -310,6 +311,14 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
   const aimFrom = new THREE.Vector3();
   let hover = -1;
   let glide = -1;
+  // Photo mode: the orbit the camera is on, easing after the one asked for, and where it
+  // was when last drawn, so a picture that isn't moving isn't drawn again.
+  let shown: Orbit | null = null;
+  const centre = new THREE.Vector3();
+  const drawnAt = new THREE.Vector3();
+  const drawnAim = new THREE.Vector3();
+  /** The canvas was cleared (it was resized), so the still picture has to be drawn again. */
+  let stale = true;
   const hang = () => {
     // Behind the camp, looking the way it looks: south down the valley, or out to sea from the beach.
     const { x, z, heading } = world.camp;
@@ -327,6 +336,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
     showroom.resize(w, h);
+    stale = true;
   }
 
   /**
@@ -452,6 +462,44 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     renderer.render(scene, camera);
   }
 
+  /** Photo mode begins: the camera goes on an orbit round the truck from where it is now. That orbit is returned to steer from. */
+  function photoStart(state: Car): Orbit {
+    centre.set(state.x, state.y + LOOK_UP, state.z);
+    shown = orbitFrom(camera.position, centre);
+    glide = -1;
+    stale = true;
+    return shown;
+  }
+
+  /**
+   * One frame of photo mode. Nothing in the world moves, not the sun, the train, the
+   * animals or the grass: only the camera, easing toward `want` round the truck. Drawn
+   * only while the camera is moving, since the picture is otherwise the same.
+   */
+  function photo(state: Car, want: Orbit, dt: number) {
+    const k = 1 - Math.exp(-12 * dt);
+    centre.set(state.x, state.y + LOOK_UP, state.z);
+    shown = easeOrbit(shown ?? want, want, k);
+    const at = cameraAt(shown, centre, (x, z) => Math.max(world.height(x, z), world.waterAt(x, z)));
+    camPos.set(at.x, at.y, at.z);
+    // From where the chase camera was looking, a little ahead of the truck, to the truck.
+    aim.lerp(centre, k);
+    if (!stale && camPos.distanceToSquared(drawnAt) < 1e-6 && aim.distanceToSquared(drawnAim) < 1e-6) return;
+    stale = false;
+    drawnAt.copy(camPos);
+    drawnAim.copy(aim);
+    camera.position.copy(camPos);
+    camera.lookAt(aim);
+    sky.object.position.copy(camera.position);
+    renderer.render(scene, camera);
+  }
+
+  /** The picture as it is now, as a PNG. Drawn again and read straight back, before the browser clears the canvas. */
+  function snap() {
+    renderer.render(scene, camera);
+    return canvas.toDataURL("image/png");
+  }
+
   /** Swaps the rig (a new body) or just refits it. */
   function setRig(v: VehicleId, l: Loadout) {
     if (v !== car.vehicle) {
@@ -526,6 +574,9 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
       glide = 0;
       camYaw = NaN;
     },
+    photoStart,
+    photo,
+    snap,
     renderShowroom: (dt: number, turn: number) => showroom.render(renderer, dt, turn),
     openShowroom: (style: SiteStyle, v: VehicleId, l: Loadout) => showroom.open(style, v, l),
     /** Tries a rig or part on the truck in the showroom without fitting it. */
