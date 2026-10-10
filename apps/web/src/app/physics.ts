@@ -9,6 +9,10 @@ import type { Ground, Obstacle } from "./world";
  * bumps and leans in corners, and a crest taken fast puts you in the air. Rocks low
  * enough for the tyres are bumps under the wheels; taller ones, and trees, stop you.
  *
+ * One thing can end a drive (ADR 0021): a rock only a little too tall for the tyres, rammed
+ * square and fast, is one the truck rides up onto. There it sits with its wheels off the
+ * ground, and nothing the driver does moves it. A winch on someone else's truck does.
+ *
  * Sideways motion bleeds away at a rate set by the ground: almost at once on dirt, so
  * the truck goes where it points; slowly on snow, and very slowly on ice, so it slides.
  */
@@ -25,6 +29,34 @@ const TILT_DAMP = 9;
 /** How fast sideways slip dies away on dirt, and on snow for the grippiest tyres. */
 const DIRT_TRACTION = 30;
 const SNOW_TRACTION = 7;
+/** How far over a rig's clearance a rock can stand and still be ridden up onto. */
+export const HANG = 0.5;
+/** Hit such a rock this fast and the truck is carried up onto it: 20 mph. Slower, and it only stops. */
+export const RAM = 8.94;
+/** How fast a winch hauls a stuck truck in, and how near to the winch it stops. */
+export const WINCH_SPEED = 1.6;
+const WINCH_SHORT = 6;
+/** How far a stuck truck's nose is held up by the rock under it, radians. */
+const NOSE_UP = 0.16;
+/** And how far clear of the rock it's hauled, so its tail doesn't scrape past on the way off. */
+const WINCH_CLEAR = 0.6;
+
+/** Hung up on a rock: where the truck came to rest, and what's being done about it. */
+export type Stuck = {
+  /** Where its centre rests, the rock under it behind the front axle. */
+  x: number;
+  z: number;
+  /** The rock, to know when the truck is off it. */
+  rock: { x: number; z: number; r: number };
+  /** How far the rock holds the body above its ride height. */
+  lift: number;
+  /** Which way it leans, from the side of the belly the rock is under. */
+  lean: number;
+  /** How fast the wheels are turning in the air, as a road speed. For show. */
+  spin: number;
+  /** Where a winch is hauling it toward, once someone has hooked on. */
+  pull: { x: number; z: number } | null;
+};
 
 export type Car = {
   x: number;
@@ -50,6 +82,8 @@ export type Car = {
   groundY: number;
   /** Metres driven, for the odometer. */
   distance: number;
+  /** Set while it's hung up on a rock. */
+  stuck: Stuck | null;
 };
 
 /** Everything about the rig and its parts that changes how it drives. See shop.ts. */
@@ -72,12 +106,14 @@ export type CarSpec = {
   snowGrip: number;
   /** Collision circle radius; the car is two of these, front and back. */
   radius: number;
+  /** How far over `clearance` a rock can be and still hang the truck up. 0, and it never is. */
+  hang: number;
 };
 
 /** The original overlander on road tyres: what tests drive unless they say otherwise. */
 export const STOCK: CarSpec = {
   accel: 5.4, maxSpeed: 17.5, wheelbase: 2.6, track: 1.7, ride: 1.15, travel: 0.32,
-  wade: 1.4, grip: 1, clearance: 0.45, snowGrip: 0.2, radius: 1.15,
+  wade: 1.4, grip: 1, clearance: 0.45, snowGrip: 0.2, radius: 1.15, hang: HANG,
 };
 
 export type Input = { left: boolean; right: boolean; gas: boolean; brake: boolean };
@@ -88,7 +124,7 @@ export function makeCar(ground: Ground, x: number, z: number, heading: number, s
   const groundY = ground.height(x, z);
   return {
     x, z, y: groundY + spec.ride, vy: 0, heading, speed: 0, side: 0, steer: 0,
-    pitch: 0, pitchV: 0, roll: 0, rollV: 0, grounded: true, groundY, distance: 0,
+    pitch: 0, pitchV: 0, roll: 0, rollV: 0, grounded: true, groundY, distance: 0, stuck: null,
   };
 }
 
@@ -134,6 +170,7 @@ export function traction(slip: number, spec: CarSpec) {
 
 /** Advances the car by `dt` seconds. Mutates and returns `car`. Keep dt small (≤ 1/60). */
 export function step(car: Car, input: Input, dt: number, ground: Ground, spec: CarSpec = STOCK): Car {
+  if (car.stuck) return perched(car, car.stuck, input, dt, ground, spec);
   const near = ground.obstaclesNear(car.x, car.z);
   const [fl, fr, rl, rr] = wheelGround(car, ground, spec, near);
   const groundY = (fl + fr + rl + rr) / 4;
@@ -204,8 +241,10 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
   const nx = car.x + (fx * car.speed + fz * car.side) * k;
   const nz = car.z + (fz * car.speed - fx * car.side) * k;
   // Fording is fine; driving into the deep end is not. The car stops at the edge but
-  // keeps a little speed, so steering can still turn it along the shore.
-  if (ground.waterAt(nx, nz) - ground.height(nx, nz) > spec.wade) {
+  // keeps a little speed, so steering can still turn it along the shore. A rising tide can
+  // leave it in deeper than it could have driven: it can always go where it's no deeper.
+  const deep = ground.waterAt(nx, nz) - ground.height(nx, nz);
+  if (deep > spec.wade && deep > ground.waterAt(car.x, car.z) - ground.height(car.x, car.z)) {
     car.speed = Math.max(-1.5, Math.min(1.5, car.speed));
     car.side = 0;
   } else {
@@ -265,10 +304,15 @@ function collide(car: Car, ground: Ground, spec: CarSpec) {
       if (d >= min || d === 0) continue;
       const nx = dx / d;
       const nz = dz / d;
+      const into = (fx * nx + fz * nz) * car.speed;
+      // Nose first into a boulder it could just about get onto, and fast: up it goes, and stays.
+      if (end === 1 && o.boulder && o.h <= spec.clearance + spec.hang && -into >= RAM) {
+        car.stuck = perchOn(car, o, ground, spec);
+        if (car.stuck) return;
+      }
       car.x += nx * (min - d);
       car.z += nz * (min - d);
       // Lose the part of the motion that was heading into the obstacle.
-      const into = (fx * nx + fz * nz) * car.speed;
       if (into < 0) {
         car.speed *= 1 - Math.min(1, Math.abs(into) / Math.max(Math.abs(car.speed), 1e-6)) * 0.9;
         car.pitchV -= Math.sign(car.speed || 1) * Math.min(0.6, Math.abs(into) * 0.08);
@@ -276,4 +320,93 @@ function collide(car: Car, ground: Ground, spec: CarSpec) {
       car.side *= 0.5;
     }
   }
+}
+
+/**
+ * Where the truck would come to rest on a rock it has just rammed: carried on along its
+ * heading until the rock is jammed under it, just behind the front axle. Null if the rock would pass outside the
+ * wheels (a glancing hit), or if there's water or something solid where it would sit.
+ */
+function perchOn(car: Car, rock: Obstacle, ground: Ground, spec: CarSpec): Stuck | null {
+  const fx = Math.sin(car.heading);
+  const fz = Math.cos(car.heading);
+  const along = (rock.x - car.x) * fx + (rock.z - car.z) * fz;
+  const across = (rock.x - car.x) * fz - (rock.z - car.z) * fx;
+  if (Math.abs(across) > spec.track / 2) return null;
+  const slide = along - spec.wheelbase * 0.28;
+  const x = car.x + fx * slide;
+  const z = car.z + fz * slide;
+  if (ground.waterAt(x, z) > ground.height(x, z) || Math.hypot(x, z) > ground.limit) return null;
+  const offset = spec.wheelbase * 0.46;
+  for (const end of [1, -1]) {
+    const cx = x + fx * offset * end;
+    const cz = z + fz * offset * end;
+    for (const o of ground.obstaclesNear(cx, cz)) {
+      if (o.h > spec.clearance + spec.hang && Math.hypot(cx - o.x, cz - o.z) < spec.radius + o.r) return null;
+    }
+  }
+  return {
+    x, z, rock: { x: rock.x, z: rock.z, r: rock.r },
+    // The belly clears a rock as tall as `clearance`, and sits on anything taller.
+    lift: rock.h - spec.clearance + 0.15,
+    // Never quite level: it tips away from whichever side of the belly the rock is under.
+    lean: (across < 0 ? -1 : 1) * (0.06 + 0.05 * Math.min(1, Math.abs(across) / (spec.track / 2))),
+    spin: car.speed, pull: null,
+  };
+}
+
+/**
+ * A truck hung up on a rock. It scrapes to rest on top, and after that the pedals only
+ * spin the wheels and rock the body. Hooked to a winch (`pull`), it is hauled toward it
+ * until both ends are well clear of the rock, and then it's a truck again.
+ */
+function perched(car: Car, s: Stuck, input: Input, dt: number, ground: Ground, spec: CarSpec): Car {
+  const fx = Math.sin(car.heading);
+  const fz = Math.cos(car.heading);
+  if (s.pull) {
+    const dx = s.pull.x - car.x;
+    const dz = s.pull.z - car.z;
+    const d = Math.hypot(dx, dz);
+    const go = Math.min(WINCH_SPEED * dt, Math.max(0, d - WINCH_SHORT));
+    if (d > 0) {
+      car.x += (dx / d) * go;
+      car.z += (dz / d) * go;
+    }
+    const offset = spec.wheelbase * 0.46;
+    const over = [1, -1].some((end) => Math.hypot(car.x + fx * offset * end - s.rock.x, car.z + fz * offset * end - s.rock.z) < spec.radius + s.rock.r + WINCH_CLEAR);
+    // Clear of the rock, or hauled in as far as the cable goes: either way it's free.
+    if (!over || go <= 0) car.stuck = null;
+  } else {
+    const dx = s.x - car.x;
+    const dz = s.z - car.z;
+    const left = Math.hypot(dx, dz);
+    if (left > 1e-3) {
+      const go = Math.min(left, Math.max(left * 6, 2) * dt);
+      car.x += (dx / left) * go;
+      car.z += (dz / left) * go;
+    }
+  }
+
+  const [fl, fr, rl, rr] = wheelGround(car, ground, spec);
+  const groundY = (fl + fr + rl + rr) / 4;
+  car.groundY = groundY;
+  car.y += (groundY + spec.ride + s.lift - car.y) * (1 - Math.exp(-9 * dt));
+  car.vy = 0;
+  car.speed = car.side = 0;
+  car.grounded = true;
+
+  // The front wheels still turn, and the wheels still spin: there's just nothing under them.
+  const ds = ((input.left ? 1 : 0) - (input.right ? 1 : 0)) * MAX_STEER - car.steer;
+  car.steer += Math.sign(ds) * Math.min(Math.abs(ds), STEER_RATE * dt);
+  const revs = input.gas ? spec.maxSpeed * 0.6 : input.brake ? MAX_REVERSE : 0;
+  s.spin += (revs - s.spin) * (1 - Math.exp(-2.5 * dt));
+
+  // Nose up on the rock, leaning off it, and squatting when the driver tries the throttle.
+  const pitchTarget = clampTilt(Math.atan2((fl + fr - rl - rr) / 2, spec.wheelbase)) + NOSE_UP + s.spin * 0.004;
+  const rollTarget = clampTilt(Math.atan2((fl + rl - fr - rr) / 2, spec.track)) + s.lean;
+  car.pitchV += (TILT_SPRING * (pitchTarget - car.pitch) - TILT_DAMP * car.pitchV) * dt;
+  car.rollV += (TILT_SPRING * (rollTarget - car.roll) - TILT_DAMP * car.rollV) * dt;
+  car.pitch = clampTilt(car.pitch + car.pitchV * dt);
+  car.roll = clampTilt(car.roll + car.rollV * dt);
+  return car;
 }

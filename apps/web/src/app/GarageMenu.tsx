@@ -14,6 +14,7 @@ const TABS: { id: Category; label: string }[] = [
   { id: "lights", label: "Lights" },
   { id: "snorkel", label: "Snorkel" },
   { id: "winter", label: "Winter" },
+  { id: "winch", label: "Winch" },
 ];
 
 export const fmtMiles = (m: number) => (m < 10 ? (Math.floor(m * 10) / 10).toFixed(1) : Math.floor(m).toString());
@@ -140,7 +141,7 @@ export function GarageMenu({
         Spend the miles you drive. {online ? "Saved to your account." : "Single player: gone when you leave."}
       </p>
 
-      <div className="mt-3 grid grid-cols-6 gap-1 rounded-lg bg-black/25 p-1 text-[13px]" role="tablist">
+      <div className="mt-3 grid grid-cols-4 gap-1 rounded-lg bg-black/25 p-1 text-[13px]" role="tablist">
         {TABS.map((t, i) => (
           <button
             key={t.id}

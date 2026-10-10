@@ -37,6 +37,17 @@ subdomains." Update the **You are here** marker as you progress.
 > more courses, so each world has as many for friends as to drive alone, a jump told
 > for its time in the air, and convoys and races for up to ten. Merged to `main` as pull
 > request 16; its migration, `20261010120000_more_courses.sql`, is on the live project.
+> Also on 2026-10-10, a pin: click the open map and the compass leads there. Client
+> only; merged to `main` as pull request 22 (`sessions/2026-10-10-map-pin.md`).
+> And a tide on the island (`decisions/0020`,
+> `sessions/2026-10-10-island-tides.md`): the sea goes out and back every ten minutes,
+> and at low water a sandbar shows off the camp with a course along it. Its migration,
+> `20261010180000_sandbar.sql`, is on the live project; it is open as pull request 23
+> and not yet merged.
+> And getting stuck (`decisions/0021`, `sessions/2026-10-10-stuck-winch-and-bbb.md`): a
+> truck can be hung up on a boulder it rammed, and gets off by a friend's winch, a tow
+> from BBB for miles, or a reload. Pull request 21; its migration,
+> `20261010200000_winch.sql`, is on the live project.
 > **Next:**
 > play one convoy and one race signed in from two Google accounts on the live
 > site; neither has been played over Supabase yet, only over `?net=local`. Still open:
@@ -184,7 +195,8 @@ Not done, roughly in order of how much they'd add:
 - **Measure on real devices**, a phone especially. Levers if slow: grass radius, tree
   count, pixel ratio, shadow map size, the number of spotlights.
 - Weather: rain, fog banks, a storm at night.
-- Dust, tyre tracks, an engine note.
+- Dust, tyre tracks, an engine note. A truck riding up onto a rock (`decisions/0021`)
+  would be the first thing to give dust and a crunch to.
 - Water that reads as water: shoreline foam, rivers that visibly flow.
 - Dirt trails between the garages.
 - ~~Buildings that link to other gilbyy.com pages.~~ Done 2026-10-08 as four easter

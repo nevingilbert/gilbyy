@@ -193,14 +193,15 @@ describe("the island", () => {
   });
 
   it("has courses in every ring, each with a clear line, and ways in through the trees", () => {
-    expect(island.missions.map((m) => m.id)).toEqual(["beach-run", "dune-dash", "jungle-loop", "hilltop", "coast-convoy", "sand-race", "tideline", "dune-derby"]);
+    expect(island.missions.map((m) => m.id)).toEqual(["beach-run", "dune-dash", "jungle-loop", "hilltop", "coast-convoy", "sand-race", "tideline", "dune-derby", "sandbar"]);
     for (const m of island.missions) {
       const pts = [m.start, ...m.gates];
       for (let i = 1; i < pts.length; i++) {
         for (let k = 0; k <= 20; k++) {
           const x = pts[i - 1].x + ((pts[i].x - pts[i - 1].x) * k) / 20;
           const z = pts[i - 1].z + ((pts[i].z - pts[i - 1].z) * k) / 20;
-          expect(island.height(x, z)).toBeGreaterThan(0.4);
+          // The sandbar's is under the sea until the tide goes out (courses.test.ts).
+          if (m.ebb === undefined) expect(island.height(x, z)).toBeGreaterThan(0.4);
           expect(island.obstaclesNear(x, z).some((o) => Math.hypot(o.x - x, o.z - z) < 4)).toBe(false);
         }
       }

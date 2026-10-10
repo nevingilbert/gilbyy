@@ -14,16 +14,24 @@ import { fmtAir, fmtTime, missionAt, startRun, tick, type Run } from "./mission-
 import { stackTags, type TagBox } from "./name-tags";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
 import { FlightCard, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
+import { PALETTE } from "./palette";
 import { KEY_TURN, clampOrbit, dragOrbit, photoName, zoomOrbit, type Orbit } from "./photo";
 import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
+import { markFor, onPin, pinAt, reached, type Spot } from "./pin";
 import { countFound, eggKey, foundLine } from "./places";
-import { createView, type Film, type Garage } from "./scene";
+import { createView, type Film, type Garage, type Rope, type Shot, type TowDrawn } from "./scene";
 import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "./shop";
 import { GARAGE_NAMES } from "./showroom";
 import { LocalStore, SupabaseStore, type Profile, type Store } from "./store";
 import { currentSession, onSessionChange, onlineConfigured, signInWithGoogle, signOut, supabase } from "./supabase";
+import { TIDE, ebbAt, untilEbb } from "./tide";
 import { trainObstacles } from "./track";
 import { VEHICLES, type VehicleId } from "./vehicles";
+import {
+  TOW_FEE, TOW_LEAVE, TOW_RUN, TOW_SPEC, TOW_STOP, approachLine, fmtAway, standTow, towArrived, towAway, towLeaving, towVisit, towWait,
+  type TowLine, type TowVisit,
+} from "./tow";
+import { WINCH_LIMIT, WINCH_REACH, WINCH_STILL, WINCH_TAKES, canWinch, hasWinch, stuckHelp } from "./winch";
 import type { Ground, Mission, Obstacle, SiteStyle, WorldId } from "./world";
 import { WORLDS, flightFrom, isWorld } from "./worlds";
 
@@ -66,17 +74,23 @@ const hintWorld = (world: WorldId | null) => {
   }
 };
 
+/** What a start arch on the sandbar says while the sea covers it, `seconds` before the tide is next out. Never a countdown: the sea is in no hurry. */
+const tideLine = (seconds: number) =>
+  `The sand's under the sea for now.${!Number.isFinite(seconds) ? "" : seconds < 50 ? " The tide's nearly out." : ` The tide's out again in about ${Math.max(1, Math.round(seconds / 60))} min.`}`;
+
 const COMPASS = ["N", "·", "NE", "·", "E", "·", "SE", "·", "S", "·", "SW", "·", "W", "·", "NW", "·"];
 const COMPASS_ITEM = 28;
 const COMPASS_VIEW = COMPASS_ITEM * 8;
 /** Metres a second to miles an hour, for the speedometer. */
 const MPH = 3600 / METRES_PER_MILE;
 
-type Mode = "boot" | "pick" | "drive" | "entering" | "garage" | "leaving" | "map" | "flying" | "photo";
+/** `calling` is the few seconds of film after ringing BBB: its tow truck leaving the garage (ADR 0021). */
+type Mode = "boot" | "pick" | "drive" | "entering" | "garage" | "leaving" | "map" | "flying" | "photo" | "calling";
 type Presence = "solo" | "local" | "joining" | "online" | "full" | "away";
 type Prompt =
   | { kind: "garage"; style: SiteStyle }
-  | { kind: "mission"; mission: Mission }
+  /** At a start arch. `wait` is how many seconds until the tide lets it start (tide.ts): 0 for now, and for a course that needs no tide. */
+  | { kind: "mission"; mission: Mission; wait: number }
   | { kind: "friend"; id: string; name: string; asked: boolean }
   /** At the door of the bank, church, school or casino (ADR 0012). */
   | { kind: "landmark"; id: LandmarkKind }
@@ -84,6 +98,10 @@ type Prompt =
   | { kind: "flight"; to: WorldId }
   /** At the convoy's arch, or gathering one: `lead` in bold, then `rest`. `act` if E does something. */
   | { kind: "convoy"; lead: string; rest: string; act: boolean }
+  /** Hung up on a rock (ADR 0021): `lead` in bold, then `rest`. `act` if E rings BBB for a tow. */
+  | { kind: "stuck"; lead: string; rest: string; act: boolean }
+  /** Beside a stuck truck: `can` with a winch fitted to pull it off, `pulling` once the cable is on. */
+  | { kind: "winch"; id: string; name: string; can: boolean; pulling: boolean }
   | null;
 /** `crew` is the rest of a convoy or race: their names and how many flags each has passed. `place` is mine in a race. */
 /** `air` is set on a course with a ramp: the longest the truck has been off the ground so far, shown in place of the clock. */
@@ -94,6 +112,8 @@ type Actions = {
   act(): void;
   leave(): void;
   toggleMap(): void;
+  /** A click on the open map, 0–1 across a sheet `px` pixels wide: puts the pin there, or takes it up if the click is on it. */
+  pin(fx: number, fy: number, px: number): void;
   look(v: VehicleId): void;
   pick(v: VehicleId): void;
   preview(v: VehicleId, l: Loadout): void;
@@ -118,6 +138,16 @@ const noop = () => {};
 const HELD: Input = { left: false, right: false, gas: false, brake: false };
 /** Forces the on-screen prompt to be worked out again next frame. */
 const STALE = "?";
+const NO_ROPES: Rope[] = [];
+const NO_TOWS: TowDrawn[] = [];
+/** Who has hold of a stuck truck when it's BBB's tow truck and not another player. */
+const BBB = "BBB";
+/**
+ * The tow truck this driver rang for: `ringing` while the fee is paid, `leaving` during
+ * the film of it pulling out of the garage, `coming` while only its distance is told,
+ * and after that it's on a `visit`. `t` is seconds into the phase it's in.
+ */
+type Tow = { phase: "ringing" | "leaving" | "coming" | "here"; t: number; garage: number; distance: number; line: TowLine; visit: TowVisit };
 
 const smooth = (lo: number, hi: number, x: number) => {
   const t = Math.max(0, Math.min(1, (x - lo) / (hi - lo)));
@@ -172,7 +202,7 @@ export function Game() {
   const panelRef = useRef(false);
   /** Things the UI asks the game loop to do; the loop owns all the state. */
   const actions = useRef<Actions>({
-    act: noop, leave: noop, toggleMap: noop, look: noop, pick: noop, preview: noop, fit: noop, say: noop,
+    act: noop, leave: noop, toggleMap: noop, pin: noop, look: noop, pick: noop, preview: noop, fit: noop, say: noop,
     photo: noop, turnPhoto: noop, zoomPhoto: noop, snap: noop,
     buy: async () => null, fly: async () => null, setName: async () => null, leaderboard: async () => [], chatOpen: () => false,
   });
@@ -199,7 +229,9 @@ export function Game() {
   const [draft, setDraft] = useState("");
   const [chat, setChat] = useState<ChatShown[]>([]);
   const [canChat, setCanChat] = useState(false);
+  const [towFrom, setTowFrom] = useState<string | null>(null);
   const [canPhoto, setCanPhoto] = useState(true);
+  const [pinned, setPinned] = useState(false);
 
   useEffect(() => {
     typingRef.current = typing;
@@ -214,8 +246,9 @@ export function Game() {
     // For checking things by screenshot: ?hour=22 starts the clock there, ?garage=2 parks
     // you at a garage's door, ?at=x,z,heading drops you anywhere, ?airport parks you behind
     // the plane, ?world=island starts single player there, ?rig= skips the picker,
-    // ?miles= starts single player with miles to spend, ?net=local plays across tabs of
-    // this browser with no account. Not linked from anywhere.
+    // ?miles= starts single player with miles to spend (and with ?rig= and ?winch, one of
+    // them fitted), ?net=local plays across tabs of this browser with no account,
+    // ?tide=low or high holds the island's tide there. Not linked from anywhere.
     const params = new URLSearchParams(window.location.search);
     const localNet = params.get("net") === "local";
     const worldParam = params.get("world");
@@ -235,6 +268,11 @@ export function Game() {
     let rig: VehicleId = rigParam ?? "bluff";
     let loadout: Loadout = { ...STOCK_LOADOUT };
     let spec = specFor(rig, loadout);
+    /**
+     * The same rig as single player drives it: it can't be hung up on a rock (ADR 0021).
+     * There would be nobody to winch it off, and a reload there loses everything.
+     */
+    let loose = { ...spec, hang: 0 };
     const car = makeCar(world, world.start.x, world.start.z, world.start.heading, spec);
     let view: ReturnType<typeof createView>;
     try {
@@ -267,6 +305,8 @@ export function Game() {
 
     const at = (params.get("at") ?? "").split(",").map(Number);
     const startHour = Number(params.get("hour"));
+    /** How far out the tide is held, in metres below high water, or null to let it come and go. */
+    const heldTide = params.get("tide") === "low" ? TIDE.fall : params.get("tide") === "high" ? 0 : null;
     const startGarage = view.garages[Number(params.get("garage"))];
 
     // The physics sees the train and other players' trucks as obstacles on top of the static world.
@@ -318,8 +358,16 @@ export function Game() {
     let runIndex = -1;
     let shownRun = "";
     let shownPrompt = "";
-    let target: { x: number; z: number } | null = null;
+    let target: Spot | null = null;
     let targetClock = 0;
+    /** Where the player has put their pin on the map, for the compass to lead to (pin.ts). */
+    let pin: Spot | null = null;
+    const setPin = (to: Spot | null) => {
+      pin = to;
+      // Looked at again straight away, not at the next half second.
+      targetClock = 0;
+      setPinned(to !== null);
+    };
     let tent = -1;
     let retryClock = 0;
     let lastPose = { x: car.x, z: car.z };
@@ -335,6 +383,24 @@ export function Game() {
     let tagsAt = 0;
     let friendHere: { id: string; name: string } | null = null;
     let chatKey = 0;
+    // Stuck trucks and winches (ADR 0021): who here is hung up on a rock; the cables out
+    // just now, by the truck on the hook; the truck this one could winch from where it
+    // stands, and the one it is winching; and who is winching this one.
+    const stuckHere = new Set<string>();
+    const ropes = new Map<string, { from: string; since: number }>();
+    let winchHere: { id: string; name: string } | null = null;
+    let winching: { id: string; since: number } | null = null;
+    let wasStuck = false;
+    let pulledBy: string | null = null;
+    // BBB (ADR 0021): the tow truck rung for from here, and other drivers' as they turn up.
+    let tow: Tow | null = null;
+    const visits = new Map<string, TowVisit>();
+    const forgetRopes = () => {
+      stuckHere.clear();
+      ropes.clear();
+      visits.clear();
+      winchHere = winching = null;
+    };
     // A convoy or a race: what E does at its arch, my time through its finish while the
     // others come in, and a race's results once everyone is through.
     const convoysOf = () => new Convoys(() => store.get().id, (msg) => net?.convoy(msg), world.missions);
@@ -386,6 +452,7 @@ export function Game() {
       car.steer = 0;
       car.grounded = true;
       car.groundY = world.height(x, z);
+      car.stuck = null;
     };
 
     /** `tell` is false for a look in the picker, which isn't a choice the others need to hear about. */
@@ -393,6 +460,7 @@ export function Game() {
       rig = v;
       loadout = l;
       spec = specFor(v, l);
+      loose = { ...spec, hang: 0 };
       view.setRig(v, l);
       if (tell) net?.update({ vehicle: v, loadout: l });
     };
@@ -440,7 +508,10 @@ export function Game() {
       moving = [];
       nearGarage = -1;
       landmarkHere = friendHere = target = null;
+      // The pin was a spot in the world just left.
+      setPin(null);
       flightHere = false;
+      forgetRopes();
       shownPrompt = STALE;
       placeOnGround(world.start.x, world.start.z, world.start.heading, 0);
     };
@@ -473,7 +544,7 @@ export function Game() {
     const sharePose = (now: number, asked = false) => {
       const m = modeRef.current;
       if (!net || tent < 0 || m === "boot" || m === "pick") return;
-      const pose = { x: car.x, y: car.y, z: car.z, heading: car.heading, pitch: car.pitch, roll: car.roll, speed: car.speed, steer: car.steer, turn: yawRateOf(car, spec) };
+      const pose = { x: car.x, y: car.y, z: car.z, heading: car.heading, pitch: car.pitch, roll: car.roll, speed: car.speed, steer: car.steer, turn: yawRateOf(car, spec), stuck: Boolean(car.stuck), hooked: Boolean(car.stuck?.pull) };
       // In photo mode the truck stands still here, so it does there too, rather than being guessed on down the road.
       if (m === "photo") Object.assign(pose, { speed: 0, turn: 0 });
       if (!asked && !gate.due(pose, now, peers.size + 1)) return;
@@ -491,10 +562,21 @@ export function Game() {
           if (friends.has(p.id)) friends.set(p.id, p.name);
           if (store instanceof LocalStore) store.rememberName(p.id, p.name);
         }
+        for (const id of stuckHere) if (!peers.has(id)) stuckHere.delete(id);
         view.remotes.sync(list);
         setPeople(list.length + 1);
       },
-      pose: (id, pose) => view.remotes.pose(id, pose, performance.now() / 1000),
+      pose(id, pose) {
+        view.remotes.pose(id, pose, performance.now() / 1000);
+        if (Boolean(pose.stuck) === stuckHere.has(id)) return;
+        if (!pose.stuck) return void stuckHere.delete(id);
+        stuckHere.add(id);
+        // Friends hear about it wherever they are; a winch is what makes it their business.
+        if (friends.has(id)) {
+          say(`${nameOf(id)} is stuck on a rock. ${hasWinch(loadout) ? "Follow the compass to winch them off." : "It takes a winch from a garage to pull them off."}`, 8);
+          targetClock = 0;
+        }
+      },
       // Answered here, not on the next frame: a tab in the background draws no frames.
       wanted: () => sharePose(performance.now() / 1000, true),
       asked(from) {
@@ -508,6 +590,30 @@ export function Game() {
         void refreshFriends().then(() => say(`You and ${nameOf(from)} are friends now. Press T near them to chat.`, 7));
       },
       convoy: (msg) => onConvoy(convoys.hear(msg, performance.now() / 1000, (id) => friends.has(id))),
+      winched(from, to) {
+        const since = performance.now() / 1000;
+        if (to !== store.get().id) {
+          // Someone else's rescue: all there is to do is draw the cable.
+          if (stuckHere.has(to) && peers.has(from)) ropes.set(to, { from, since });
+          return;
+        }
+        // Mine. Believed only from someone here with a winch, near enough for the cable.
+        const them = view.remotes.positions().find((p) => p.id === from);
+        if (!car.stuck || !them || !canWinch(them, peers.get(from)?.loadout, car, 4)) return;
+        car.stuck.pull = { x: them.x, z: them.z };
+        pulledBy = from;
+        ropes.set(to, { from, since });
+        // Says the cable took, to the one pulling and to anyone watching.
+        gate.forget();
+        sharePose(since, true);
+        shownPrompt = STALE;
+      },
+      towed(from, line) {
+        // Someone else's tow truck, coming in to them. Believed only for a stuck truck, and only up close to it.
+        const them = view.remotes.positions().find((p) => p.id === from);
+        if (!them?.stuck || line.length > TOW_RUN || Math.hypot(line.x - them.x, line.z - them.z) > TOW_STOP + 6) return;
+        visits.set(from, { line, car: makeCar(world, line.x, line.z, line.heading, TOW_SPEC), t: 0, gone: -1 });
+      },
       chat(line) {
         if (!friends.has(line.from)) return;
         const them = view.remotes.positions().find((p) => p.id === line.from);
@@ -561,6 +667,7 @@ export function Game() {
       net.leave();
       leftAt = Date.now();
       tent = -1;
+      forgetRopes();
       peers.clear();
       view.remotes.sync([]);
       setPeople(1);
@@ -627,7 +734,9 @@ export function Game() {
       if (p.vehicle) fitRig(p.vehicle, p.loadout);
       else if (rigParam && !store.online) {
         await store.buy(itemKey("vehicle", rigParam));
-        if (!(await store.equip(rigParam, loadout))) fitRig(rigParam, loadout);
+        const winch = params.has("winch") && !(await store.buy(itemKey("winch", "winch")));
+        const fit = winch ? { ...loadout, winch: "winch" } : loadout;
+        if (!(await store.equip(rigParam, fit))) fitRig(rigParam, fit);
       }
       if (net && p.name) {
         const joining = join();
@@ -671,7 +780,7 @@ export function Game() {
     };
     actions.current.fly = async () => {
       const spot = boardSpot(world.airport);
-      if (modeRef.current !== "drive" || trip || running || convoys.state || Math.hypot(car.x - spot.x, car.z - spot.z) > BOARD_REACH + 2) {
+      if (modeRef.current !== "drive" || trip || running || convoys.state || car.stuck || Math.hypot(car.x - spot.x, car.z - spot.z) > BOARD_REACH + 2) {
         return "Pull up behind the plane first.";
       }
       const to = flightFrom(world.id);
@@ -687,6 +796,7 @@ export function Game() {
         net.leave();
         net = null;
         tent = -1;
+        forgetRopes();
         peers.clear();
         view.remotes.sync([]);
         setPeople(1);
@@ -728,9 +838,14 @@ export function Game() {
     const nearbyFriends = () =>
       view.remotes.positions().filter((p) => friends.has(p.id) && Math.hypot(p.x - car.x, p.z - car.z) < CHAT_RANGE).map((p) => p.id);
 
+    /** Seconds until the tide has `m` dry and it can be started: 0 if it can be now, as any course off the sandbar always can. */
+    const tideWait = (m: Mission) => (m.ebb === undefined ? 0 : heldTide === null ? untilEbb(time, m.ebb) : heldTide >= m.ebb ? 0 : Infinity);
+
     /** E (or the on-screen button): whatever is on offer here. */
     actions.current.act = () => {
-      if (modeRef.current !== "drive") return;
+      if (modeRef.current !== "drive" || winching) return;
+      if (car.stuck) return callTow();
+      if (winchHere && hasWinch(loadout)) return winchOff(winchHere.id);
       if (convoyAct) return convoyAct();
       if (nearGarage >= 0 && !running) {
         inputRef.current = noInput();
@@ -743,6 +858,8 @@ export function Game() {
       }
       const m = !running && !convoys.state && missionAt(courses, car.x, car.z);
       if (m) {
+        // Under the sea for now: the prompt says how long until it isn't.
+        if (tideWait(m) > 0) return;
         // Line up just behind the start arch, facing the first gate.
         placeOnGround(m.start.x - Math.sin(m.start.heading) * 7, m.start.z - Math.cos(m.start.heading) * 7, m.start.heading, 0);
         running = startRun(m);
@@ -765,6 +882,165 @@ export function Game() {
         return;
       }
       if (friendHere) befriend(friendHere.id);
+    };
+
+    // ——— Stuck, and the winch (ADR 0021) ———
+
+    /** Hooks the winch onto a stuck truck. Its driver's game does the pulling; this one holds still. */
+    const winchOff = (id: string) => {
+      if (!net) return;
+      const since = performance.now() / 1000;
+      inputRef.current = noInput();
+      net.winch(id);
+      winching = { id, since };
+      ropes.set(id, { from: store.get().id, since });
+      shownPrompt = STALE;
+    };
+
+    /** The truck has just hung itself up on a rock. */
+    const onStuck = (now: number) => {
+      wasStuck = true;
+      if (running || convoys.state) giveUp(convoys.state ? `Stuck on a rock, so you've left the ${noun(convoys.state.mission)}.` : "Stuck on a rock. Run abandoned.");
+      else say("Hung up on a rock: that one was too tall to take at speed.", 7);
+      // What's been driven is banked now, since the only way out may be a reload.
+      store.addMiles(unbanked);
+      unbanked = 0;
+      void store.flush();
+      // The others hear at once, though a parked truck would say nothing.
+      gate.forget();
+      sharePose(now, true);
+      shownPrompt = STALE;
+    };
+
+    /** And it's off again, on the end of someone's cable. */
+    const onFree = (now: number) => {
+      wasStuck = false;
+      if (pulledBy) say(`${whoPulls()} pulled you off the rock.`, 6);
+      pulledBy = null;
+      gate.forget();
+      sharePose(now, true);
+      shownPrompt = STALE;
+    };
+
+    /** Cables come in once the truck on the hook is free, or gone, or it's been too long. */
+    const tendRopes = (now: number) => {
+      const me = store.get().id;
+      for (const [to, rope] of ropes) {
+        const stuck = to === me ? Boolean(car.stuck) : stuckHere.has(to);
+        const pulling = winching?.id === to ? winching : null;
+        // The other driver's game decides whether the cable took, and says so in its next pose.
+        const slipped = pulling && now - pulling.since > WINCH_TAKES && !view.remotes.positions().find((p) => p.id === to)?.hooked;
+        if (stuck && !slipped && (rope.from === me || peers.has(rope.from)) && now - rope.since < WINCH_LIMIT) continue;
+        ropes.delete(to);
+        if (!pulling) continue;
+        winching = null;
+        shownPrompt = STALE;
+        if (!stuck && peers.has(to)) say(`${nameOf(to)} is off the rock.`, 5);
+        else if (slipped) say("The cable didn't take. Pull up a little closer and try again.", 6);
+      }
+      view.setRopes(ropes.size ? [...ropes].map(([to, r]) => ({ from: r.from === me ? null : r.from, to: to === me ? null : to })) : NO_ROPES);
+    };
+
+    // ——— BBB (ADR 0021) ———
+
+    const whoPulls = () => (pulledBy === BBB ? BBB : nameOf(pulledBy ?? ""));
+    const garageName = (i: number) => GARAGE_NAMES[view.garages[i].style].replace(/^The /, "the ");
+
+    /** Rings BBB. The fee is taken, and a tow truck leaves whichever garage is nearest. */
+    const callTow = () => {
+      const garages = view.garages;
+      if (tow || !car.stuck || car.stuck.pull || !garages.length || store.get().balance < TOW_FEE) return;
+      const far = (i: number) => Math.hypot(garages[i].approach.x - car.x, garages[i].approach.z - car.z);
+      const garage = garages.reduce((best, _, i) => (far(i) < far(best) ? i : best), 0);
+      const line = approachLine(ground, car, garages[garage].approach);
+      const ringing: Tow = {
+        phase: "ringing", t: 0, garage, distance: far(garage), line,
+        visit: { line, car: makeCar(world, line.x, line.z, line.heading, TOW_SPEC), t: 0, gone: -1 },
+      };
+      tow = ringing;
+      shownPrompt = STALE;
+      void store.tow().then((err) => {
+        if (cancelled || tow !== ringing) return;
+        shownPrompt = STALE;
+        if (err || !car.stuck) {
+          tow = null;
+          return say(err ?? "You're off the rock, so BBB has turned back. The call isn't refunded.", 7);
+        }
+        ringing.phase = "leaving";
+        inputRef.current = noInput();
+        setTowFrom(garageName(garage));
+        setPrompt(null);
+        shownPrompt = "";
+        dip();
+        setModeBoth("calling");
+      });
+    };
+
+    /**
+     * Runs BBB's trucks on by `dt`: this driver's, wherever it has got to, and any others
+     * in sight. Returns the shot to show while it's the film of one leaving its garage.
+     */
+    const towOn = (dt: number, now: number): Shot | null => {
+      const drawn: TowDrawn[] = [];
+      let shot: Shot | null = null;
+      const t = tow;
+      if (t?.phase === "leaving") {
+        t.t += dt;
+        const f = towLeaving(view.garages[t.garage], t.t);
+        const c = t.visit.car;
+        // Through the door it's on the yard like any truck; inside, it's on the garage's own floor.
+        if (f.out) standTow(c, world, f.x, f.z, f.heading, f.speed);
+        else {
+          const floor = world.height(f.x, f.z) - f.sink;
+          Object.assign(c, { x: f.x, z: f.z, heading: f.heading, speed: f.speed, y: floor + TOW_SPEC.ride, groundY: floor, pitch: 0, roll: 0 });
+        }
+        drawn.push({ car: c, fade: 1 });
+        view.setDoor(t.garage, f.open);
+        shot = { from: { x: f.camera.x, y: world.height(f.camera.x, f.camera.z) + f.camera.up, z: f.camera.z }, to: { x: c.x, y: c.y + 0.3, z: c.z } };
+        if (fadeRef.current && rising < 0) fadeRef.current.style.opacity = String(f.dark);
+        if (t.t >= TOW_LEAVE) {
+          // Back to the truck on its rock, to wait.
+          view.setDoor(t.garage, 0);
+          t.phase = "coming";
+          t.t = 0;
+          dip();
+          setModeBoth("drive");
+          say(`BBB is on its way from ${garageName(t.garage)}.`, 6);
+        }
+      } else if (t?.phase === "coming") {
+        t.t += dt;
+        if (!car.stuck) {
+          tow = null;
+          say("You're off the rock, so BBB has turned back. The call isn't refunded.", 7);
+        } else if (t.t >= towWait(t.distance)) {
+          // In sight. Everyone near is told the line it's coming down, to draw the same truck.
+          t.phase = "here";
+          net?.tow(t.line);
+          shownPrompt = STALE;
+        }
+      } else if (t?.phase === "here") {
+        const fade = towVisit(t.visit, world, dt, Boolean(car.stuck));
+        if (car.stuck && !car.stuck.pull && towArrived(t.visit)) {
+          // Pulled up: its winch goes on, and the truck's own game hauls it in, as for a friend's.
+          car.stuck.pull = { x: t.visit.car.x, z: t.visit.car.z };
+          pulledBy = BBB;
+          gate.forget();
+          sharePose(now, true);
+          shownPrompt = STALE;
+        }
+        if (t.visit.gone >= 0 && fade <= 0) tow = null;
+        else drawn.push({ car: t.visit.car, fade, cableTo: car.stuck?.pull && pulledBy === BBB ? null : undefined });
+      }
+      for (const [id, v] of visits) {
+        const stuck = stuckHere.has(id);
+        const fade = towVisit(v, world, dt, stuck);
+        if ((v.gone >= 0 && fade <= 0) || !peers.has(id) || v.t > 120) visits.delete(id);
+        else drawn.push({ car: v.car, fade, cableTo: stuck && towArrived(v) ? id : undefined });
+      }
+      view.setTows(drawn.length ? drawn : NO_TOWS);
+      // While this driver's is coming in and hooking on, the camera turns to watch it.
+      view.face(tow?.phase === "here" && car.stuck ? tow.visit.car : null);
+      return shot;
     };
 
     const befriend = (id: string) => {
@@ -795,6 +1071,10 @@ export function Game() {
         setModeBoth("map");
         requestAnimationFrame(() => sizeCanvas(fullRef.current));
       } else if (modeRef.current === "map") setModeBoth("drive");
+    };
+    actions.current.pin = (fx, fy, px) => {
+      if (modeRef.current !== "map") return;
+      setPin(pin && onPin(pin, fx, fy, world.mapSpan, px) ? null : pinAt(fx, fy, world.mapSpan));
     };
 
     // ——— Photo mode (ADR 0018) ———
@@ -1154,11 +1434,11 @@ export function Game() {
       const me = store.get().id;
       const list = view.remotes.tags();
       // In photo mode everyone in the picture has their name over their truck, this one's
-      // driver too, as the others see it; the chat goes. A picture is of who was there.
+      // driver too, as the others see it (stuck, if it is); the chat goes. A picture is of who was there.
       const posing = modeRef.current === "photo";
       const myName = posing ? store.get().name : null;
       const mine = posing ? undefined : bubbles.get(me);
-      if (myName || mine) list.push({ id: me, name: myName ?? "", x: car.x, y: car.y + view.carTop() + 1.1, z: car.z });
+      if (myName || mine) list.push({ id: me, name: myName ?? "", x: car.x, y: car.y + view.carTop() + 1.1, z: car.z, stuck: Boolean(myName && car.stuck) });
       const seen = new Set<string>();
       const shown: TagBox[] = [];
       for (const t of list) {
@@ -1180,7 +1460,7 @@ export function Game() {
         const speaking = !posing && bubble && bubble.until > now ? bubble.text : "";
         if (sayEl.textContent !== speaking) sayEl.textContent = speaking;
         sayEl.style.display = speaking ? "" : "none";
-        const label = t.name + (friends.has(t.id) ? " ★" : "");
+        const label = t.name + (friends.has(t.id) ? " ★" : "") + (t.stuck ? " · stuck" : "");
         if (nameEl.textContent !== label) nameEl.textContent = label;
         if (!at || at.far > 260) {
           el.style.opacity = "0";
@@ -1257,8 +1537,12 @@ export function Game() {
       return out.toDataURL("image/png");
     };
 
-    /** The guidance mark on the compass: the nearest thing the current goal is about. */
+    /**
+     * The mark on the compass: the next flag of a course, a friend's call, the pin, or the
+     * nearest thing the current goal is about (pin.ts has the order).
+     */
     const aim = (dt: number) => {
+      if (pin && reached(pin, car.x, car.z)) setPin(null);
       targetClock -= dt;
       if (targetClock <= 0) {
         targetClock = 0.5;
@@ -1269,13 +1553,11 @@ export function Game() {
         // A friend gathering a convoy or a race comes before the guidance; once in one, the course leads.
         const call = convoys.state ? undefined : convoys.callsOut()[0];
         const called = call ? (crewCourses.find((c) => c.id === call.mission)?.start ?? null) : null;
-        target =
-          running || convoys.state ? null
-          : called ? called
-          : !g ? null
-          : g.target === "garage" ? nearest(view.garages.map((x) => x.approach))
-          : g.target === "cafe" ? view.cafe
-          : null;
+        // A stuck friend comes before a call or a pin, for anyone with a winch to pull them off.
+        const stranded = hasWinch(loadout) ? nearest(view.remotes.positions().filter((p) => p.stuck && friends.has(p.id))) : null;
+        const guide = !g ? null : g.target === "garage" ? nearest(view.garages.map((x) => x.approach)) : g.target === "cafe" ? view.cafe : null;
+        // A truck on a rock is led nowhere.
+        target = markFor(Boolean(running || convoys.state || car.stuck), stranded ?? called, pin, guide);
         const cafe = view.cafe;
         if (g?.id === "cafe" && cafe && Math.hypot(cafe.x - car.x, cafe.z - car.z) < cafe.r + CAFE_SLACK) goal("cafe");
       }
@@ -1288,6 +1570,15 @@ export function Game() {
         mark.style.opacity = "0";
         return;
       }
+      // Leading to the pin, the mark is the pin's head: round, and in its colour. Kept on
+      // the element, which is a new one each time the compass comes back.
+      const mine = to === pin;
+      if ((mark.dataset.pin === "1") !== mine) {
+        mark.dataset.pin = mine ? "1" : "";
+        mark.style.backgroundColor = mine ? PALETTE.map.pin : "";
+        mark.style.borderRadius = mine ? "50%" : "";
+        mark.style.outline = mine ? `1.5px solid ${PALETTE.map.paper}` : "";
+      }
       const off = wrapHalf(bearingOf(Math.atan2(to.x - car.x, to.z - car.z)) - bearingOf(car.heading)) * COMPASS.length * COMPASS_ITEM;
       const edge = COMPASS_VIEW / 2 + 10;
       mark.style.opacity = "1";
@@ -1297,7 +1588,59 @@ export function Game() {
     };
 
     /** What's on offer where the truck is: a garage door, a start arch, a friend to make. */
+    /** Shows what's on offer, if that has changed. */
+    const offer = (next: Prompt) => {
+      const key = !next ? ""
+        : next.kind === "garage" ? `garage:${next.style}`
+        : next.kind === "mission" ? `mission:${next.mission.id}:${next.wait > 0 ? tideLine(next.wait) : ""}`
+        : next.kind === "convoy" ? `convoy:${next.lead}${next.rest}${next.act}`
+        : next.kind === "landmark" ? `landmark:${next.id}`
+        : next.kind === "flight" ? `flight:${next.to}`
+        : next.kind === "stuck" ? `stuck:${next.lead}${next.rest}${next.act}`
+        : next.kind === "winch" ? `winch:${next.id}${next.can}${next.pulling}`
+        : `friend:${next.id}${next.asked}`;
+      if (key !== shownPrompt) {
+        shownPrompt = key;
+        setPrompt(next);
+      }
+    };
+
     const lookAround = () => {
+      // A stuck truck within the cable's reach, if this one is more or less stopped.
+      winchHere = null;
+      if (!car.stuck && !winching && !running && !convoys.state && Math.abs(car.speed) < WINCH_STILL) {
+        let best = WINCH_REACH;
+        for (const p of view.remotes.positions()) {
+          const d = Math.hypot(p.x - car.x, p.z - car.z);
+          if (!p.stuck || d > best || ropes.has(p.id)) continue;
+          best = d;
+          winchHere = { id: p.id, name: nameOf(p.id) };
+        }
+      }
+      // Hung up on a rock, or with a winch to work: nothing else is on offer.
+      if (car.stuck || winching || (winchHere && hasWinch(loadout))) {
+        nearGarage = -1;
+        convoyAct = null;
+        flightHere = false;
+        landmarkHere = friendHere = null;
+        if (car.stuck) {
+          const lead = "Stuck on a rock";
+          if (car.stuck.pull && pulledBy) return offer({ kind: "stuck", lead, rest: ` · ${whoPulls()} is winching you off`, act: false });
+          if (tow?.phase === "coming") return offer({ kind: "stuck", lead: "BBB is on its way", rest: ` · ${fmtAway(towAway(tow.distance, tow.line, tow.t))} away`, act: false });
+          if (tow) return offer({ kind: "stuck", lead: tow.phase === "here" ? "BBB is here" : "Ringing BBB", rest: tow.phase === "here" ? " · hooking on" : "…", act: false });
+          // Nobody is coming yet. E rings BBB, if there are the miles for it.
+          const others = stuckHelp(net !== null && tent >= 0, [...peers.keys()].filter((id) => friends.has(id)).length);
+          const fee = `${fmtMiles(TOW_FEE)} mi`;
+          return offer(
+            store.get().balance >= TOW_FEE
+              ? { kind: "stuck", lead: "Call BBB for a tow", rest: ` · ${fee} · ${others}`, act: true }
+              : { kind: "stuck", lead, rest: ` · a tow from BBB is ${fee}, more than you have · ${others}`, act: false },
+          );
+        }
+        const them = winching ?? winchHere!;
+        return offer({ kind: "winch", id: them.id, name: nameOf(them.id), can: true, pulling: winching !== null });
+      }
+
       let found = -1;
       view.garages.forEach((g, i) => {
         if (Math.hypot(car.x - g.approach.x, car.z - g.approach.z) < 7 && Math.abs(car.speed) < 5) found = i;
@@ -1327,23 +1670,15 @@ export function Game() {
 
       const next: Prompt =
         found >= 0 ? { kind: "garage", style: view.garages[found].style }
-        : m ? { kind: "mission", mission: m }
+        : m ? { kind: "mission", mission: m, wait: tideWait(m) }
         : together ? together
         : flightHere ? { kind: "flight", to: flightFrom(world.id) }
         : landmarkHere ? { kind: "landmark", id: landmarkHere }
         : friendHere ? { kind: "friend", id: friendHere.id, name: friendHere.name, asked: askedBy.has(friendHere.id) }
+        // Beside a stuck truck with no winch: at least say what it would take.
+        : winchHere ? { kind: "winch", id: winchHere.id, name: winchHere.name, can: false, pulling: false }
         : null;
-      const key = !next ? ""
-        : next.kind === "garage" ? `garage:${next.style}`
-        : next.kind === "mission" ? `mission:${next.mission.id}`
-        : next.kind === "convoy" ? `convoy:${next.lead}${next.rest}${next.act}`
-        : next.kind === "landmark" ? `landmark:${next.id}`
-        : next.kind === "flight" ? `flight:${next.to}`
-        : `friend:${next.id}${next.asked}`;
-      if (key !== shownPrompt) {
-        shownPrompt = key;
-        setPrompt(next);
-      }
+      offer(next);
     };
 
     /** The mission in progress: countdown, gates, finish. */
@@ -1454,19 +1789,25 @@ export function Game() {
       } else {
         // A flight: the film places the truck and the plane, and directs the camera.
         const film = m === "flying" ? flyOn(dt) : null;
+        // The tide is wherever the clock has it; only the island's sea has one.
+        world.setTide(heldTide ?? ebbAt(time));
         // The map is laid over the drive, which carries on under it.
         if (m === "drive" || m === "map") {
           moving = [...trainObstacles(view.trainCars(), world.height), ...view.remotes.obstacles()];
           lastPose = { x: car.x, z: car.z };
           acc += dt;
           // Held at a start line until "go": the suspension settles, the truck doesn't roll.
-          const held = running !== null && running.clock < 0;
+          // And held while its winch is hauling someone in: it's the anchor.
+          const held = (running !== null && running.clock < 0) || winching !== null;
           const input = held ? HELD : inputRef.current;
+          // Only where there are others to winch you off, or at least a tent to reload to.
+          const driven = store.online || localNet ? spec : loose;
           while (acc >= STEP) {
             if (held) car.speed = car.side = 0;
-            step(car, input, STEP, ground, spec);
+            step(car, input, STEP, ground, driven);
             acc -= STEP;
           }
+          if (Boolean(car.stuck) !== wasStuck) (car.stuck ? onStuck : onFree)(now);
           runOn(dt);
           lookAround();
           if (cheer && m === "drive") {
@@ -1501,7 +1842,9 @@ export function Game() {
         }
 
         if (!film) map.reveal(car.x, car.z);
-        view.render(car, dt, time, spec, m === "boot" || m === "pick", film);
+        tendRopes(now);
+        const watch = towOn(dt, now);
+        view.render(car, dt, time, spec, m === "boot" || m === "pick", film, watch);
         // The tags' layer is put away under the map, where they couldn't be measured.
         if (m !== "map") drawTags(now);
         aim(dt);
@@ -1521,8 +1864,8 @@ export function Game() {
           const lead = view.trainCars()[0];
           const train = lead && map.explored(lead.x, lead.z) ? { x: lead.x, z: lead.z, heading: lead.yaw } : undefined;
           const players = view.remotes.positions().map((p) => ({ ...p, friend: friends.has(p.id) }));
-          if (m === "map") map.drawFull(g, sheet.width, car, { train, players });
-          else map.drawMini(g, sheet.width, car, { train, players });
+          if (m === "map") map.drawFull(g, sheet.width, car, { train, players, pin });
+          else map.drawMini(g, sheet.width, car, { train, players, pin });
         }
       }
 
@@ -1619,8 +1962,10 @@ export function Game() {
 
   const driving = mode === "drive" || mode === "entering" || mode === "leaving";
   // The guidance is about the valley's garages and café; the island has none.
-  const goal = profile?.world === "valley" ? currentGoal(profile.goals, online || presence === "local") : null;
+  const goal = profile?.world === "valley" ? currentGoal(profile.goals, online || presence === "local", pinned) : null;
   const solo = !online && presence !== "local";
+  /** Whether E does anything about what's on offer, or it's only there to be read. */
+  const pressable = prompt !== null && !(prompt.kind === "convoy" && !prompt.act) && !(prompt.kind === "mission" && prompt.wait > 0) && !(prompt.kind === "stuck" && !prompt.act) && !(prompt.kind === "winch" && (!prompt.can || prompt.pulling));
 
   return (
     <div className="relative h-[100dvh] w-full select-none overflow-hidden bg-[#efb08c]">
@@ -1757,6 +2102,13 @@ export function Game() {
         </div>
       )}
 
+      {/* The one line under the film of BBB's tow truck leaving its garage (ADR 0021). */}
+      {mode === "calling" && towFrom && (
+        <p className="pointer-events-none absolute inset-x-4 bottom-10 text-center text-sm text-[rgba(255,246,232,0.88)] drop-shadow">
+          BBB is leaving {towFrom}
+        </p>
+      )}
+
       {toast && driving && (
         <p className="pointer-events-none absolute inset-x-4 top-[6.5rem] text-center text-sm text-[rgba(255,246,232,0.88)] drop-shadow sm:top-24">
           {toast}
@@ -1810,17 +2162,21 @@ export function Game() {
         <div className="absolute inset-x-0 bottom-28 flex justify-center px-4 sm:bottom-10">
           <button
             onClick={() => actions.current.act()}
-            disabled={prompt.kind === "convoy" && !prompt.act}
+            disabled={!pressable}
             className="max-w-md rounded-full border border-white/25 bg-black/30 px-4 py-2 text-sm text-[rgba(255,246,232,0.9)] backdrop-blur"
           >
-            {(prompt.kind !== "convoy" || prompt.act) && (
-              <span className="mr-2 hidden rounded border border-white/30 px-1.5 text-xs sm:inline">{prompt.kind === "friend" ? "F" : "E"}</span>
-            )}
+            {pressable && <span className="mr-2 hidden rounded border border-white/30 px-1.5 text-xs sm:inline">{prompt.kind === "friend" ? "F" : "E"}</span>}
             {prompt.kind === "garage" && <>Enter {GARAGE_NAMES[prompt.style].replace(/^The /, "the ")}</>}
-            {prompt.kind === "mission" && (
+            {prompt.kind === "mission" && prompt.wait === 0 && (
               <>
                 Start <b className="font-semibold">{prompt.mission.name}</b>
                 <span className="text-[rgba(255,246,232,0.6)]"> · {prompt.mission.blurb} · up to {fmtMiles(prompt.mission.reward)} mi</span>
+              </>
+            )}
+            {prompt.kind === "mission" && prompt.wait > 0 && (
+              <>
+                <b className="font-semibold">{prompt.mission.name}</b>
+                <span className="text-[rgba(255,246,232,0.6)]"> · {tideLine(prompt.wait)}</span>
               </>
             )}
             {prompt.kind === "friend" && (prompt.asked ? <>Accept {prompt.name}&apos;s friend request</> : <>Ask {prompt.name} to be friends</>)}
@@ -1837,6 +2193,23 @@ export function Game() {
                 <span className="text-[rgba(255,246,232,0.6)]">{prompt.rest}</span>
               </>
             )}
+            {prompt.kind === "stuck" && (
+              <>
+                <b className="font-semibold">{prompt.lead}</b>
+                <span className="text-[rgba(255,246,232,0.6)]">{prompt.rest}</span>
+              </>
+            )}
+            {prompt.kind === "winch" &&
+              (prompt.pulling ? (
+                <>Winching <b className="font-semibold">{prompt.name}</b> off the rock…</>
+              ) : prompt.can ? (
+                <>Winch <b className="font-semibold">{prompt.name}</b> off the rock</>
+              ) : (
+                <>
+                  <b className="font-semibold">{prompt.name}</b> is stuck on a rock
+                  <span className="text-[rgba(255,246,232,0.6)]"> · it takes a winch from a garage to pull them off</span>
+                </>
+              ))}
           </button>
         </div>
       )}
@@ -1876,10 +2249,20 @@ export function Game() {
 
       {mode === "map" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={() => actions.current.toggleMap()}>
-          <canvas ref={fullRef} className="aspect-square w-[min(88vw,82dvh)] rounded-2xl shadow-2xl" />
-          <p className="absolute bottom-24 text-center text-xs text-[rgba(255,246,232,0.6)] sm:bottom-4">
+          {/* A click on the sheet is for the pin; anywhere off it closes the map. */}
+          <canvas
+            ref={fullRef}
+            className="aspect-square w-[min(88vw,82dvh)] cursor-crosshair rounded-2xl shadow-2xl"
+            onClick={(e) => {
+              e.stopPropagation();
+              const box = e.currentTarget.getBoundingClientRect();
+              actions.current.pin((e.clientX - box.left) / box.width, (e.clientY - box.top) / box.height, box.width);
+            }}
+          />
+          <p className="pointer-events-none absolute bottom-24 text-center text-xs text-[rgba(255,246,232,0.6)] sm:bottom-4">
             {profile && <span className="block tabular-nums text-[rgba(255,246,232,0.85)]">{foundLine(countFound(profile.found, profile.world), profile.world)} found</span>}
-            M or Esc to close
+            <span className="hidden sm:inline">{pinned ? "click the pin to take it up" : "click the map to set a pin for the compass"} · M or Esc to close</span>
+            <span className="sm:hidden">{pinned ? "tap the pin to take it up" : "tap the map to set a pin"} · tap outside to close</span>
           </p>
         </div>
       )}

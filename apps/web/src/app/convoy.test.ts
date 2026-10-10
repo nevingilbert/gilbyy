@@ -373,9 +373,10 @@ describe("the courses for friends", () => {
     ]);
   });
 
-  it("are as many as the courses to drive alone, in both worlds", () => {
+  // The sandbar's course (ADR 0020) is one more to drive alone, when the tide lets you.
+  it("are as many as the courses to drive alone, in both worlds, the sandbar aside", () => {
     expect(world.missions.filter((m) => m.crew === 1)).toHaveLength(together.length);
-    expect(island.missions.filter((m) => m.crew === 1)).toHaveLength(ashore.length);
+    expect(island.missions.filter((m) => m.crew === 1 && m.ebb === undefined)).toHaveLength(ashore.length);
   });
 
   it("start a short drive from the café and the camp, and all but three come back round", () => {

@@ -79,6 +79,11 @@ export const PALETTE = {
     coral: "#ee6f5b",
   },
   lightBar: "#2a2826",
+  // The winch on the bumper, and the cable it pays out to a stuck truck (ADR 0021).
+  cable: "#4b463f",
+  winchHook: "#c9502f",
+  // The lamp on the roof of BBB's tow truck.
+  beacon: "#ffb22e",
 
   // The 4x4 — the trailers' red overlander with a cream roof.
   carBody: "#c4473a",
@@ -270,6 +275,8 @@ export const PALETTE = {
     mission: "#e2702f",
     player: "#f2efe6",
     friend: "#ffd36b",
+    /** The player's own pin, and the compass mark while it leads there: a berry nothing else on the sheet uses. */
+    pin: "#a53b72",
     rim: "rgba(255,246,232,0.55)",
     /** The island's sheet: sand where the valley's is meadow. */
     sand: "#f2e3bd",

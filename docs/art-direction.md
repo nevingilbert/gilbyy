@@ -41,6 +41,8 @@ unhurried exploration in a classic 4x4.
 - A nearly absent HUD: a compass strip, a small round topo minimap, a speedometer in mph
   and an odometer.
   First-time guidance is one small line under the title and a mark on the compass.
+  A pin the player sets on the map borrows that same mark, round and in the pin's
+  berry while it leads there, so the compass never carries two.
 - Calm. Missions are optional, start only when you drive up and press E, and have no
   failure beyond giving up. Their timer shows only while you're on one. Friends can
   drive a convoy that comes home together (ADR 0010) or race (ADR 0011); a race pays
@@ -58,6 +60,11 @@ unhurried exploration in a classic 4x4.
   trees, coats a shade cooler and darker than the ground so a herd reads against the
   orange grass, and the macaws the one bright thing. They graze, wander, and get out
   of the way; a parked truck can watch them. Nothing to hit, count or collect.
+- A tide on the island (ADR 0020). The sea goes out and comes back, slowly enough
+  that you notice the beach is wider before you notice it moving, and the sand it
+  leaves is the same wet sand as the strip above it. At low water a spit of it runs out
+  from the beach by the camp and hooks round under the evening sun; at high water it's
+  a pale shoal with flags standing in the sea. No surf, no foam, nothing on the HUD.
 - A photo mode (ADR 0018): P stops the world, the camera goes round the truck, and the
   shutter keeps the picture, with everyone's name over their truck and no other HUD.
   On screen only those names, a shutter, "back" and one line of how-to. Not while on a course. Pictures aren't collected, counted or listed.
@@ -66,8 +73,10 @@ unhurried exploration in a classic 4x4.
 
 ## What we don't (yet)
 
-- Winching, planks, deformable mud and snow, the photo compendium (photo mode is in, a
-  list of things to photograph is not).
+- Planks, deformable mud and snow, the photo compendium (photo mode is in, a list of
+  things to photograph is not). Winching came in on 2026-10-10 (ADR 0021), in the
+  smallest form that keeps the idea: a truck can be hung up on a boulder, and a friend's
+  winch or a tow truck gets it off. Mud and deep water that hold a truck are still out.
 - Weather. Rain, lightning and fog banks are the strongest candidates to add next.
 - More than two maps. There is the valley (with a snowy plateau in the north) and,
   since 2026-10-09, an island a flight away (ADR 0014), and nine rigs, each inspired by

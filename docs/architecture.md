@@ -106,7 +106,14 @@ Pure modules, no three.js, all unit-tested:
     `buildWorld()`, on the same grid: sea, beach, dunes and jungle, thirty pitches in a
     row on the beach, an airstrip, three garages and a café. It has an empty track and
     no rivers. `planCourses()` lays out its eight courses, four of them for friends
-    (`decisions/0016`, `0019`).
+    (`decisions/0016`, `0019`). After the scatter, `raiseSandbar()` lifts a hooked spit
+    out of the seabed off the camp and `sandbarCourse()` lays a ninth course along it
+    (`decisions/0020`).
+  - `tide.ts`: the island's tide. `ebbAt(time)` is how far the sea stands below high
+    water, on a ten-minute cycle; `untilEbb()` is how long until it's next out far
+    enough. `World.setTide()` moves the island's `waterAt`; the valley's does nothing.
+    `scene.ts` moves the sea's sheet to match and tells the terrain's shader, which
+    paints bared seabed as wet sand.
   - `flight.ts`: the flight as a film. `departure()` and `arrival()` give one frame for
     a time: the plane's pose, its ramp and wheels, where the truck is, the camera, and
     how much is lost in cloud. Also the plane's measurements, which the model shares,
@@ -123,6 +130,13 @@ Pure modules, no three.js, all unit-tested:
 - `net.ts`: presence, tents, poses, friend requests and chat. `SupabaseNet` runs over
   Supabase Realtime; `LocalNet` runs over a `BroadcastChannel`, for testing across
   tabs.
+- `winch.ts`: the rules for pulling a stuck truck off a rock (ADR 0021). The sticking
+  itself is in `physics.ts`; who is stuck travels in the poses, and hooking on is one
+  broadcast.
+- `tow.ts`: BBB's tow truck. Its fee (taken by `call_tow()`), how long it takes to
+  come, the clear line it drives in on (`approachLine()`), and where it is at each
+  moment (`towVisit()`, `towLeaving()`). It is placed, not driven by the physics, so
+  one broadcast of its line lets every player near draw the same truck.
 - `goals.ts` (first-time guidance), `achievements.ts` (which goals are achievements), `track.ts` (train and crossings as functions of
   time, and the bridges' solid parts: a trespass guard on each approach that the train
   rolls over and no truck can cross, concrete abutments under the ends too low to drive
@@ -228,6 +242,15 @@ for sign-in (Google only), and Realtime for the shared valley. See
 - `20261010120000_more_courses.sql` builds on that: twelve more courses, every course's
   `min_seconds` lowered (27 m/s, not 23, which the Sandfly beat), and
   `complete_convoy()` taking up to nine others (ADR 0019).
+- `20261010180000_sandbar.sql` adds one row to `missions`, the island's Sandbar course
+  (ADR 0020). The tide is the browser's and the server isn't told it. Applied to the
+  live project on 2026-10-10, after it and the whole of `game.test.sql` passed a dry run
+  there that rolled back; the checks pass against the migrated project too. Not with
+  `supabase db push`, which refuses while `20261010090000_cartier_chains.sql` (put on by
+  hand) is missing from the project's migration history: its SQL was run with
+  `supabase db query --linked -f`, and `supabase migration repair --status applied
+  20261010180000` recorded it. `supabase db push --include-all` would record the
+  Cartier chains file too and change nothing else.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
@@ -368,6 +391,11 @@ that repo's problem, not this one's.
     (`flagGap`; the finish always goes at once) and repeats every 0.8 s per truck
     (`countEvery`). A ten-truck convoy in a full world is on the order of ten thousand
     messages.
+  - Getting stuck and getting out (ADR 0021) cost next to nothing: a pose when a truck
+    sticks, one when a cable takes and one when it's free, each sent at once and past
+    `PoseGate`'s pacing; a single `winch` broadcast per rescue by a player; and a single
+    `tow` broadcast when BBB's truck comes into sight. Nothing about any of it goes in
+    presence.
   - The first private-channel join on a new or just-restored project can be refused
     with `MissingPartition` while Realtime creates its message partitions;
     `SupabaseNet.open()` tries three times.
