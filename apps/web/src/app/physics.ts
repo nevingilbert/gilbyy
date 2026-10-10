@@ -243,6 +243,27 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
   return car;
 }
 
+/**
+ * The car to draw `t` of the way from one step to the next (0 is `a`, 1 is `b`), written
+ * into `out`. Steps are a fixed length and a screen's frames never quite line up with
+ * them, so a truck drawn where its last step left it moves one step on some frames and
+ * three on others, and shudders as it goes.
+ */
+export function between(a: Car, b: Car, t: number, out: Car): Car {
+  Object.assign(out, b);
+  const mix = (from: number, to: number) => from + (to - from) * t;
+  out.x = mix(a.x, b.x);
+  out.y = mix(a.y, b.y);
+  out.z = mix(a.z, b.z);
+  out.heading = mix(a.heading, b.heading);
+  out.speed = mix(a.speed, b.speed);
+  out.side = mix(a.side, b.side);
+  out.steer = mix(a.steer, b.steer);
+  out.pitch = mix(a.pitch, b.pitch);
+  out.roll = mix(a.roll, b.roll);
+  return out;
+}
+
 /** The body never tips past this, whatever the ground does under it. */
 const MAX_TILT = 0.7;
 const clampTilt = (a: number) => Math.max(-MAX_TILT, Math.min(MAX_TILT, a));
