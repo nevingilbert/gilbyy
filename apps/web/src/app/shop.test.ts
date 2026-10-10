@@ -41,10 +41,14 @@ describe("the shop and the server agree", () => {
     const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id);
     const server = rows("missions", "id").map((r) => ({
       id: r.id, reward: +r.reward, repeat: +r.repeat_reward, cooldown: +r.cooldown_seconds, min: +r.min_seconds, crew: +(r.crew ?? 1), miles: +(r.min_miles ?? 0),
+      world: r.world ?? "valley",
     }));
-    // The valley's courses and the island's.
-    const client = [...buildWorld().missions, ...buildIsland().missions].map((m) => ({
-      id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds, crew: m.crew, miles: m.minMiles,
+    // The valley's courses and the island's, each stamped with the world that laid it out.
+    const client = [
+      ...buildWorld().missions.map((m) => ({ m, world: "valley" })),
+      ...buildIsland().missions.map((m) => ({ m, world: "island" })),
+    ].map(({ m, world }) => ({
+      id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds, crew: m.crew, miles: m.minMiles, world,
     }));
     expect(server.sort(byId)).toEqual(client.sort(byId));
   });

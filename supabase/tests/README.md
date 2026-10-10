@@ -40,9 +40,10 @@ back the migration along with everything else. Afterwards, check that it left no
 supabase db query --linked -f /tmp/gilbyy-checks.sql
 ```
 
-The checks pick out the three test players by the last character of their ids
-(`like '%a'`), so before running against a project with real players, make sure no real
-profile's id ends in `a`.
+The checks pick out the three test players by the tail of their ids
+(`like '%00000000000a'`), which no real profile's id can collide with. (They used to
+match on the last character alone, which stopped being safe the day a real player's id
+ended in `a`.)
 
 The stubs are for testing only and are never applied to a real project. The price and
 mission tables in the migration must match `shop.ts` and `missions.ts`;
