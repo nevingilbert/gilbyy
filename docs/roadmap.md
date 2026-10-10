@@ -28,6 +28,9 @@ subdomains." Update the **You are here** marker as you progress.
 > the easter eggs. Merged to `main` as pull request 10, its migration on the live
 > project. And animals in both worlds (`decisions/0015`,
 > `sessions/2026-10-09-wildlife.md`), client only.
+> On 2026-10-10, photo mode (`decisions/0018`): P stops the world, the camera goes
+> round the truck, the shutter saves a picture. Client only; merged to `main` as pull
+> request 14 (`sessions/2026-10-10-photo-mode.md`).
 > **Next:** play one convoy and one race signed in from two Google accounts on the live
 > site; neither has been played over Supabase yet, only over `?net=local`. Still open:
 > the frame rate on a real phone and laptop. Sign-in is Google only (the email link was
