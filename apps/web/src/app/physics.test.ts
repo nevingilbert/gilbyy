@@ -199,6 +199,25 @@ describe("step against the world", () => {
     expect(snorkel.z).toBeGreaterThan(stock.z + 4);
   });
 
+  // The island's tide (tide.ts) can come in round a truck that drove out while it was low.
+  it("can always drive out of water that rose round it, and never further in", () => {
+    let sea = -1.5;
+    // A beach shelving gently into the sea, toward +z.
+    const beach: Ground = { ...ground((_, z) => -z * 0.05), waterAt: () => sea };
+    const depth = (c: Car) => sea - beach.height(c.x, c.z);
+    const c = run(makeCar(beach, 0, 0, 0), beach, { gas: true }, 60);
+    expect(depth(c)).toBeGreaterThan(STOCK.wade - 0.2);
+    expect(depth(c)).toBeLessThan(STOCK.wade + 0.1);
+    // The tide comes in: now it stands in far more water than it could have driven into.
+    sea = 0;
+    const far = c.z;
+    run(c, beach, { gas: true }, 5);
+    expect(c.z).toBeLessThan(far + 0.01);
+    // Backing up the beach works, until it's only wading again.
+    run(c, beach, { brake: true }, 30);
+    expect(depth(c)).toBeLessThan(STOCK.wade);
+  });
+
   it("cannot leave the world", () => {
     const c = makeCar(flat, 990, 0, Math.PI / 2);
     run(c, flat, { gas: true }, 10);

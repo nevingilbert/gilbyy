@@ -261,8 +261,8 @@ reset role;
 select pg_temp.check((select count(*) from public.missions where id in ('beach-run', 'dune-dash', 'jungle-loop') and world = 'island') = 3, 'the island has its first three courses');
 select pg_temp.check((select count(*) filter (where crew = 1) = 10 and count(*) filter (where crew > 1) = 10 from public.missions where world = 'valley'),
   'the valley has ten courses to drive alone and ten for friends');
-select pg_temp.check((select count(*) filter (where crew = 1) = 4 and count(*) filter (where crew > 1) = 4 from public.missions where world = 'island'),
-  'and the island four of each');
+select pg_temp.check((select count(*) filter (where crew = 1) = 5 and count(*) filter (where crew > 1) = 4 from public.missions where world = 'island'),
+  'and the island four of each, and one more to drive alone on the sandbar');
 
 -- The map's fog: cells are only ever added, each player has their own, and nobody reads the table.
 select pg_temp.as_player('a');

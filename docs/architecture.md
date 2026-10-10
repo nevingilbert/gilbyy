@@ -106,7 +106,14 @@ Pure modules, no three.js, all unit-tested:
     `buildWorld()`, on the same grid: sea, beach, dunes and jungle, thirty pitches in a
     row on the beach, an airstrip, three garages and a café. It has an empty track and
     no rivers. `planCourses()` lays out its eight courses, four of them for friends
-    (`decisions/0016`, `0019`).
+    (`decisions/0016`, `0019`). After the scatter, `raiseSandbar()` lifts a hooked spit
+    out of the seabed off the camp and `sandbarCourse()` lays a ninth course along it
+    (`decisions/0020`).
+  - `tide.ts`: the island's tide. `ebbAt(time)` is how far the sea stands below high
+    water, on a ten-minute cycle; `untilEbb()` is how long until it's next out far
+    enough. `World.setTide()` moves the island's `waterAt`; the valley's does nothing.
+    `scene.ts` moves the sea's sheet to match and tells the terrain's shader, which
+    paints bared seabed as wet sand.
   - `flight.ts`: the flight as a film. `departure()` and `arrival()` give one frame for
     a time: the plane's pose, its ramp and wheels, where the truck is, the camera, and
     how much is lost in cloud. Also the plane's measurements, which the model shares,
@@ -228,6 +235,15 @@ for sign-in (Google only), and Realtime for the shared valley. See
 - `20261010120000_more_courses.sql` builds on that: twelve more courses, every course's
   `min_seconds` lowered (27 m/s, not 23, which the Sandfly beat), and
   `complete_convoy()` taking up to nine others (ADR 0019).
+- `20261010180000_sandbar.sql` adds one row to `missions`, the island's Sandbar course
+  (ADR 0020). The tide is the browser's and the server isn't told it. Applied to the
+  live project on 2026-10-10, after it and the whole of `game.test.sql` passed a dry run
+  there that rolled back; the checks pass against the migrated project too. Not with
+  `supabase db push`, which refuses while `20261010090000_cartier_chains.sql` (put on by
+  hand) is missing from the project's migration history: its SQL was run with
+  `supabase db query --linked -f`, and `supabase migration repair --status applied
+  20261010180000` recorded it. `supabase db push --include-all` would record the
+  Cartier chains file too and change nothing else.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

@@ -72,6 +72,8 @@ export type World = Ground & Terrain & {
   courseDist: Float32Array;
   /** For things placed after the world is built, like buildings. */
   addObstacles(list: readonly Obstacle[]): void;
+  /** Puts the sea `ebb` metres below high water (tide.ts). Only the island's sea has a tide; the valley's water stays put. */
+  setTide(ebb: number): void;
 };
 
 /** How wide a tree, a boulder and a bush stand, for the physics. */
@@ -250,5 +252,6 @@ export function buildWorld(seed = 20261006): World {
     height: ramps.length ? (x, z) => ground(x, z) + rampLift(ramps, x, z) : ground, waterAt, obstaclesNear: solid.near, limit: WORLD.limit,
     slipAt: (x, z) => Math.min(1, field(terrain.snow, x, z)) + field(terrain.ice, x, z),
     addObstacles: (list) => list.forEach(solid.add),
+    setTide: () => {},
   };
 }
