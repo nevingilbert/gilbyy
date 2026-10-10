@@ -204,8 +204,10 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
   const nx = car.x + (fx * car.speed + fz * car.side) * k;
   const nz = car.z + (fz * car.speed - fx * car.side) * k;
   // Fording is fine; driving into the deep end is not. The car stops at the edge but
-  // keeps a little speed, so steering can still turn it along the shore.
-  if (ground.waterAt(nx, nz) - ground.height(nx, nz) > spec.wade) {
+  // keeps a little speed, so steering can still turn it along the shore. A rising tide can
+  // leave it in deeper than it could have driven: it can always go where it's no deeper.
+  const deep = ground.waterAt(nx, nz) - ground.height(nx, nz);
+  if (deep > spec.wade && deep > ground.waterAt(car.x, car.z) - ground.height(car.x, car.z)) {
     car.speed = Math.max(-1.5, Math.min(1.5, car.speed));
     car.side = 0;
   } else {

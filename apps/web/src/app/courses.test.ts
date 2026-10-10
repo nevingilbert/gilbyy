@@ -6,6 +6,7 @@ import { makeCar, noInput, step } from "./physics";
 import { buildIsland } from "./island";
 import { RAMP, rampLocal } from "./ramp";
 import { METRES_PER_MILE, PARTS, STOCK_LOADOUT, priceOf, specFor, type Loadout } from "./shop";
+import { TIDE, untilEbb } from "./tide";
 import { STARTERS, VEHICLES, vehicleById, type VehicleId } from "./vehicles";
 import { buildWorld, type Mission, type World } from "./world";
 
@@ -24,9 +25,19 @@ const miles = (m: Mission) => {
 /**
  * Drives `m` from its start arch with a simple autopilot: full throttle at the next
  * flag, through its middle. No path finding, so it only manages courses whose straight
- * lines between flags are drivable.
+ * lines between flags are drivable. A course on the sandbar is driven with the tide out,
+ * which is the only time it can be started.
  */
 function drive(m: Mission, loadout: Loadout = STOCK_LOADOUT, rig: VehicleId = "bluff", ground: World = world) {
+  ground.setTide(m.ebb === undefined ? 0 : TIDE.fall);
+  try {
+    return driveNow(m, loadout, rig, ground);
+  } finally {
+    ground.setTide(0);
+  }
+}
+
+function driveNow(m: Mission, loadout: Loadout, rig: VehicleId, ground: World) {
   const spec = specFor(rig, loadout);
   const car = makeCar(ground, m.start.x, m.start.z, m.start.heading, spec);
   const run = startRun(m);
@@ -56,15 +67,16 @@ describe("the courses", () => {
       "two-lakes-race",
     ]);
     expect(island.missions.map((m) => m.id).sort()).toEqual([
-      "beach-run", "coast-convoy", "dune-dash", "dune-derby", "hilltop", "jungle-loop", "sand-race", "tideline",
+      "beach-run", "coast-convoy", "dune-dash", "dune-derby", "hilltop", "jungle-loop", "sand-race", "sandbar", "tideline",
     ]);
   });
 
   // Half to drive alone and half for friends, in each world, and of those for friends half
-  // together and half against each other.
-  it("are split evenly between driving alone and driving with friends", () => {
+  // together and half against each other. The sandbar's course is one more to drive alone,
+  // when the tide lets you (ADR 0020).
+  it("are split evenly between driving alone and driving with friends, the sandbar aside", () => {
     for (const [courses, each] of [[world.missions, 10], [island.missions, 4]] as const) {
-      expect(courses.filter((m) => m.crew === 1)).toHaveLength(each);
+      expect(courses.filter((m) => m.crew === 1 && m.ebb === undefined)).toHaveLength(each);
       expect(courses.filter((m) => m.crew > 1)).toHaveLength(each);
       expect(courses.filter((m) => m.crew > 1 && m.race)).toHaveLength(each / 2);
     }
@@ -147,6 +159,80 @@ describe("the courses", () => {
     }
     const beach = island.missions.find((m) => m.id === "beach-run")!;
     expect(drive(beach, STOCK_LOADOUT, "sandfly", island)!.seconds).toBeLessThan(beach.minSeconds * 1.2);
+  });
+});
+
+describe("the sandbar", () => {
+  const course = island.missions.find((m) => m.id === "sandbar")!;
+  /** Every few metres from the first flag to the last: the sand the course is on. */
+  const line = course.gates.slice(1).flatMap((b, i) => {
+    const a = course.gates[i];
+    return Array.from({ length: 13 }, (_, k) => ({ x: a.x + ((b.x - a.x) * k) / 12, z: a.z + ((b.z - a.z) * k) / 12 }));
+  });
+  const depth = (p: { x: number; z: number }) => island.waterAt(p.x, p.z) - island.height(p.x, p.z);
+
+  it("is the one course that waits for the tide, starting from an arch up the beach", () => {
+    expect([...world.missions, ...island.missions].filter((m) => m.ebb !== undefined).map((m) => m.id)).toEqual(["sandbar"]);
+    expect(course.crew).toBe(1);
+    // The arch, and where the truck lines up behind it, are above high water.
+    const back = { x: course.start.x - Math.sin(course.start.heading) * 25, z: course.start.z - Math.cos(course.start.heading) * 25 };
+    expect(island.height(course.start.x, course.start.z)).toBeGreaterThan(0.8);
+    expect(island.height(back.x, back.z)).toBeGreaterThan(0.8);
+    // A short drive past the last tent, and it ends out to sea in front of the camp.
+    expect(Math.hypot(course.start.x - island.pitches[0].x, course.start.z - island.pitches[0].z)).toBeLessThan(300);
+    const end = course.gates.at(-1)!;
+    expect(Math.hypot(end.x, end.z) - Math.hypot(course.start.x, course.start.z)).toBeGreaterThan(250);
+    expect(Math.hypot(end.x - island.camp.x, end.z - island.camp.z)).toBeLessThan(480);
+  });
+
+  it("is under the sea at high water, and never deeper than the shallowest rig can wade", () => {
+    island.setTide(0);
+    const shallowest = Math.min(...VEHICLES.map((v) => specFor(v.id, STOCK_LOADOUT).wade));
+    for (const p of line) {
+      expect(depth(p)).toBeGreaterThan(0.55);
+      expect(depth(p)).toBeLessThan(shallowest - 0.1);
+    }
+  });
+
+  it("is bare sand at low water, and dry whenever it can be started", () => {
+    island.setTide(TIDE.fall);
+    for (const p of line) expect(depth(p)).toBeLessThan(-0.7);
+    expect(course.ebb).toBeLessThan(TIDE.fall);
+    island.setTide(course.ebb!);
+    for (const p of line) expect(depth(p)).toBeLessThan(-0.1);
+    island.setTide(0);
+  });
+
+  it("can be started more than half the time, and is never more than four minutes away", () => {
+    let open = 0, longest = 0;
+    for (let t = 0; t < 600; t++) {
+      const wait = untilEbb(t, course.ebb!);
+      if (wait === 0) open++;
+      longest = Math.max(longest, wait);
+    }
+    expect(open).toBeGreaterThan(300);
+    expect(longest).toBeLessThan(240);
+  });
+
+  it("falls away into deep water on both sides, with room on the bank at its end to pull up", () => {
+    const g = course.gates[6];
+    const [lx, lz] = [Math.cos(g.heading), -Math.sin(g.heading)];
+    for (const side of [1, -1]) expect(island.height(g.x + lx * side * 90, g.z + lz * side * 90)).toBeLessThan(-10);
+    const end = course.gates.at(-1)!;
+    for (let d = 0; d <= 50; d += 5) {
+      const p = { x: end.x + Math.sin(end.heading) * d, z: end.z + Math.cos(end.heading) * d };
+      expect(island.height(p.x, p.z)).toBeGreaterThan(-0.9);
+      expect(island.obstaclesNear(p.x, p.z).some((o) => Math.hypot(o.x - p.x, o.z - p.z) < o.r + 3)).toBe(false);
+    }
+  });
+
+  // Slower through the water, but a run begun as the tide turns is never stuck out there.
+  it("can still be waded home over at high water, by a starter and by the buggy", () => {
+    for (const rig of ["bluff", "sandfly"] as const) {
+      const run = driveNow(course, STOCK_LOADOUT, rig, island);
+      expect(run, rig).not.toBeNull();
+      expect(run!.seconds, rig).toBeGreaterThan(drive(course, STOCK_LOADOUT, rig, island)!.seconds * 1.5);
+    }
   });
 });
 

@@ -32,6 +32,11 @@ export type Mission = {
   race: boolean;
   /** A ramp on the course's line. With one, what a run is told afterwards is its time in the air, not on the clock. */
   ramp?: Ramp;
+  /**
+   * On the sand the tide uncovers (tide.ts): how far below high water the sea has to be,
+   * in metres, for the course to be dry. It can only be started then.
+   */
+  ebb?: number;
 };
 
 type Pt = { x: number; z: number };

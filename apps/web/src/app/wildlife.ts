@@ -204,8 +204,10 @@ export function passable(world: World, id: SpeciesId, x: number, z: number) {
   const sp = SPECIES[id];
   if (Math.hypot(x, z) > world.limit - 150) return false;
   const y = world.height(x, z);
-  const depth = world.waterAt(x, z) - y;
-  if (sp.water) return depth > 0.8 && Math.abs(world.waterAt(x, z) - WORLD.water) < 0.01 && sampleGrid(world.ice, x, z) < 0.02;
+  // A sea has a tide (tide.ts), and animals reckon by high water: nothing follows the sea out to be caught when it comes back.
+  const water = world.sea ? WORLD.water : world.waterAt(x, z);
+  const depth = water - y;
+  if (sp.water) return depth > 0.8 && Math.abs(water - WORLD.water) < 0.01 && sampleGrid(world.ice, x, z) < 0.02;
   if (depth > sp.wade) return false;
   if (sp.sand && (y > 3.6 || sampleGrid(world.forest, x, z) > 0.05)) return false;
   if (steep(world, x, z) > 0.65) return false;
@@ -663,8 +665,8 @@ const LEAP_SHARE = 0.17;
 const LEAP_HIGH = 1.4;
 const UNDER = 0.9;
 
-/** A dolphin on its loop: under the surface, and every few seconds up out of it. A function of the time alone. */
-export function swimAt(h: Herd, a: Animal, time: number) {
+/** A dolphin on its loop: under the surface, and every few seconds up out of it. A function of the time alone, and of where the tide has the sea. */
+export function swimAt(h: Herd, a: Animal, time: number, sea: number = WORLD.water) {
   const sp = SPECIES[a.species];
   const th = a.phase + (time * sp.run) / h.loop;
   const r = h.loop + (a.tone - 0.5) * 7;
@@ -678,11 +680,11 @@ export function swimAt(h: Herd, a: Animal, time: number) {
   if (p < LEAP_SHARE) {
     const s = p / LEAP_SHARE;
     const rise = LEAP_HIGH + UNDER;
-    a.y = WORLD.water - UNDER + 4 * rise * s * (1 - s);
+    a.y = sea - UNDER + 4 * rise * s * (1 - s);
     a.pitch = Math.atan2((4 * rise * (1 - 2 * s)) / (LEAP_SHARE * LEAP_EVERY), sp.run);
     a.state = "fly";
   } else {
-    a.y = WORLD.water - UNDER + 0.15 * Math.sin(time * 1.3 + a.tone * 5);
+    a.y = sea - UNDER + 0.15 * Math.sin(time * 1.3 + a.tone * 5);
     a.pitch = 0;
     a.state = "walk";
   }
@@ -703,7 +705,7 @@ export function stepWildlife(world: World, herds: readonly Herd[], threats: read
       continue;
     }
     if (sp.way === "swim") {
-      for (const a of h.animals) swimAt(h, a, time);
+      for (const a of h.animals) swimAt(h, a, time, world.waterAt(h.home.x, h.home.z));
       continue;
     }
     if (dt <= 0) continue;

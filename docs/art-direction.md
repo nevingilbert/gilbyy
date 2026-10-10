@@ -60,6 +60,11 @@ unhurried exploration in a classic 4x4.
   trees, coats a shade cooler and darker than the ground so a herd reads against the
   orange grass, and the macaws the one bright thing. They graze, wander, and get out
   of the way; a parked truck can watch them. Nothing to hit, count or collect.
+- A tide on the island (ADR 0020). The sea goes out and comes back, slowly enough
+  that you notice the beach is wider before you notice it moving, and the sand it
+  leaves is the same wet sand as the strip above it. At low water a spit of it runs out
+  from the beach by the camp and hooks round under the evening sun; at high water it's
+  a pale shoal with flags standing in the sea. No surf, no foam, nothing on the HUD.
 - A photo mode (ADR 0018): P stops the world, the camera goes round the truck, and the
   shutter keeps the picture, with everyone's name over their truck and no other HUD.
   On screen only those names, a shutter, "back" and one line of how-to. Not while on a course. Pictures aren't collected, counted or listed.

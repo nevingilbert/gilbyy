@@ -248,6 +248,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
   function stageFor(world: World) {
     const group = new THREE.Group();
     const surface = makeSurface(world);
+    const terrain = buildTerrainMesh(world, surface);
     const grass = buildGrass(world, surface);
     const water = buildWaterMesh(world);
     const railway = world.track.xs.length ? buildRailway(world, lamps) : null;
@@ -258,7 +259,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     const airport = placeAirport(world, windows, lamps);
     const wildlife = buildWildlife(world);
     group.add(
-      buildTerrainMesh(world, surface), grass.object, water.object,
+      terrain.object, grass.object, water.object,
       buildTrees(world.trees, (x, z) => sampleGrid(world.snow, x, z)),
       buildBushes(world.bushes, world.id === "island" ? PALETTE.fern : PALETTE.bush), buildRocks(world.rocks),
       sites.group, camp.group, courses.group, landmarks.group, airport.group, wildlife.object,
@@ -277,7 +278,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
         for (const m of [o.material].flat()) if (!kept.has(m) && !isShared(m)) m.dispose();
       });
     }
-    return { world, grass, water, railway, sites, camp, courses, landmarks, airport, wildlife, remotes, dispose };
+    return { world, terrain, grass, water, railway, sites, camp, courses, landmarks, airport, wildlife, remotes, dispose };
   }
 
   let world = first;
@@ -367,6 +368,12 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     stage.remotes.update(dt, performance.now() / 1000, night);
     stage.grass.update(state.x, state.z, time);
     stage.water.update(time);
+    if (world.sea) {
+      // The tide: the sea is one level sheet, wherever it's asked for.
+      const sea = world.waterAt(0, 0);
+      stage.water.setSea(sea);
+      stage.terrain.setSea(sea);
+    }
     stage.railway?.update(time, dt, night);
     stage.airport.update(time, night);
     // The animals keep out of the way of every truck and the train.

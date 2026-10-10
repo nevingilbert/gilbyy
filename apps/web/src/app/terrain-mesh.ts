@@ -99,6 +99,28 @@ export function buildTerrainMesh(world: World, surface: SurfaceAt) {
     jungle: PALETTE.jungleFloor.map(colour),
   };
   const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  // Where the tide (tide.ts) has left the seabed bare, it's wet sand, like the strip above
+  // it. At high water there is none, and the ground is exactly the colours it was given.
+  const sea = { value: WORLD.water as number };
+  if (world.sea) {
+    const wet = { value: colour(PALETTE.wetSand) };
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uSea = sea;
+      shader.uniforms.uWet = wet;
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying float vShoreY;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvShoreY = position.y;");
+      shader.fragmentShader = shader.fragmentShader
+        .replace("#include <common>", "#include <common>\nuniform float uSea;\nuniform vec3 uWet;\nvarying float vShoreY;")
+        .replace(
+          "#include <color_fragment>",
+          `#include <color_fragment>
+          float bare = smoothstep(uSea - 0.3, uSea + 0.05, vShoreY) * (1.0 - smoothstep(-0.6, -0.3, vShoreY));
+          diffuseColor.rgb = mix(diffuseColor.rgb, uWet, bare);`,
+        );
+    };
+    material.customProgramCacheKey = () => "shore";
+  }
   const group = new THREE.Group();
   const c = new THREE.Color();
   const n = new THREE.Vector3();
@@ -141,7 +163,7 @@ export function buildTerrainMesh(world: World, surface: SurfaceAt) {
       group.add(mesh);
     }
   }
-  return group;
+  return { object: group, setSea: (level: number) => void (sea.value = level) };
 }
 
 /**
@@ -205,7 +227,12 @@ export function buildWaterMesh(world: World) {
     mesh.receiveShadow = true;
     group.add(mesh);
   }
-  return { object: group, update: (t: number) => void (time.value = t) };
+  return {
+    object: group,
+    update: (t: number) => void (time.value = t),
+    /** Moves the sea's sheet to where the tide has it. A lake's or a river's stays where it is. */
+    setSea: (level: number) => void (group.position.y = world.sea ? level - WORLD.water : 0),
+  };
 }
 
 /** Cheap integer hash → [0, 1), for placing grass the same way every time. */

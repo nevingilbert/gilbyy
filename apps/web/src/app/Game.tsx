@@ -24,6 +24,7 @@ import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "
 import { GARAGE_NAMES } from "./showroom";
 import { LocalStore, SupabaseStore, type Profile, type Store } from "./store";
 import { currentSession, onSessionChange, onlineConfigured, signInWithGoogle, signOut, supabase } from "./supabase";
+import { TIDE, ebbAt, untilEbb } from "./tide";
 import { trainObstacles } from "./track";
 import { VEHICLES, type VehicleId } from "./vehicles";
 import type { Ground, Mission, Obstacle, SiteStyle, WorldId } from "./world";
@@ -68,6 +69,10 @@ const hintWorld = (world: WorldId | null) => {
   }
 };
 
+/** What a start arch on the sandbar says while the sea covers it, `seconds` before the tide is next out. Never a countdown: the sea is in no hurry. */
+const tideLine = (seconds: number) =>
+  `The sand's under the sea for now.${!Number.isFinite(seconds) ? "" : seconds < 50 ? " The tide's nearly out." : ` The tide's out again in about ${Math.max(1, Math.round(seconds / 60))} min.`}`;
+
 const COMPASS = ["N", "·", "NE", "·", "E", "·", "SE", "·", "S", "·", "SW", "·", "W", "·", "NW", "·"];
 const COMPASS_ITEM = 28;
 const COMPASS_VIEW = COMPASS_ITEM * 8;
@@ -78,7 +83,8 @@ type Mode = "boot" | "pick" | "drive" | "entering" | "garage" | "leaving" | "map
 type Presence = "solo" | "local" | "joining" | "online" | "full" | "away";
 type Prompt =
   | { kind: "garage"; style: SiteStyle }
-  | { kind: "mission"; mission: Mission }
+  /** At a start arch. `wait` is how many seconds until the tide lets it start (tide.ts): 0 for now, and for a course that needs no tide. */
+  | { kind: "mission"; mission: Mission; wait: number }
   | { kind: "friend"; id: string; name: string; asked: boolean }
   /** At the door of the bank, church, school or casino (ADR 0012). */
   | { kind: "landmark"; id: LandmarkKind }
@@ -220,7 +226,8 @@ export function Game() {
     // you at a garage's door, ?at=x,z,heading drops you anywhere, ?airport parks you behind
     // the plane, ?world=island starts single player there, ?rig= skips the picker,
     // ?miles= starts single player with miles to spend, ?net=local plays across tabs of
-    // this browser with no account. Not linked from anywhere.
+    // this browser with no account, ?tide=low or high holds the island's tide there.
+    // Not linked from anywhere.
     const params = new URLSearchParams(window.location.search);
     const localNet = params.get("net") === "local";
     const worldParam = params.get("world");
@@ -272,6 +279,8 @@ export function Game() {
 
     const at = (params.get("at") ?? "").split(",").map(Number);
     const startHour = Number(params.get("hour"));
+    /** How far out the tide is held, in metres below high water, or null to let it come and go. */
+    const heldTide = params.get("tide") === "low" ? TIDE.fall : params.get("tide") === "high" ? 0 : null;
     const startGarage = view.garages[Number(params.get("garage"))];
 
     // The physics sees the train and other players' trucks as obstacles on top of the static world.
@@ -743,6 +752,9 @@ export function Game() {
     const nearbyFriends = () =>
       view.remotes.positions().filter((p) => friends.has(p.id) && Math.hypot(p.x - car.x, p.z - car.z) < CHAT_RANGE).map((p) => p.id);
 
+    /** Seconds until the tide has `m` dry and it can be started: 0 if it can be now, as any course off the sandbar always can. */
+    const tideWait = (m: Mission) => (m.ebb === undefined ? 0 : heldTide === null ? untilEbb(time, m.ebb) : heldTide >= m.ebb ? 0 : Infinity);
+
     /** E (or the on-screen button): whatever is on offer here. */
     actions.current.act = () => {
       if (modeRef.current !== "drive") return;
@@ -758,6 +770,8 @@ export function Game() {
       }
       const m = !running && !convoys.state && missionAt(courses, car.x, car.z);
       if (m) {
+        // Under the sea for now: the prompt says how long until it isn't.
+        if (tideWait(m) > 0) return;
         // Line up just behind the start arch, facing the first gate.
         placeOnGround(m.start.x - Math.sin(m.start.heading) * 7, m.start.z - Math.cos(m.start.heading) * 7, m.start.heading, 0);
         running = startRun(m);
@@ -1354,7 +1368,7 @@ export function Game() {
 
       const next: Prompt =
         found >= 0 ? { kind: "garage", style: view.garages[found].style }
-        : m ? { kind: "mission", mission: m }
+        : m ? { kind: "mission", mission: m, wait: tideWait(m) }
         : together ? together
         : flightHere ? { kind: "flight", to: flightFrom(world.id) }
         : landmarkHere ? { kind: "landmark", id: landmarkHere }
@@ -1362,7 +1376,7 @@ export function Game() {
         : null;
       const key = !next ? ""
         : next.kind === "garage" ? `garage:${next.style}`
-        : next.kind === "mission" ? `mission:${next.mission.id}`
+        : next.kind === "mission" ? `mission:${next.mission.id}:${next.wait > 0 ? tideLine(next.wait) : ""}`
         : next.kind === "convoy" ? `convoy:${next.lead}${next.rest}${next.act}`
         : next.kind === "landmark" ? `landmark:${next.id}`
         : next.kind === "flight" ? `flight:${next.to}`
@@ -1490,6 +1504,8 @@ export function Game() {
       } else {
         // A flight: the film places the truck and the plane, and directs the camera.
         const film = m === "flying" ? flyOn(dt) : null;
+        // The tide is wherever the clock has it; only the island's sea has one.
+        world.setTide(heldTide ?? ebbAt(time));
         if (m === "drive") {
           moving = [...trainObstacles(view.trainCars(), world.height), ...view.remotes.obstacles()];
           lastPose = { x: car.x, z: car.z };
@@ -1842,17 +1858,23 @@ export function Game() {
         <div className="absolute inset-x-0 bottom-28 flex justify-center px-4 sm:bottom-10">
           <button
             onClick={() => actions.current.act()}
-            disabled={prompt.kind === "convoy" && !prompt.act}
+            disabled={(prompt.kind === "convoy" && !prompt.act) || (prompt.kind === "mission" && prompt.wait > 0)}
             className="max-w-md rounded-full border border-white/25 bg-black/30 px-4 py-2 text-sm text-[rgba(255,246,232,0.9)] backdrop-blur"
           >
-            {(prompt.kind !== "convoy" || prompt.act) && (
+            {(prompt.kind !== "convoy" || prompt.act) && !(prompt.kind === "mission" && prompt.wait > 0) && (
               <span className="mr-2 hidden rounded border border-white/30 px-1.5 text-xs sm:inline">{prompt.kind === "friend" ? "F" : "E"}</span>
             )}
             {prompt.kind === "garage" && <>Enter {GARAGE_NAMES[prompt.style].replace(/^The /, "the ")}</>}
-            {prompt.kind === "mission" && (
+            {prompt.kind === "mission" && prompt.wait === 0 && (
               <>
                 Start <b className="font-semibold">{prompt.mission.name}</b>
                 <span className="text-[rgba(255,246,232,0.6)]"> · {prompt.mission.blurb} · up to {fmtMiles(prompt.mission.reward)} mi</span>
+              </>
+            )}
+            {prompt.kind === "mission" && prompt.wait > 0 && (
+              <>
+                <b className="font-semibold">{prompt.mission.name}</b>
+                <span className="text-[rgba(255,246,232,0.6)]"> · {tideLine(prompt.wait)}</span>
               </>
             )}
             {prompt.kind === "friend" && (prompt.asked ? <>Accept {prompt.name}&apos;s friend request</> : <>Ask {prompt.name} to be friends</>)}
