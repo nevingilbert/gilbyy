@@ -791,7 +791,7 @@ export function Game() {
     };
     actions.current.toggleMap = () => {
       if (modeRef.current === "drive") {
-        inputRef.current = noInput();
+        // The keys held stay held: the truck drives on under the map.
         setModeBoth("map");
         requestAnimationFrame(() => sizeCanvas(fullRef.current));
       } else if (modeRef.current === "map") setModeBoth("drive");
@@ -1024,9 +1024,9 @@ export function Game() {
       const control = keyMap[k];
       if (!control) return;
       e.preventDefault();
-      if (m !== "drive" && m !== "photo") return;
+      if (m !== "drive" && m !== "map" && m !== "photo") return;
       inputRef.current[control] = true;
-      if (m === "drive") setShowHint(false);
+      if (m !== "photo") setShowHint(false);
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const control = keyMap[e.key];
@@ -1422,7 +1422,7 @@ export function Game() {
       const now = nowMs / 1000;
       const m = modeRef.current;
       const garage = view.garages[cut.garage];
-      time = shared ? Date.now() / 1000 - SHARED_EPOCH : time + (m === "garage" || m === "map" || m === "photo" ? 0 : dt);
+      time = shared ? Date.now() / 1000 - SHARED_EPOCH : time + (m === "garage" || m === "photo" ? 0 : dt);
 
       onConvoy(convoys.tick(now));
       // Through the finish, waiting for the rest of the convoy.
@@ -1440,15 +1440,6 @@ export function Game() {
         if (fadeRef.current) fadeRef.current.style.opacity = String(1 - smooth(0, 0.5, cut.t));
         view.renderShowroom(dt, turnRef.current);
         turnRef.current = 0;
-      } else if (m === "map") {
-        const full = fullRef.current;
-        const g = full?.getContext("2d");
-        if (full && g) {
-          const lead = view.trainCars()[0];
-          const train = lead && map.explored(lead.x, lead.z) ? { x: lead.x, z: lead.z, heading: lead.yaw } : undefined;
-          const players = view.remotes.positions().map((p) => ({ ...p, friend: friends.has(p.id) }));
-          map.drawFull(g, full.width, car, { train, players });
-        }
       } else if (m === "photo") {
         // The world stands still. Held arrows move the camera round the truck: each the way it points.
         const i = inputRef.current;
@@ -1463,7 +1454,8 @@ export function Game() {
       } else {
         // A flight: the film places the truck and the plane, and directs the camera.
         const film = m === "flying" ? flyOn(dt) : null;
-        if (m === "drive") {
+        // The map is laid over the drive, which carries on under it.
+        if (m === "drive" || m === "map") {
           moving = [...trainObstacles(view.trainCars(), world.height), ...view.remotes.obstacles()];
           lastPose = { x: car.x, z: car.z };
           acc += dt;
@@ -1477,7 +1469,7 @@ export function Game() {
           }
           runOn(dt);
           lookAround();
-          if (cheer) {
+          if (cheer && m === "drive") {
             say(`Achievement: ${cheer}`, 6);
             cheer = null;
           }
@@ -1510,24 +1502,27 @@ export function Game() {
 
         if (!film) map.reveal(car.x, car.z);
         view.render(car, dt, time, spec, m === "boot" || m === "pick", film);
-        drawTags(now);
+        // The tags' layer is put away under the map, where they couldn't be measured.
+        if (m !== "map") drawTags(now);
         aim(dt);
         if (Math.floor(now * 2) !== Math.floor((now - dt) * 2)) {
           setCanChat(nearbyFriends().length > 0);
           setCanPhoto(!running && !convoys.state);
         }
 
-        const mini = miniRef.current;
         // The minimap unmounts while you're in a garage, so check its size each frame. Both
         // sides: a new canvas is 300 by 150, and 300 is exactly the width wanted on a
         // desktop retina screen, which left it half as tall as it was drawn.
-        sizeCanvas(mini);
-        const g = mini?.getContext("2d");
-        if (mini && g) {
+        sizeCanvas(miniRef.current);
+        // With the map open, the whole of it is drawn in the minimap's place.
+        const sheet = m === "map" ? fullRef.current : miniRef.current;
+        const g = sheet?.getContext("2d");
+        if (sheet && g) {
           const lead = view.trainCars()[0];
           const train = lead && map.explored(lead.x, lead.z) ? { x: lead.x, z: lead.z, heading: lead.yaw } : undefined;
           const players = view.remotes.positions().map((p) => ({ ...p, friend: friends.has(p.id) }));
-          map.drawMini(g, mini.width, car, { train, players });
+          if (m === "map") map.drawFull(g, sheet.width, car, { train, players });
+          else map.drawMini(g, sheet.width, car, { train, players });
         }
       }
 
@@ -1581,7 +1576,7 @@ export function Game() {
 
   const hold = (control: keyof Input) => ({
     onPointerDown: () => {
-      if (modeRef.current !== "drive") return;
+      if (modeRef.current !== "drive" && modeRef.current !== "map") return;
       inputRef.current[control] = true;
       setShowHint(false);
     },
@@ -1882,7 +1877,7 @@ export function Game() {
       {mode === "map" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={() => actions.current.toggleMap()}>
           <canvas ref={fullRef} className="aspect-square w-[min(88vw,82dvh)] rounded-2xl shadow-2xl" />
-          <p className="absolute bottom-4 text-center text-xs text-[rgba(255,246,232,0.6)]">
+          <p className="absolute bottom-24 text-center text-xs text-[rgba(255,246,232,0.6)] sm:bottom-4">
             {profile && <span className="block tabular-nums text-[rgba(255,246,232,0.85)]">{foundLine(countFound(profile.found, profile.world), profile.world)} found</span>}
             M or Esc to close
           </p>
@@ -1917,8 +1912,8 @@ export function Game() {
         />
       )}
 
-      {/* Touch controls; a keyboard is assumed at sm and up. */}
-      {mode === "drive" && (
+      {/* Touch controls; a keyboard is assumed at sm and up. They stay up over the map, which the truck drives on under. */}
+      {(mode === "drive" || mode === "map") && (
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-5 sm:hidden">
           <div className="flex gap-3">
             <TouchButton label="◀" {...hold("left")} />
@@ -1931,7 +1926,7 @@ export function Game() {
             >
               map
             </button>
-            {canChat && (
+            {canChat && mode === "drive" && (
               <button
                 onClick={() => setTyping(true)}
                 className="h-11 w-11 rounded-full border border-white/25 bg-black/20 text-xs text-white/75 backdrop-blur"
