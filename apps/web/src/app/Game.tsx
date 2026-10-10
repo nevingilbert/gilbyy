@@ -16,7 +16,7 @@ import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTop
 import { FlightCard, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
 import { PALETTE } from "./palette";
 import { KEY_TURN, clampOrbit, dragOrbit, photoName, zoomOrbit, type Orbit } from "./photo";
-import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
+import { between, makeCar, noInput, step, yawRateOf, type Input } from "./physics";
 import { markFor, onPin, pinAt, reached, type Spot } from "./pin";
 import { countFound, eggKey, foundLine } from "./places";
 import { createView, type Film, type Garage, type Rope, type Shot, type TowDrawn } from "./scene";
@@ -332,6 +332,11 @@ export function Game() {
     let raf = 0;
     let last = performance.now();
     let acc = 0;
+    // The truck is drawn part-way between its last two steps (see `between`): as it was
+    // before the last one, as that left it, and the one in between that's shown.
+    const stepFrom = { ...car };
+    const stepTo = { ...car };
+    const carDrawn = { ...car };
     let shared = false;
     let time = params.has("hour") && Number.isFinite(startHour) ? secondsUntil(startHour) : 0;
     let first = true;
@@ -1804,7 +1809,9 @@ export function Game() {
           const driven = store.online || localNet ? spec : loose;
           while (acc >= STEP) {
             if (held) car.speed = car.side = 0;
+            Object.assign(stepFrom, car);
             step(car, input, STEP, ground, driven);
+            Object.assign(stepTo, car);
             acc -= STEP;
           }
           if (Boolean(car.stuck) !== wasStuck) (car.stuck ? onStuck : onFree)(now);
@@ -1844,7 +1851,9 @@ export function Game() {
         if (!film) map.reveal(car.x, car.z);
         tendRopes(now);
         const watch = towOn(dt, now);
-        view.render(car, dt, time, spec, m === "boot" || m === "pick", film, watch);
+        // Only while it's driven, and not if something other than a step has since moved it.
+        const stepped = (m === "drive" || m === "map") && car.x === stepTo.x && car.y === stepTo.y && car.z === stepTo.z && car.heading === stepTo.heading;
+        view.render(stepped ? between(stepFrom, stepTo, acc / STEP, carDrawn) : car, dt, time, spec, m === "boot" || m === "pick", film, watch);
         // The tags' layer is put away under the map, where they couldn't be measured.
         if (m !== "map") drawTags(now);
         aim(dt);
