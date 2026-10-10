@@ -15,7 +15,7 @@ import { stackTags, type TagBox } from "./name-tags";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
 import { FlightCard, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
 import { KEY_TURN, clampOrbit, dragOrbit, photoName, zoomOrbit, type Orbit } from "./photo";
-import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
+import { between, makeCar, noInput, step, yawRateOf, type Input } from "./physics";
 import { countFound, eggKey, foundLine } from "./places";
 import { createView, type Film, type Garage } from "./scene";
 import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "./shop";
@@ -292,6 +292,11 @@ export function Game() {
     let raf = 0;
     let last = performance.now();
     let acc = 0;
+    // The truck is drawn part-way between its last two steps (see `between`): as it was
+    // before the last one, as that left it, and the one in between that's shown.
+    const before = { ...car };
+    const after = { ...car };
+    const drawn = { ...car };
     let shared = false;
     let time = params.has("hour") && Number.isFinite(startHour) ? secondsUntil(startHour) : 0;
     let first = true;
@@ -1472,7 +1477,9 @@ export function Game() {
           const input = held ? HELD : inputRef.current;
           while (acc >= STEP) {
             if (held) car.speed = car.side = 0;
+            Object.assign(before, car);
             step(car, input, STEP, ground, spec);
+            Object.assign(after, car);
             acc -= STEP;
           }
           runOn(dt);
@@ -1509,7 +1516,9 @@ export function Game() {
         }
 
         if (!film) map.reveal(car.x, car.z);
-        view.render(car, dt, time, spec, m === "boot" || m === "pick", film);
+        // Only while it's driven, and not if something other than a step has since moved it.
+        const stepped = m === "drive" && car.x === after.x && car.y === after.y && car.z === after.z && car.heading === after.heading;
+        view.render(stepped ? between(before, after, acc / STEP, drawn) : car, dt, time, spec, m === "boot" || m === "pick", film);
         drawTags(now);
         aim(dt);
         if (Math.floor(now * 2) !== Math.floor((now - dt) * 2)) {

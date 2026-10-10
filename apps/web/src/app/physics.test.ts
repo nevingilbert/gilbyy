@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { makeCar, noInput, step, MAX_REVERSE, STOCK, type Car, type CarSpec, type Input } from "./physics";
+import { between, makeCar, noInput, step, MAX_REVERSE, STOCK, type Car, type CarSpec, type Input } from "./physics";
 import type { Ground, Obstacle } from "./world";
 
 /** Test grounds: flat by default, or any height function, with optional obstacles. */
@@ -203,5 +203,65 @@ describe("step against the world", () => {
     const c = makeCar(flat, 990, 0, Math.PI / 2);
     run(c, flat, { gas: true }, 10);
     expect(Math.hypot(c.x, c.z)).toBeLessThanOrEqual(1000 + 1e-6);
+  });
+});
+
+describe("drawn between steps", () => {
+  /** The game's loop at top speed: how far the truck goes each frame, as stepped and as drawn. */
+  const frames = (stamps: number[]) => {
+    const c = makeCar(flat, 0, 0, 0);
+    c.speed = MAX_SPEED;
+    const before = { ...c };
+    const after = { ...c };
+    const drawn = { ...c };
+    const stepped: number[] = [];
+    const shown: number[] = [];
+    let acc = 0;
+    let was = { z: c.z, shown: c.z };
+    for (let i = 1; i < stamps.length; i++) {
+      const dt = (stamps[i] - stamps[i - 1]) / 1000;
+      acc += dt;
+      while (acc >= DT) {
+        Object.assign(before, c);
+        step(c, { ...noInput(), gas: true }, DT, flat);
+        Object.assign(after, c);
+        acc -= DT;
+      }
+      const z = between(before, after, acc / DT, drawn).z;
+      // Speed over the frame, as a share of the truck's own.
+      stepped.push((c.z - was.z) / dt / MAX_SPEED);
+      shown.push((z - was.shown) / dt / MAX_SPEED);
+      was = { z: c.z, shown: z };
+    }
+    return { stepped: stepped.slice(2), shown: shown.slice(2) };
+  };
+  const spread = (list: number[]) => Math.max(...list) - Math.min(...list);
+
+  it("is the earlier step at 0 and the later one at 1, and half-way between at a half", () => {
+    const a = makeCar(flat, 0, 0, 0);
+    const b = run({ ...a }, flat, { gas: true, left: true }, 1);
+    expect(between(a, b, 0, { ...a })).toMatchObject({ x: a.x, z: a.z, heading: a.heading, steer: a.steer });
+    expect(between(a, b, 1, { ...a })).toEqual(b);
+    const half = between(a, b, 0.5, { ...a });
+    expect(half.z).toBeCloseTo((a.z + b.z) / 2, 9);
+    expect(half.heading).toBeCloseTo((a.heading + b.heading) / 2, 9);
+    // What isn't a place or an angle is the later step's.
+    expect(half.distance).toBe(b.distance);
+  });
+
+  it("moves evenly on a 60 Hz screen whose clock only counts whole milliseconds", () => {
+    // 16, 17 and 17 ms, over and over: two steps a frame on average, but one, two or three in fact.
+    const stamps = Array.from({ length: 240 }, (_, i) => Math.round((i * 1000) / 60));
+    const { stepped, shown } = frames(stamps);
+    expect(spread(stepped)).toBeGreaterThan(0.9);
+    expect(spread(shown)).toBeLessThan(0.001);
+  });
+
+  it("moves evenly when the frames come at a rate the steps don't divide", () => {
+    for (const hz of [45, 75, 90, 144]) {
+      const { stepped, shown } = frames(Array.from({ length: 240 }, (_, i) => (i * 1000) / hz));
+      expect(spread(stepped)).toBeGreaterThan(0.3);
+      expect(spread(shown)).toBeLessThan(0.001);
+    }
   });
 });
