@@ -59,8 +59,8 @@ unhurried exploration in a classic 4x4.
   orange grass, and the macaws the one bright thing. They graze, wander, and get out
   of the way; a parked truck can watch them. Nothing to hit, count or collect.
 - A photo mode (ADR 0018): P stops the world, the camera goes round the truck, and the
-  shutter keeps the picture, HUD-free. On screen only a shutter, "back" and one line of
-  how-to. Not while on a course. Pictures aren't collected, counted or listed.
+  shutter keeps the picture, with everyone's name over their truck and no other HUD.
+  On screen only those names, a shutter, "back" and one line of how-to. Not while on a course. Pictures aren't collected, counted or listed.
 - Driving together, as in the trailer's co-op shots: other players' trucks share the
   valley, name tags float over them, and chat appears as small speech bubbles.
 
