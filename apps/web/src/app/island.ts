@@ -1,4 +1,5 @@
 import { findField, inFunnel, levelField } from "./airport";
+import { LINE_UP_BACK } from "./convoy";
 import { planeObstacles } from "./flight";
 import { courseDistOf, courseLength, courseLimits, gatesAlong, type Mission } from "./missions";
 import { fbm, makeNoise2D, makeRandom, smoothstep } from "./noise";
@@ -13,8 +14,9 @@ import { buildWorld, obstacleIndex, trunkRadius, type Bush, type Rock, type Tree
  * inside that, dunes behind the beach, and jungle in the middle. The tents are on the
  * beach, on the side the afternoon sun goes down on. There is an airstrip to fly home
  * from, and three garages, one in each ring: a shack on the beach, an outpost in the dunes
- * and a lodge in the jungle. They are the only places that sell the dune buggy. Three
- * courses too, one in each ring, and a café on the beach by the camp (ADR 0016).
+ * and a lodge in the jungle. They are the only places that sell the dune buggy. A café
+ * on the beach by the camp too (ADR 0016), and eight courses, half of them for friends
+ * (ADR 0019).
  *
  * It lies on the same grid as the valley, so the renderer, the physics and the map read
  * it the same way. Pure data, no three.js. A bearing here is a heading: 0 is +z.
@@ -33,6 +35,7 @@ export const ISLAND = {
 /** The fire is this far down the beach from the row of tents. */
 const FIRE_OUT = 36;
 const DEG = Math.PI / 180;
+type Pt = { x: number; z: number };
 const NO_TRACK: Track = { xs: [], zs: [], ys: [], s: [], length: 0, bridges: [], crossings: [] };
 
 /** The shape of the ground, before anything is built on it. */
@@ -186,8 +189,10 @@ export function buildIsland(seed = 20261009): World {
   level(heights, { x0: cafe.x, x1: cafe.x, z0: cafe.z, z1: cafe.z }, Math.max(1.8, ground(cafe.x, cafe.z)), SITE_FLAT, SITE_BLEND, siteDist);
 
   const slope = (x: number, z: number) => Math.hypot(ground(x + 2, z) - ground(x - 2, z), ground(x, z + 2) - ground(x, z - 2)) / 4;
-  const missions = planCourses(shape, camp.heading, ground, slope);
-  const courseDist = courseDistOf(missions, 20);
+  const missions = planCourses(shape, camp.heading, ground, slope, [lodge]);
+  const courseDist = courseDistOf(missions, 20, true);
+  // The top of the hill, where one course ends, is kept bald: there's the whole island to see from it.
+  const summit = missions.find((m) => m.id === "hilltop")?.gates.at(-1);
 
   // Tracks cut through the jungle, straight out to the dunes: one from the lodge's door,
   // one from where the jungle course starts. Without them the trees are a wall.
@@ -234,6 +239,7 @@ export function buildIsland(seed = 20261009): World {
       if (rand() > chance) continue;
       const y = ground(tx, tz);
       if (y < 1.5 || slope(tx, tz) > 0.7 || !clear(tx, tz, 24, 20) || inFunnel(airport, tx, tz)) continue;
+      if (summit && Math.hypot(tx - summit.x, tz - summit.z) < 28) continue;
       const kind = inJungle && rand() > 0.24 ? "canopy" : "palm";
       trees.push({ x: tx, y: y - 0.3, z: tz, scale: (kind === "palm" ? 0.8 : 0.85) + rand() * 0.6, rot: rand() * Math.PI * 2, kind, tone: rand() });
     }
@@ -290,17 +296,20 @@ export function buildIsland(seed = 20261009): World {
 }
 
 /**
- * The island's three courses, one in each ring, all driven alone: along the beach away
- * from the camp, zigzagging over the dunes, and once round the hill under the trees.
+ * The island's courses. Four to drive alone: along the beach away from the camp,
+ * zigzagging over the dunes, once round the hill under the trees, and straight up it.
+ * And four for friends (ADR 0019): two together, two against each other.
  * Paid on the same scale as the valley's (ADR 0017). Payouts must match
  * `public.missions` (shop.test.ts checks).
  */
 function planCourses(
   shape: ReturnType<typeof makeIsland>, campBearing: number,
   ground: (x: number, z: number) => number, slope: (x: number, z: number) => number,
+  /** Buildings in the jungle, which a course through the trees keeps away from. */
+  keepOff: Pt[],
 ): Mission[] {
   const camp = campBearing / DEG;
-  const course = (start: { x: number; z: number }, pts: { x: number; z: number }[], width: number) => ({
+  const course = (start: Pt, pts: Pt[], width: number) => ({
     start: { ...start, heading: Math.atan2(pts[0].x - start.x, pts[0].z - start.z) },
     gates: gatesAlong(start, pts, width),
     cooldown: 600, ...courseLimits(courseLength(start, pts)), crew: 1, race: false,
@@ -328,11 +337,87 @@ function planCourses(
   // The start arch stands a little outside the first flag, on the way in from the dunes.
   const b0 = camp * DEG + 0.09;
   const gate = along(b0, Math.hypot(round[0].x, round[0].z) + 4);
-  const dry = (pts: { x: number; z: number }[]) => pts.every((p) => ground(p.x, p.z) > 0.5);
+  /** Dry all the way along, not only at the flags: a straight line between two flags can cut a cove. */
+  const dry = (pts: Pt[]) =>
+    pts.every((p, i) => {
+      const q = pts[Math.max(0, i - 1)];
+      for (let k = 0; k <= 10; k++) if (ground(q.x + ((p.x - q.x) * k) / 10, q.z + ((p.z - q.z) * k) / 10) <= 0.5) return false;
+      return true;
+    });
   const out: Mission[] = [];
   if (dry(sand)) out.push({ id: "beach-run", name: "Beach Run", blurb: "Ten flags along the sand, the sea on your right.", ...course(sand[0], sand.slice(1), 12), reward: 15, repeatReward: 5 });
   if (dry(dunes)) out.push({ id: "dune-dash", name: "Dune Dash", blurb: "Ten flags in and out across the dunes. The buggy was made for it.", ...course(dunes[0], dunes.slice(1), 12), reward: 20, repeatReward: 6 });
   out.push({ id: "jungle-loop", name: "Jungle Loop", blurb: "Once round the hill, under the trees.", ...course(gate, [...round.slice(1), round[0]], 10), reward: 35, repeatReward: 12 });
+
+  // Five more since (ADR 0019): one to drive alone and four for friends, the island's first,
+  // so it has as many of one as the other.
+  /** A point on a bearing, `back` metres up the beach from the waterline. */
+  const shore = (deg: number, back: number) => along(deg * DEG, shape.shoreAlong(deg * DEG) - back);
+  /** `d` metres short of `from` on the way from there to `to`. */
+  const before = (from: Pt, to: Pt, d: number) => {
+    const len = Math.hypot(to.x - from.x, to.z - from.z);
+    return { x: from.x - ((to.x - from.x) / len) * d, z: from.z - ((to.z - from.z) / len) * d };
+  };
+  /** A course for friends: flags wide enough for two abreast, and dry ground behind the arch for ten trucks to line up on. */
+  const crew = (start: Pt, pts: Pt[]) => (dry([before(start, pts[0], LINE_UP_BACK + 4), start, ...pts]) ? { ...course(start, pts, 14), crew: 2 } : null);
+  /** A loop for friends: the start arch 40 m before its first flag, which is also its last. */
+  const loop = (flags: Pt[]) => crew(before(flags[0], flags[1], 40), [...flags, flags[0]]);
+
+  // Straight up the hill to its top, by whichever way in from the camp's side of the island
+  // has the gentlest worst stretch. It crosses the loop between two of its flags.
+  let top = { x: 0, z: 0 };
+  for (let z = -300; z <= 300; z += 10) for (let x = -300; x <= 300; x += 10) if (ground(x, z) > ground(top.x, top.z)) top = { x, z };
+  let up: { from: Pt; pts: Pt[]; steep: number } | null = null;
+  for (let off = -75; off <= 75; off += 5) {
+    const from = along((camp + off) * DEG, ISLAND.jungle + 130);
+    const pts = Array.from({ length: 9 }, (_, i) => ({ x: from.x + ((top.x - from.x) * (i + 1)) / 9, z: from.z + ((top.z - from.z) * (i + 1)) / 9 }));
+    const far = (p: Pt, q: Pt, d: number) => Math.hypot(p.x - q.x, p.z - q.z) > d;
+    if (!pts.every((p) => far(p, gate, 90) && round.every((q) => far(p, q, 60)) && keepOff.every((q) => far(p, q, 140)))) continue;
+    let steep = 0;
+    for (let k = 0; k <= 200; k++) steep = Math.max(steep, slope(from.x + ((top.x - from.x) * k) / 200, from.z + ((top.z - from.z) * k) / 200));
+    if (!up || steep < up.steep) up = { from, pts, steep };
+  }
+  if (up) out.push({ id: "hilltop", name: "Hilltop", blurb: "Straight up through the trees to the top of the island.", ...course(up.from, up.pts, 10), reward: 25, repeatReward: 8 });
+
+  // For friends, together: from by the café along the beach past the shack, and home through the dunes behind it.
+  const coast = loop([
+    ...[34, 40, 46, 52, 58, 64, 70].map((d) => shore(camp + d, 50)), shore(camp + 73, 118),
+    ...[70, 64, 58, 52, 46, 40, 34].map((d) => shore(camp + d, 185)), shore(camp + 31, 118),
+  ]);
+  if (coast) out.push({
+    id: "coast-convoy", name: "Coast Convoy", blurb: "For two to ten friends: along the beach past the shack, and home through the dunes.",
+    ...coast, reward: 40, repeatReward: 12,
+  });
+
+  // For friends, against each other: a lap of the beach below the outpost, out along the foot of
+  // the dunes and back by the water. On the far side from the camp, clear of the airstrip.
+  const lap = loop([
+    ...[30, 34, 38, 42, 46, 50, 54].map((d) => shore(camp - d - 98, 175)), shore(camp - 154.5, 128),
+    ...[54, 50, 46, 42, 38, 34, 30].map((d) => shore(camp - d - 98, 80)), shore(camp - 125.5, 128),
+  ]);
+  if (lap) out.push({
+    id: "sand-race", name: "Sand Race", blurb: "Two to ten friends, one lap of the beach. Quickest wins; every finisher is paid the same.",
+    ...lap, reward: 25, repeatReward: 8, race: true,
+  });
+
+  // For friends, together: in and out of the wet sand at the water's edge, round the coast from where the beach run ends.
+  const tide = Array.from({ length: 13 }, (_, i) => shore(camp - 74 - i * 2.4, i % 2 ? 32 : 66));
+  const wet = crew(tide[0], tide.slice(1));
+  if (wet) out.push({
+    id: "tideline", name: "Tideline", blurb: "For two to ten friends: twelve flags in and out of the wet sand, the sea on your left.",
+    ...wet, reward: 30, repeatReward: 10,
+  });
+
+  // For friends, against each other: a lap over the dunes on the north-east side, out along
+  // their seaward edge and back deeper in. Past where the coast convoy turns for home.
+  const derby = loop([
+    ...[84, 88, 92, 96, 100, 104, 108].map((d) => shore(camp + d, 160)), shore(camp + 110.5, 205),
+    ...[108, 104, 100, 96, 92, 88, 84].map((d) => shore(camp + d, 250)), shore(camp + 81.5, 205),
+  ]);
+  if (derby) out.push({
+    id: "dune-derby", name: "Dune Derby", blurb: "Two to ten friends, one lap over the dunes. Quickest wins; every finisher is paid the same.",
+    ...derby, reward: 30, repeatReward: 10, race: true,
+  });
   return out;
 }
 

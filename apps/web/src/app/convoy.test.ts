@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { CALL_EVERY, CONVOY_MAX, CONVOY_SILENCE, Convoys, lineUp, readConvoy, type ConvoyEvent, type ConvoyMsg } from "./convoy";
+import { CALL_EVERY, CONVOY_MAX, CONVOY_SILENCE, Convoys, LINE_UP_BACK, countEvery, flagGap, lineUp, readConvoy, type ConvoyEvent, type ConvoyMsg } from "./convoy";
+import { buildIsland } from "./island";
 import type { Mission } from "./missions";
 import { CAFE, CAMP_GATE, buildWorld } from "./world";
 
@@ -99,15 +100,61 @@ describe("gathering a convoy", () => {
     expect(v.p("ana").state!.crew.map((d) => d.id)).toEqual(["ana", "ben"]);
   });
 
-  it("takes no more than four", () => {
-    const ids = ["a", "b", "c", "d", "e"];
+  it("takes no more than ten", () => {
+    const ids = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"];
     const v = valley(ids, ids.slice(1).map((id) => ["a", id] as [string, string]));
     v.p("a").gather(course, v.now);
     for (const id of ids.slice(1)) v.p(id).join(v.p(id).callFor("convoy")!.id, v.now);
-    expect(v.p("a").state!.crew).toHaveLength(CONVOY_MAX);
+    expect(CONVOY_MAX).toBe(10);
+    expect(v.p("a").state!.crew.map((d) => d.id)).toEqual(ids.slice(0, 10));
     v.p("a").go(v.now);
-    expect(v.p("e").state).toBeNull();
-    expect(v.seen("e").map((e) => e.kind)).toContain("off");
+    expect(v.p("k").state).toBeNull();
+    expect(v.seen("k").map((e) => e.kind)).toContain("off");
+    // The ten are lined up two abreast in five rows, each in a place of its own.
+    expect(v.seen("j")).toContainEqual(expect.objectContaining({ kind: "go", slot: 9, crew: ids.slice(0, 10) }));
+  });
+
+  it("lines ten up behind the arch, two abreast, with room between them", () => {
+    const spots = Array.from({ length: CONVOY_MAX }, (_, slot) => lineUp(course, slot));
+    for (const [i, p] of spots.entries()) {
+      // Behind the arch, between its posts, facing the first flag.
+      expect(p.z).toBeLessThanOrEqual(-8);
+      expect(p.z).toBeGreaterThanOrEqual(-LINE_UP_BACK);
+      expect(Math.abs(p.x)).toBeLessThan(3);
+      expect(p.heading).toBe(course.start.heading);
+      for (const q of spots.slice(i + 1)) expect(Math.hypot(p.x - q.x, p.z - q.z)).toBeGreaterThan(4.3);
+    }
+    expect(Math.min(...spots.map((p) => p.z))).toBe(-LINE_UP_BACK);
+    // The first four are where a crew of four always was, bar the second row standing closer.
+    expect(spots.slice(0, 2).map((p) => [p.x, p.z])).toEqual([[-2.2, -8], [2.2, -8]]);
+  });
+
+  it("has a big crew say less each, so ten trucks through one flag don't all shout at once", () => {
+    expect(flagGap(2)).toBe(0);
+    expect(flagGap(4)).toBe(0);
+    expect(flagGap(10)).toBeGreaterThanOrEqual(4);
+    expect(countEvery(4)).toBe(5);
+    expect(countEvery(10)).toBeGreaterThan(5);
+    const ids = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
+    const sent: ConvoyMsg[] = [];
+    const v = valley(ids, ids.slice(1).map((id) => ["a", id] as [string, string]));
+    v.p("a").gather(course, v.now);
+    for (const id of ids.slice(1)) v.p(id).join(v.p(id).callFor("convoy")!.id, v.now);
+    v.p("a").go(v.now);
+    v.wait(2);
+    v.dropWhen((_, msg) => (sent.push(msg), false));
+    // Everyone through the first flag in the same second: nobody has anything to add yet.
+    for (const id of ids) v.p(id).passed(1, v.now);
+    expect(sent.filter((m) => m.kind === "pass")).toEqual([]);
+    // But they all hear in the end, and the finish is never held back.
+    v.wait(countEvery(10) + 1);
+    expect(v.p("a").others().every((d) => d.passed === 1)).toBe(true);
+    sent.length = 0;
+    v.p("b").passed(3, v.now, 41);
+    expect(sent).toEqual([expect.objectContaining({ kind: "pass", from: "b", passed: 3, seconds: 41 })]);
+    // Nobody is taken for gone just for counting less often.
+    v.wait(CONVOY_SILENCE + 2);
+    expect(v.p("a").others()).toHaveLength(9);
   });
 
   it("is called off when the gatherer leaves, or goes quiet", () => {
@@ -227,7 +274,9 @@ describe("convoy messages", () => {
     expect(readConvoy({ kind: "open", id: "x", mission: "convoy", crew: ["a", "b"] })).toEqual({ kind: "open", id: "x", mission: "convoy", crew: ["a", "b"] });
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3 })).toEqual({ kind: "pass", id: "x", from: "a", passed: 3 });
     expect(readConvoy({ kind: "open", id: "x", mission: "convoy", crew: [] })).toBeNull();
-    expect(readConvoy({ kind: "open", id: "x", mission: "convoy", crew: ["a", "b", "c", "d", "e"] })).toBeNull();
+    const ten = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
+    expect(readConvoy({ kind: "go", id: "x", mission: "convoy", crew: ten })).toEqual({ kind: "go", id: "x", mission: "convoy", crew: ten });
+    expect(readConvoy({ kind: "open", id: "x", mission: "convoy", crew: [...ten, "k"] })).toBeNull();
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3, seconds: 92.5 })).toEqual({ kind: "pass", id: "x", from: "a", passed: 3, seconds: 92.5 });
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3, seconds: -1 })).toBeNull();
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3, seconds: "fast" })).toBeNull();
@@ -309,29 +358,45 @@ describe("the courses for friends", () => {
     });
   };
 
-  it("are two convoys and two races, each for two to four", () => {
+  const island = buildIsland();
+  const ashore = island.missions.filter((m) => m.crew > 1);
+  const comesRound = (m: Mission) => Math.hypot(m.gates[0].x - m.gates[m.gates.length - 1].x, m.gates[0].z - m.gates[m.gates.length - 1].z) < 1;
+
+  it("are five convoys and five races in the valley, and two of each on the island, each for two to ten", () => {
     expect(together.map((m) => [m.id, m.crew, m.race])).toEqual([
       ["convoy", 2, false], ["race", 2, true], ["grand-tour", 2, false], ["hill-race", 2, true],
+      ["barn-round", 2, false], ["lakehead-race", 2, true], ["snowline", 2, false], ["two-lakes-race", 2, true],
+      ["trackside", 2, false], ["flat-out", 2, true],
+    ]);
+    expect(ashore.map((m) => [m.id, m.crew, m.race])).toEqual([
+      ["coast-convoy", 2, false], ["sand-race", 2, true], ["tideline", 2, false], ["dune-derby", 2, true],
     ]);
   });
 
-  it("start a short drive from the café and the camp, and come back round", () => {
-    expect(Math.hypot(convoy.start.x - CAFE.x, convoy.start.z - CAFE.z)).toBeLessThan(300);
-    expect(Math.hypot(race.start.x - CAMP_GATE.x, race.start.z - CAMP_GATE.z)).toBeLessThan(300);
-    for (const m of together) {
-      const first = m.gates[0];
-      const last = m.gates[m.gates.length - 1];
-      expect(Math.hypot(first.x - last.x, first.z - last.z)).toBeLessThan(1);
-    }
+  it("are as many as the courses to drive alone, in both worlds", () => {
+    expect(world.missions.filter((m) => m.crew === 1)).toHaveLength(together.length);
+    expect(island.missions.filter((m) => m.crew === 1)).toHaveLength(ashore.length);
   });
 
-  it("have flags wide enough for two abreast, and line-ups on dry, clear ground", () => {
-    for (const m of together) {
-      expect(m.gates.every((g) => g.width >= 12)).toBe(true);
-      for (let slot = 0; slot < CONVOY_MAX; slot++) {
-        const p = lineUp(m, slot);
-        expect(world.height(p.x, p.z)).toBeGreaterThan(world.waterAt(p.x, p.z) + 0.3);
-        expect(world.obstaclesNear(p.x, p.z).filter((o) => Math.hypot(o.x - p.x, o.z - p.z) < o.r + 3)).toEqual([]);
+  it("start a short drive from the café and the camp, and all but three come back round", () => {
+    expect(Math.hypot(convoy.start.x - CAFE.x, convoy.start.z - CAFE.z)).toBeLessThan(300);
+    expect(Math.hypot(race.start.x - CAMP_GATE.x, race.start.z - CAMP_GATE.z)).toBeLessThan(300);
+    // Three are runs of flags from one place to another; the rest are loops.
+    expect([...together, ...ashore].filter((m) => !comesRound(m)).map((m) => m.id)).toEqual(["trackside", "flat-out", "tideline"]);
+    // The island's convoy sets off from by its café, where friends are made.
+    const coast = ashore[0];
+    expect(Math.hypot(coast.start.x - island.cafe.x, coast.start.z - island.cafe.z)).toBeLessThan(350);
+  });
+
+  it("have flags wide enough for two abreast, and line-ups for ten on dry, clear ground", () => {
+    for (const [ground, courses] of [[world, together], [island, ashore]] as const) {
+      for (const m of courses) {
+        expect(m.gates.every((g) => g.width >= 12), m.id).toBe(true);
+        for (let slot = 0; slot < CONVOY_MAX; slot++) {
+          const p = lineUp(m, slot);
+          expect(ground.height(p.x, p.z), m.id).toBeGreaterThan(ground.waterAt(p.x, p.z) + 0.3);
+          expect(ground.obstaclesNear(p.x, p.z).filter((o) => Math.hypot(o.x - p.x, o.z - p.z) < o.r + 3), m.id).toEqual([]);
+        }
       }
     }
   });

@@ -1,7 +1,7 @@
 import type { Mission } from "./missions";
 
 /**
- * A convoy: a course for two to four friends, driven together. A race is gathered and
+ * A convoy: a course for two to ten friends, driven together. A race is gathered and
  * set off the same way, and each driver's time travels with their last flag count so
  * everyone sees the same results. See docs/decisions/0010-convoys.md and
  * 0011-races.md.
@@ -19,12 +19,21 @@ import type { Mission } from "./missions";
  * A driver who goes quiet is left behind. Pure, with time passed in, so it's tested
  * without a network.
  */
-export const CONVOY_MAX = 4;
+export const CONVOY_MAX = 10;
 /** How near the start arch to gather, or to join; drive this far again and you've left. */
 export const GATHER_REACH = 30;
 /** Seconds between calls while gathering, and between counts while running. */
 export const CALL_EVERY = 3;
 export const COUNT_EVERY = 5;
+/**
+ * A big crew says less each. Every count goes to everyone in the world, and Realtime's free
+ * plan allows a hundred messages a second (docs/architecture.md), which ten trucks through
+ * one flag together would pass. Up to four, each truck counts on every flag and every five
+ * seconds, as it always has; beyond that, no sooner than `flagGap` after its last word
+ * (the finish always goes out at once) and every `countEvery` otherwise.
+ */
+export const flagGap = (crew: number) => (crew <= 4 ? 0 : crew * 0.5);
+export const countEvery = (crew: number) => Math.max(COUNT_EVERY, crew * 0.8);
 /** Not heard from for this long, a driver has gone. Seconds. */
 export const CONVOY_SILENCE = 15;
 
@@ -91,13 +100,17 @@ export function readConvoy(p: unknown): ConvoyMsg | null {
   return { kind: o.kind as "join" | "leave", id: o.id, from: o.from };
 }
 
+/** How far apart the rows of a line-up are, and so how far behind the arch the last of ten trucks waits. */
+const ROW_GAP = 6.5;
+export const LINE_UP_BACK = 8 + (CONVOY_MAX / 2 - 1) * ROW_GAP;
+
 /**
  * Where each truck waits behind the start arch: two abreast, the gatherer on the right,
- * clear of the arch's posts.
+ * clear of the arch's posts, in as many rows as it takes.
  */
 export function lineUp(m: Mission, slot: number) {
   const side = slot % 2 ? 2.2 : -2.2;
-  const back = 8 + Math.floor(slot / 2) * 9;
+  const back = 8 + Math.floor(slot / 2) * ROW_GAP;
   const { x, z, heading } = m.start;
   const fx = Math.sin(heading);
   const fz = Math.cos(heading);
@@ -182,7 +195,7 @@ export class Convoys {
     if (!this.state || this.state.phase !== "running" || !d || passed <= d.passed) return [];
     d.passed = passed;
     if (seconds !== undefined) d.seconds = seconds;
-    this.count(now);
+    if (seconds !== undefined || passed >= this.state.mission.gates.length || now - this.sentAt >= flagGap(this.state.crew.length)) this.count(now);
     return this.home(now);
   }
 
@@ -284,15 +297,17 @@ export class Convoys {
       }
       return out;
     }
+    // A big crew counts less often, so it is given longer before a truck is taken for gone: three counts' worth.
+    const silence = s.phase === "running" ? Math.max(CONVOY_SILENCE, countEvery(s.crew.length) * 3) : CONVOY_SILENCE;
     for (const d of s.crew) {
-      if (d.id !== me && now - d.heard > CONVOY_SILENCE) out.push({ kind: "left", who: d.id, mission: s.mission });
+      if (d.id !== me && now - d.heard > silence) out.push({ kind: "left", who: d.id, mission: s.mission });
     }
-    if (out.length) s.crew = s.crew.filter((d) => d.id === me || now - d.heard <= CONVOY_SILENCE);
+    if (out.length) s.crew = s.crew.filter((d) => d.id === me || now - d.heard <= silence);
     if (s.phase === "gathering") {
       if (now - this.sentAt > CALL_EVERY) this.call(now);
       return out;
     }
-    if (now - this.sentAt > COUNT_EVERY) this.count(now);
+    if (now - this.sentAt > countEvery(s.crew.length)) this.count(now);
     return [...out, ...this.home(now)];
   }
 
@@ -321,7 +336,7 @@ export class Convoys {
     s.with = s.crew.filter((d) => d.id !== me).map((d) => d.id);
     // The first count goes out a second after setting off: if anyone missed the word to
     // go, hearing the gatherer count tells them.
-    this.sentAt = now - COUNT_EVERY + 1;
+    this.sentAt = now - countEvery(s.crew.length) + 1;
     return { kind: "go", mission: s.mission, slot: Math.max(0, s.crew.findIndex((d) => d.id === me)), crew: s.crew.map((d) => d.id) };
   }
 

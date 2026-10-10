@@ -171,15 +171,16 @@ select pg_temp.fails($$ select public.complete_convoy('forest-slalom', 120, '{00
 select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{}') $$, 'a convoy needs someone else in it');
 select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000a}') $$, 'you are not your own convoy');
 select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000c}') $$, 'a convoy of strangers pays nothing');
-select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c,00000000-0000-0000-0000-00000000000d,00000000-0000-0000-0000-00000000000e}') $$, 'a convoy is four drivers at most');
+select pg_temp.refused($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c,00000000-0000-0000-0000-00000000000d,00000000-0000-0000-0000-00000000000e,00000000-0000-0000-0000-000000000011,00000000-0000-0000-0000-000000000012,00000000-0000-0000-0000-000000000013,00000000-0000-0000-0000-000000000014,00000000-0000-0000-0000-000000000015,00000000-0000-0000-0000-000000000016}') $$,
+  'two to ten drivers', 'a convoy is ten drivers at most');
 select pg_temp.fails($$ select public.complete_convoy('convoy', 10, '{00000000-0000-0000-0000-00000000000b}') $$, 'impossibly fast convoys pay nothing');
 reset role;
 select pg_temp.rewind('a');
 select pg_temp.as_player('a');
 set role authenticated;
 select public.add_miles(2);
-select pg_temp.check(pg_temp.pays($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c}') $$) = 30,
-  'a convoy with a friend in it pays the full reward');
+select pg_temp.check(pg_temp.pays($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c,00000000-0000-0000-0000-00000000000d,00000000-0000-0000-0000-00000000000e,00000000-0000-0000-0000-000000000011,00000000-0000-0000-0000-000000000012,00000000-0000-0000-0000-000000000013,00000000-0000-0000-0000-000000000014,00000000-0000-0000-0000-000000000015}') $$) = 30,
+  'a convoy of ten with a friend in it pays the full reward');
 select pg_temp.refused($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b}') $$, 'come back later', 'convoys wait for the cooldown too');
 select pg_temp.fails($$ select public.complete_mission('race', 200) $$, 'a race cannot be claimed as a solo run');
 select pg_temp.fails($$ select public.complete_convoy('race', 200, '{00000000-0000-0000-0000-00000000000c}') $$, 'a race against strangers pays nothing');
@@ -238,7 +239,11 @@ select pg_temp.check((select garages = 0 and cafes = 0 and airports = 0 and eggs
 select pg_temp.check((select count(*) from public.leaderboard('island')) = 2, 'and is still you and your friends only');
 select pg_temp.check((select balance from public.profiles where id = (select auth.uid())) = (select balance from public.discover('egg:church')), 'finding pays nothing');
 reset role;
-select pg_temp.check((select count(*) from public.missions where id in ('beach-run', 'dune-dash', 'jungle-loop')) = 3, 'the island has its three courses');
+select pg_temp.check((select count(*) from public.missions where id in ('beach-run', 'dune-dash', 'jungle-loop') and world = 'island') = 3, 'the island has its first three courses');
+select pg_temp.check((select count(*) filter (where crew = 1) = 10 and count(*) filter (where crew > 1) = 10 from public.missions where world = 'valley'),
+  'the valley has ten courses to drive alone and ten for friends');
+select pg_temp.check((select count(*) filter (where crew = 1) = 4 and count(*) filter (where crew > 1) = 4 from public.missions where world = 'island'),
+  'and the island four of each');
 
 -- The map's fog: cells are only ever added, each player has their own, and nobody reads the table.
 select pg_temp.as_player('a');
@@ -265,6 +270,8 @@ reset role;
 select pg_temp.as_player('a');
 set role authenticated;
 select pg_temp.check((select world from public.me()) = 'valley', 'everyone starts in the valley');
+select pg_temp.refused($$ select public.complete_mission('beach-run', 120) $$, 'in another world', 'an island course is not paid to a player in the valley');
+select pg_temp.refused($$ select public.complete_convoy('coast-convoy', 200, '{00000000-0000-0000-0000-00000000000b}') $$, 'in another world', 'nor an island convoy');
 select pg_temp.refused($$ select public.fly('island') $$, 'not enough miles', 'cannot fly without the fare');
 select pg_temp.refused($$ select public.fly('moon') $$, 'no such world', 'cannot fly somewhere that is not there');
 select pg_temp.refused($$ select public.fly(null) $$, 'no such world', 'nor to nowhere');
@@ -277,6 +284,7 @@ select pg_temp.check((select balance = 340 and world = 'valley' from public.fly(
 select pg_temp.check((select balance = 190 and world = 'island' from public.fly('island')), 'a flight takes the fare and takes you there');
 select pg_temp.check((select balance = 190 and world = 'island' from public.fly('island')), 'asking twice charges once');
 select pg_temp.check((select balance from public.buy('vehicle:sandfly')) = 40, 'the Sandfly is sold on the island');
+select pg_temp.refused($$ select public.complete_mission('forest-slalom', 120) $$, 'in another world', 'a valley course is not paid to a player on the island');
 select pg_temp.refused($$ select public.fly('valley') $$, 'not enough miles', 'the way home costs the same');
 select pg_temp.check((select vehicle from public.equip('sandfly', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}')) = 'sandfly', 'and can be driven once bought');
 select pg_temp.check((select balance from public.buy('tyres:allTerrain')) = 38, 'everything else is sold there too');

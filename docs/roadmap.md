@@ -28,7 +28,13 @@ subdomains." Update the **You are here** marker as you progress.
 > the easter eggs. Merged to `main` as pull request 10, its migration on the live
 > project. And animals in both worlds (`decisions/0015`,
 > `sessions/2026-10-09-wildlife.md`), client only.
-> **Next:** play one convoy and one race signed in from two Google accounts on the live
+> Built on 2026-10-09 and not merged yet (`decisions/0019`,
+> `sessions/2026-10-09-more-courses.md`): twelve more courses, so each world has as many
+> for friends as to drive alone, a jump told for its time in the air, and convoys and
+> races for up to ten. Its migration, `20261010120000_more_courses.sql`, is not on the
+> live project and its database checks have not been run.
+> **Next:** dry-run that migration against the live project, apply it, and merge. Then
+> play one convoy and one race signed in from two Google accounts on the live
 > site; neither has been played over Supabase yet, only over `?net=local`. Still open:
 > the frame rate on a real phone and laptop. Sign-in is Google only (the email link was
 > removed), and an idle tab now gives its tent back.

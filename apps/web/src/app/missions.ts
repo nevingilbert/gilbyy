@@ -1,5 +1,8 @@
+import { fieldDist, type Airport } from "./airport";
+import { LINE_UP_BACK } from "./convoy";
+import { RAMP, type Ramp } from "./ramp";
 import { METRES_PER_MILE } from "./shop";
-import { CAFE, CAMP_GATE, FROZEN, LAKES, ROW, START, WORLD, nearest, sampleGrid, type Path, type Terrain } from "./terrain";
+import { CAFE, CAMP_GATE, FROZEN, LAKES, ROW, SNOWLINE_Z, START, WORLD, gridX, gridZ, nearest, sampleGrid, type Path, type Terrain } from "./terrain";
 
 /**
  * Optional driving challenges, laid out on the real terrain at load. Drive to a start
@@ -27,6 +30,8 @@ export type Mission = {
   crew: number;
   /** Driven by friends against each other rather than together. Paid the same either way. */
   race: boolean;
+  /** A ramp on the course's line. With one, what a run is told afterwards is its time in the air, not on the clock. */
+  ramp?: Ramp;
 };
 
 type Pt = { x: number; z: number };
@@ -86,8 +91,13 @@ export function gatesAlong(start: Pt, pts: Pt[], width: number): Gate[] {
 const length = (start: Pt, pts: Pt[]) =>
   pts.reduce((sum, p, i) => sum + Math.hypot(p.x - (i ? pts[i - 1] : start).x, p.z - (i ? pts[i - 1] : start).z), 0);
 
-/** No rig averages more than 23 m/s round a course; a quicker claim is refused. */
-const secondsFor = (metres: number) => Math.floor(metres / 23);
+/**
+ * No rig averages this many metres a second round a course, so a quicker claim is refused.
+ * A tenth more than the quickest rig's top speed (the Sandfly's 24.5): flags have width,
+ * and a good line through them is a little shorter than the one measured.
+ */
+export const TOO_QUICK = 27;
+const secondsFor = (metres: number) => Math.floor(metres / TOO_QUICK);
 /**
  * Three fifths of the line through the flags, in miles. The odometer counts every metre
  * driven, so an honest run always banks more than this; a claim from a truck that never
@@ -313,7 +323,7 @@ function convoy(t: Terrain, others: Float32Array): Mission | null {
   if (!loop) return null;
   const c = loopCourse(loop, 14);
   return {
-    id: "convoy", name: "Convoy", blurb: "For two to four friends: once round and back to the café.",
+    id: "convoy", name: "Convoy", blurb: "For two to ten friends: once round and back to the café.",
     start: c.start, gates: c.gates,
     reward: 30, repeatReward: 10, cooldown: 600, ...limits(c.length), crew: 2, race: false,
   };
@@ -331,7 +341,7 @@ function race(t: Terrain, others: Float32Array): Mission | null {
   if (!loop) return null;
   const c = loopCourse(loop, 14);
   return {
-    id: "race", name: "Race", blurb: "Two to four friends, once round. Quickest wins; every finisher is paid the same.",
+    id: "race", name: "Race", blurb: "Two to ten friends, once round. Quickest wins; every finisher is paid the same.",
     start: c.start, gates: c.gates,
     reward: 25, repeatReward: 8, cooldown: 600, ...limits(c.length), crew: 2, race: true,
   };
@@ -380,7 +390,7 @@ function flagLine(t: Terrain, plan: LinePlan) {
   return best;
 }
 
-/** A solo course from a run of flags, or null if the valley has nowhere for it. */
+/** A solo course from a run of flags, or null if the valley has nowhere for it. `crewLine` makes one for friends of it. */
 function lineCourse(line: ReturnType<typeof flagLine>, width: number, m: Pick<Mission, "id" | "name" | "blurb" | "reward" | "repeatReward">): Mission | null {
   if (!line) return null;
   return {
@@ -474,7 +484,7 @@ function grandTour(t: Terrain, others: Float32Array): Mission | null {
   if (!loop) return null;
   const c = loopCourse(loop, 14);
   return {
-    id: "grand-tour", name: "Grand Tour", blurb: "For two to four friends: the long way round, by the big lake.",
+    id: "grand-tour", name: "Grand Tour", blurb: "For two to ten friends: the long way round, by the big lake.",
     start: c.start, gates: c.gates,
     reward: 40, repeatReward: 12, cooldown: 600, ...limits(c.length), crew: 2, race: false,
   };
@@ -491,29 +501,169 @@ function hillRace(t: Terrain, others: Float32Array): Mission | null {
   if (!loop) return null;
   const c = loopCourse(loop, 14);
   return {
-    id: "hill-race", name: "Hill Race", blurb: "Two to four friends, up and down through the trees. Every finisher is paid the same.",
+    id: "hill-race", name: "Hill Race", blurb: "Two to ten friends, up and down through the trees. Every finisher is paid the same.",
     start: c.start, gates: c.gates,
     reward: 30, repeatReward: 10, cooldown: 600, ...limits(c.length), crew: 2, race: true,
   };
 }
 
+/**
+ * How a jump is laid out along a straight line from its start arch: flags to line you up,
+ * the ramp, and two flags to come down between. Metres from the arch, then from the lip.
+ */
+const JUMP = { lineUp: [35, 70, 105], foot: 125, land: [52, 100], runOut: 40 } as const;
+
+/**
+ * One jump: a straight run at a timber ramp, on the most level open strip within a short
+ * drive of camp. What a run is told afterwards is how long it was in the air.
+ */
+function bigAir(t: Terrain, avoid: Float32Array): Mission | null {
+  const { h, f, zone, clearAt, lineOk, awayFrom } = helpers(t);
+  const lip = JUMP.foot + RAMP.length;
+  // From the last flag before the ramp to where the quickest rig comes down.
+  const [from, to] = [JUMP.lineUp[2], lip + 45];
+  let best: { start: Pt; heading: number; score: number } | null = null;
+  for (let z = -1800; z <= 1800; z += 60) {
+    for (let x = -1800; x <= 1800; x += 60) {
+      const drive = Math.hypot(x - START.x, z - START.z);
+      if (drive < 250 || drive > 1400 || zone(x, z) !== 1 || f(t.snow, x, z) > 0.05 || f(t.forest, x, z) > 0.5) continue;
+      if (f(avoid, x, z) <= 150 || !clearAt(x, z, 0.15)) continue;
+      for (let d = 0; d < 12; d++) {
+        const a = (d / 12) * Math.PI * 2;
+        const at = (s: number, side = 0) => ({ x: x + Math.sin(a) * s + Math.cos(a) * side, z: z + Math.cos(a) * s - Math.sin(a) * side });
+        const y = (s: number, side = 0) => h(at(s, side).x, at(s, side).z);
+        // How far the ground strays from one even grade under the ramp and the landing, and how much it tilts across them.
+        const grade = (y(to) - y(from)) / (to - from);
+        let rough = 0;
+        for (let s = from; s <= to; s += 5) rough = Math.max(rough, Math.abs(y(s) - y(from) - grade * (s - from)), Math.abs(y(s, 5) - y(s)), Math.abs(y(s, -5) - y(s)));
+        // Level is best. A little downhill is fine; uphill takes the speed off.
+        const score = -rough - Math.abs(grade) * 20 - Math.max(0, grade) * 40 - drive / 1500;
+        if (rough > 0.8 || (best && score <= best.score)) continue;
+        const line = [at(-25), at(lip + JUMP.land[1] + JUMP.runOut)];
+        if (!awayFrom(avoid, line, 150) || !lineOk(line, 0.22)) continue;
+        best = { start: { x, z }, heading: a, score };
+      }
+    }
+  }
+  if (!best) return null;
+  const { start, heading } = best;
+  const at = (s: number) => ({ x: start.x + Math.sin(heading) * s, z: start.z + Math.cos(heading) * s });
+  // The fourth flag stands on the deck just short of the lip, so the only way through it is off the ramp.
+  const pts = [...JUMP.lineUp, lip - 1.5, lip + JUMP.land[0], lip + JUMP.land[1]].map(at);
+  const widths = [9, 9, 9, RAMP.width - 0.6, 12, 12];
+  return {
+    id: "big-air", name: "Big Air", blurb: "A straight run at a timber ramp. It's the time in the air that counts.",
+    start: { ...start, heading }, gates: gatesAlong(start, pts, 9).map((g, i) => ({ ...g, width: widths[i] })),
+    reward: 15, repeatReward: 5, cooldown: 600, ...limits(length(start, pts)), crew: 1, race: false,
+    ramp: { ...at(JUMP.foot), heading },
+  };
+}
+
+/**
+ * A course for friends from a run of flags, or null if the valley has nowhere for it: the
+ * flags wide enough for two abreast, and ground behind the arch for ten trucks to line up on.
+ */
+function crewLine(
+  t: Terrain, avoid: Float32Array, line: ReturnType<typeof flagLine>,
+  m: Pick<Mission, "id" | "name" | "blurb" | "reward" | "repeatReward" | "race">,
+): Mission | null {
+  const { lineOk, awayFrom } = helpers(t);
+  if (!line) return null;
+  const behind = { x: line.start.x - Math.sin(line.heading) * (LINE_UP_BACK + 4), z: line.start.z - Math.cos(line.heading) * (LINE_UP_BACK + 4) };
+  if (!lineOk([behind, line.start], 0.5) || !awayFrom(avoid, [behind, line.start], 150)) return null;
+  return { ...lineCourse(line, 14, m)!, crew: 2, race: m.race };
+}
+
+/**
+ * For friends, together: beside the railway on the green side of the valley, eight flags
+ * 34 m from the rails along whichever stretch is gentlest. The ground by the line is all
+ * cuttings and embankments, so this is allowed more slope than the other runs of flags.
+ */
+function trackside(t: Terrain, avoid: Float32Array): Mission | null {
+  const { f, zone, slope, clearAt, lineOk, awayFrom } = helpers(t);
+  const { xs, zs } = t.track;
+  const n = xs.length;
+  const ok = (p: Pt) => zone(p.x, p.z) === 1 && f(t.snow, p.x, p.z) <= 0.05 && f(avoid, p.x, p.z) > 150 && clearAt(p.x, p.z, 0.45);
+  let best: { start: Pt; heading: number; pts: Pt[]; score: number } | null = null;
+  for (const side of [1, -1]) {
+    for (const way of [1, -1]) {
+      for (let i = 0; i < n; i += 4) {
+        // A point every 60 m along the rails, pushed out square to them, and one more behind the first for the line-up.
+        const at = (k: number) => {
+          const j = (((i + way * k * 12) % n) + n) % n;
+          const dx = xs[(j + 2) % n] - xs[(j + n - 2) % n];
+          const dz = zs[(j + 2) % n] - zs[(j + n - 2) % n];
+          const d = Math.hypot(dx, dz) || 1;
+          return { x: xs[j] + (dz / d) * 34 * side, z: zs[j] - (dx / d) * 34 * side };
+        };
+        const run = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(at);
+        if (!run.every(ok) || !ok(at(-1))) continue;
+        const score = -run.reduce((sum, p) => sum + slope(p.x, p.z), 0) / run.length;
+        if ((best && score <= best.score) || !awayFrom(avoid, run, 150) || !lineOk(run, 0.5)) continue;
+        best = { start: run[0], heading: Math.atan2(run[1].x - run[0].x, run[1].z - run[0].z), pts: run.slice(1), score };
+      }
+    }
+  }
+  return crewLine(t, avoid, best, {
+    id: "trackside", name: "Trackside", blurb: "For two to ten friends: eight flags beside the railway. Wave if the train comes by.",
+    reward: 25, repeatReward: 8, race: false,
+  });
+}
+
+/** For friends, against each other: flags far apart over the most open, level ground left. Nothing to do but keep your foot down. */
+function flatOut(t: Terrain, avoid: Float32Array): Mission | null {
+  const { f, zone, slope } = helpers(t);
+  const line = flagLine(t, {
+    where: (x, z) => zone(x, z) === 1 && f(t.snow, x, z) <= 0.05 && f(avoid, x, z) > 150,
+    score: (x, z) => 1 - f(t.forest, x, z) - slope(x, z) * 2, least: 0.3, flags: 8, spacing: 60, side: 9, maxSlope: 0.32,
+  });
+  return crewLine(t, avoid, line, {
+    id: "flat-out", name: "Flat Out", blurb: "Two to ten friends, eight flags over open ground. Quickest wins; every finisher is paid the same.",
+    reward: 25, repeatReward: 8, race: true,
+  });
+}
+
+/** A loop for friends that starts near `near`, if there is room for one there. */
+const friendsLoop = (
+  near: (t: Terrain) => Pt | undefined, plan: Omit<LoopPlan, "near">,
+  m: Pick<Mission, "id" | "name" | "blurb" | "reward" | "repeatReward" | "race">,
+) => (t: Terrain, room: Float32Array): Mission | null => {
+  const at = near(t);
+  const loop = at && loopNear(t, room, { ...plan, near: at });
+  if (!loop) return null;
+  const c = loopCourse(loop, 14);
+  return { ...m, start: c.start, gates: c.gates, cooldown: 600, ...limits(c.length), crew: 2 };
+};
+
 /** Lowers `dist` to the distance to `m`'s driving line wherever that is nearer, out to `reach` metres. */
-const addCourse = (dist: Float32Array, m: Mission, reach: number) => {
-  // From a little behind the start arch, where trucks line up.
-  const back = { x: m.start.x - Math.sin(m.start.heading) * 25, z: m.start.z - Math.cos(m.start.heading) * 25 };
+const addCourse = (dist: Float32Array, m: Mission, reach: number, lineUps = false) => {
+  // From a little behind the start arch, where trucks line up: as far back as ten of them need, when asked.
+  const behind = lineUps && m.crew > 1 ? LINE_UP_BACK + 6 : 25;
+  const back = { x: m.start.x - Math.sin(m.start.heading) * behind, z: m.start.z - Math.cos(m.start.heading) * behind };
   const path: Path = { xs: [back.x, m.start.x, ...m.gates.map((g) => g.x)], zs: [back.z, m.start.z, ...m.gates.map((g) => g.z)] };
+  if (m.ramp) {
+    // A jump is finished flat out, so it needs room to pull up past its last flag.
+    const end = m.gates[m.gates.length - 1];
+    path.xs.push(end.x + Math.sin(end.heading) * JUMP.runOut);
+    path.zs.push(end.z + Math.cos(end.heading) * JUMP.runOut);
+  }
   const d = nearest(path, false, reach).dist;
   for (let k = 0; k < d.length; k++) dist[k] = Math.min(dist[k], d[k]);
 };
 
-/** Distance to the nearest course's driving line, out to `reach` metres. */
-export const courseDistOf = (missions: Mission[], reach: number) => {
+/**
+ * Distance to the nearest course's driving line, out to `reach` metres. With `lineUps`,
+ * also to where a full crew of ten lines up behind each course for friends: what the
+ * scatter keeps clear. Planning leaves that out, so no course that was already there moves.
+ */
+export const courseDistOf = (missions: Mission[], reach: number, lineUps = false) => {
   const dist = new Float32Array(ROW * ROW).fill(1000);
-  for (const m of missions) addCourse(dist, m, reach);
+  for (const m of missions) addCourse(dist, m, reach, lineUps);
   return dist;
 };
 
-export function planMissions(t: Terrain) {
+/** The thirteen courses the valley had before ADR 0019, each where it has always been. */
+export function planMissions(t: Terrain): Mission[] {
   const solo = [forestSlalom(t), ridgeRun(t), lakeshoreLoop(t), iceDrift(t)].filter((m): m is Mission => !!m);
   const withConvoy = [...solo, convoy(t, courseDistOf(solo, 60))].filter((m): m is Mission => !!m);
   const missions = [...withConvoy, race(t, courseDistOf(withConvoy, 60))].filter((m): m is Mission => !!m);
@@ -526,8 +676,68 @@ export function planMissions(t: Terrain) {
     missions.push(m);
     addCourse(avoid, m, 160);
   }
-  // Keep every course clear of trees and rocks along its driving line.
-  return { missions, courseDist: courseDistOf(missions, 20) };
+  return missions;
+}
+
+/** What makes a loop good to drive together, and what makes one good to race round. */
+const TOGETHER: LoopPlan["score"] = (l) => Math.min(l.climb, 40) / 40 + Math.min(l.forest, 0.5) - l.steep * 4 - l.from / 400;
+const AGAINST: LoopPlan["score"] = (l) => -l.steep * 6 - Math.max(0, l.forest - 0.2) - l.from / 300;
+
+/**
+ * The loops for friends added with ADR 0019, in the parts of the valley that had room for
+ * one: by the barn, at the head of the big lake, under the snowline, and between the west
+ * lake and the south one.
+ */
+const FRIENDS_LOOPS = [
+  friendsLoop((t) => t.sites.find((s) => s.style === "barn"), { radii: [240, 300, 360], flags: 14, score: TOGETHER }, {
+    id: "barn-round", name: "Barn Round", blurb: "For two to ten friends: once round from the barn and back, together.",
+    reward: 30, repeatReward: 10, race: false,
+  }),
+  friendsLoop(() => ({ x: LAKES[0].x, z: LAKES[0].z - LAKES[0].r - 100 }), { radii: [260, 320, 380], flags: 12, score: AGAINST }, {
+    id: "lakehead-race", name: "Lakehead Race", blurb: "Two to ten friends, once round at the head of the big lake. Quickest wins; every finisher is paid the same.",
+    reward: 30, repeatReward: 10, race: true,
+  }),
+  friendsLoop(() => ({ x: -150, z: SNOWLINE_Z + 50 }), { radii: [240, 300, 360], flags: 14, score: TOGETHER }, {
+    id: "snowline", name: "Snowline", blurb: "For two to ten friends: once round, up into the first of the snow and back down, together.",
+    reward: 30, repeatReward: 10, race: false,
+  }),
+  friendsLoop(() => ({ x: LAKES[1].x + 450, z: LAKES[1].z + 300 }), { radii: [260, 320, 380], flags: 12, score: AGAINST }, {
+    id: "two-lakes-race", name: "Two Lakes Race", blurb: "Two to ten friends, a lap between the west lake and the south one. Every finisher is paid the same.",
+    reward: 30, repeatReward: 10, race: true,
+  }),
+];
+
+/**
+ * The courses added with ADR 0019: one to drive alone, the jump, and six for friends, so
+ * the valley has as many of one as the other. They are laid out once the easter eggs and
+ * the airstrip have been chosen, so none of those move. A run of flags keeps 150 m from
+ * every course before it and a loop 100 m, and all of them 260 m from the four buildings
+ * and 500 m from the airstrip, which stays hidden.
+ */
+export function planMore(t: Terrain, missions: Mission[], landmarks: Pt[], airport: Airport): Mission[] {
+  const courses = courseDistOf(missions, 160);
+  // How near the easter eggs and the airstrip are, less what a course must keep from them on top of its 150 m.
+  const others = new Float32Array(ROW * ROW);
+  for (let j = 0; j < ROW; j++) {
+    for (let i = 0; i < ROW; i++) {
+      const [x, z] = [gridX(i), gridZ(j)];
+      let d = fieldDist(airport, x, z) - 350;
+      for (const l of landmarks) d = Math.min(d, Math.hypot(l.x - x, l.z - z) - 110);
+      others[j * ROW + i] = d;
+    }
+  }
+  /** What a run of flags keeps 150 m from, or with `loop` what a loop keeps 50 m from. */
+  const avoid = (loop: boolean) => courses.map((c, k) => Math.max(0, Math.min(c - (loop ? 50 : 0), others[k] - (loop ? 100 : 0))));
+  const more: Mission[] = [];
+  const add = (m: Mission | null) => {
+    if (!m) return;
+    more.push(m);
+    addCourse(courses, m, 160);
+  };
+  add(bigAir(t, avoid(false)));
+  for (const plan of FRIENDS_LOOPS) add(plan(t, avoid(true)));
+  for (const plan of [trackside, flatOut]) add(plan(t, avoid(false)));
+  return more;
 }
 
 /** How far a course is to drive, from its start through every flag. */

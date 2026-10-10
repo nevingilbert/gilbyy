@@ -192,8 +192,8 @@ describe("the island", () => {
     }
   });
 
-  it("has a course in each ring, with a clear line and a way in through the trees", () => {
-    expect(island.missions.map((m) => m.id)).toEqual(["beach-run", "dune-dash", "jungle-loop"]);
+  it("has courses in every ring, each with a clear line, and ways in through the trees", () => {
+    expect(island.missions.map((m) => m.id)).toEqual(["beach-run", "dune-dash", "jungle-loop", "hilltop", "coast-convoy", "sand-race", "tideline", "dune-derby"]);
     for (const m of island.missions) {
       const pts = [m.start, ...m.gates];
       for (let i = 1; i < pts.length; i++) {
@@ -204,9 +204,18 @@ describe("the island", () => {
           expect(island.obstaclesNear(x, z).some((o) => Math.hypot(o.x - x, o.z - z) < 4)).toBe(false);
         }
       }
-      expect(m.crew).toBe(1);
       expect(apart(m.start, island.camp)).toBeGreaterThan(200);
+      // Well clear of the airstrip and the way in to it.
+      for (const p of pts) {
+        expect(fieldDist(island.airport, p.x, p.z)).toBeGreaterThan(400);
+        expect(inFunnel(island.airport, p.x, p.z)).toBe(false);
+      }
     }
+    // One climbs to the top of the island, which is kept bald for the view.
+    const top = island.missions.find((m) => m.id === "hilltop")!.gates.at(-1)!;
+    for (const d of [100, 200, 300]) for (let k = 0; k < 8; k++) expect(island.height(top.x + Math.cos(k) * d, top.z + Math.sin(k) * d)).toBeLessThan(island.height(top.x, top.z));
+    expect(island.trees.some((t) => apart(t, top) < 25)).toBe(false);
+    expect(island.trees.some((t) => apart(t, top) < 60)).toBe(true);
     // Two tracks cut out of the jungle: from the lodge and from the jungle course's start.
     expect(island.roads).toHaveLength(2);
     for (const road of island.roads) {

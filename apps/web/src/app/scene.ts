@@ -14,6 +14,8 @@ import { PALETTE } from "./palette";
 import type { Car, CarSpec } from "./physics";
 import { buildPlane } from "./plane-model";
 import { buildRailway } from "./railway";
+import { rampPoint } from "./ramp";
+import { buildRamp } from "./ramp-model";
 import { createRemotes } from "./remote";
 import { buildBushes, buildClouds, buildRocks, buildTrees } from "./scenery";
 import type { Loadout } from "./shop";
@@ -165,6 +167,13 @@ function placeMissions(world: World, glow: THREE.Material) {
       const [fx, fz] = [end.x + Math.sin(end.heading) * 6, end.z + Math.cos(end.heading) * 6];
       const finish = buildFinishArch(glow, across(world, fx, fz, end.heading));
       place(finish.object, finish.colliders, fx, fz, end.heading);
+    }
+    const ramp = m.ramp;
+    if (ramp) {
+      // Built from the ground the physics drives on, the deck included; its fence and the boards under its lip are the world's (world.ts).
+      const y = world.height(ramp.x, ramp.z);
+      const surface = (u: number, w: number) => world.height(rampPoint(ramp, u, w).x, rampPoint(ramp, u, w).z) - y;
+      place(buildRamp(surface), [], ramp.x, ramp.z, ramp.heading, y);
     }
     return { gates, loops, last };
   });
