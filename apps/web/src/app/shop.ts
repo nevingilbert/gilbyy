@@ -33,6 +33,8 @@ export type Tyre = Base & {
 };
 export type Lights = Base & { reach: number; spread: number; power: number; fogLamps: boolean; bar: boolean; ditch: boolean };
 export type Toggle = Base & { fitted: boolean };
+/** Chains grip the same whatever they're made of; `jewelled` is only how they look. */
+export type Chains = Toggle & { jewelled: boolean };
 
 export const PAINTS: Paint[] = [
   { id: "factory", name: "Factory colour", blurb: "How it left the showroom.", price: 0, color: "" },
@@ -71,9 +73,11 @@ export const SNORKELS: Toggle[] = [
   { id: "snorkel", name: "Snorkel", blurb: "Breathes high. Fords the rivers to the east.", price: 45, fitted: true },
 ];
 
-export const WINTER: Toggle[] = [
-  { id: "none", name: "No chains", blurb: "Snow is for sliding.", price: 0, fitted: false },
-  { id: "chains", name: "Snow chains", blurb: "Grip in snow country on any tyres.", price: 30, fitted: true },
+export const WINTER: Chains[] = [
+  { id: "none", name: "No chains", blurb: "Snow is for sliding.", price: 0, fitted: false, jewelled: false },
+  { id: "chains", name: "Snow chains", blurb: "Grip in snow country on any tyres.", price: 30, fitted: true, jewelled: false },
+  // The one thing in the shop priced for showing off: the owner's number, far past anything else here.
+  { id: "cartier", name: "Cartier chains", blurb: "Solid gold, a stone on every link. Grips no better.", price: 10000, fitted: true, jewelled: true },
 ];
 
 export const PARTS = { paint: PAINTS, tyres: TYRES, lights: LIGHTS, snorkel: SNORKELS, winter: WINTER } as const;

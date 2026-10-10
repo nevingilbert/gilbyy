@@ -87,4 +87,9 @@ describe("the shop", () => {
     expect(specFor("ridgeback", { ...STOCK_LOADOUT, tyres: "studded" }).snowGrip).toBeGreaterThan(0.8);
     expect(specFor("ridgeback", { ...STOCK_LOADOUT, winter: "chains" }).snowGrip).toBeGreaterThan(0.8);
   });
+
+  it("sells Cartier chains for the look alone", () => {
+    expect(priceOf("winter:cartier")).toBe(10000);
+    expect(specFor("ridgeback", { ...STOCK_LOADOUT, winter: "cartier" })).toEqual(specFor("ridgeback", { ...STOCK_LOADOUT, winter: "chains" }));
+  });
 });
