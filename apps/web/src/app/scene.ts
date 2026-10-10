@@ -510,10 +510,10 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     renderer.render(scene, camera);
   }
 
-  /** The picture as it is now, as a PNG. Drawn again and read straight back, before the browser clears the canvas. */
+  /** Draws the picture as it is now and hands back the canvas, to be read at once, before the browser clears it. */
   function snap() {
     renderer.render(scene, camera);
-    return canvas.toDataURL("image/png");
+    return canvas;
   }
 
   /** Swaps the rig (a new body) or just refits it. */

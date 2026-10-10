@@ -837,7 +837,7 @@ export function Game() {
     actions.current.zoomPhoto = (factor) => void (orbit = zoomOrbit(orbit, factor));
     actions.current.snap = () => {
       if (modeRef.current !== "photo") return;
-      keepPicture(view.snap(), photoName(new Date()));
+      keepPicture(picture(), photoName(new Date()));
       // A soft flash, as a shutter would.
       const flash = flashRef.current;
       if (!flash) return;
@@ -1167,8 +1167,12 @@ export function Game() {
       tagsAt = now;
       const me = store.get().id;
       const list = view.remotes.tags();
-      const mine = bubbles.get(me);
-      if (mine) list.push({ id: me, name: "", x: car.x, y: car.y + view.carTop() + 1.1, z: car.z });
+      // In photo mode everyone in the picture has their name over their truck, this one's
+      // driver too, as the others see it; the chat goes. A picture is of who was there.
+      const posing = modeRef.current === "photo";
+      const myName = posing ? store.get().name : null;
+      const mine = posing ? undefined : bubbles.get(me);
+      if (myName || mine) list.push({ id: me, name: myName ?? "", x: car.x, y: car.y + view.carTop() + 1.1, z: car.z });
       const seen = new Set<string>();
       const shown: TagBox[] = [];
       for (const t of list) {
@@ -1187,7 +1191,7 @@ export function Game() {
         const bubble = bubbles.get(t.id);
         const sayEl = el.querySelector<HTMLSpanElement>("[data-say]")!;
         const nameEl = el.querySelector<HTMLSpanElement>("[data-name]")!;
-        const speaking = bubble && bubble.until > now ? bubble.text : "";
+        const speaking = !posing && bubble && bubble.until > now ? bubble.text : "";
         if (sayEl.textContent !== speaking) sayEl.textContent = speaking;
         sayEl.style.display = speaking ? "" : "none";
         const label = t.name + (friends.has(t.id) ? " ★" : "");
@@ -1232,6 +1236,39 @@ export function Game() {
           tags.delete(id);
         }
       }
+    };
+
+    /**
+     * The picture: the world as it's drawn this moment, and over it the name of everyone
+     * in it, as and where their tags are on screen. The tags are the page's, not the
+     * world's, so each is drawn onto the picture in its own font, colour and shadow.
+     */
+    const picture = () => {
+      const shot = view.snap();
+      const out = document.createElement("canvas");
+      out.width = shot.width;
+      out.height = shot.height;
+      const g = out.getContext("2d");
+      if (!g) return shot.toDataURL("image/png");
+      g.drawImage(shot, 0, 0);
+      const box = shot.getBoundingClientRect();
+      const scale = shot.width / Math.max(1, box.width);
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      for (const tag of tags.values()) {
+        const name = tag.el.querySelector<HTMLSpanElement>("[data-name]");
+        const shown = Number(tag.el.style.opacity || "1");
+        if (!name?.textContent || tag.lift === null || !(shown > 0)) continue;
+        const at = name.getBoundingClientRect();
+        const look = getComputedStyle(name);
+        g.font = `${look.fontWeight} ${parseFloat(look.fontSize) * scale}px ${look.fontFamily}`;
+        g.letterSpacing = `${(parseFloat(look.letterSpacing) || 0) * scale}px`;
+        g.fillStyle = look.color;
+        g.filter = look.filter;
+        g.globalAlpha = shown;
+        g.fillText(name.textContent, (at.left + at.width / 2 - box.left) * scale, (at.top + at.height / 2 - box.top) * scale);
+      }
+      return out.toDataURL("image/png");
     };
 
     /** The guidance mark on the compass: the nearest thing the current goal is about. */
@@ -1436,6 +1473,7 @@ export function Game() {
           dist: orbit.dist,
         });
         view.photo(car, orbit, dt);
+        drawTags(now);
       } else {
         // A flight: the film places the truck and the plane, and directs the camera.
         const film = m === "flying" ? flyOn(dt) : null;
@@ -1612,7 +1650,7 @@ export function Game() {
         {...canvasDrag}
         className={`block h-full w-full touch-none transition-opacity duration-[1500ms] ${ready ? "opacity-100" : "opacity-0"}`}
       />
-      <div ref={tagsRef} className={`pointer-events-none absolute inset-0 overflow-hidden ${driving ? "" : "hidden"}`} />
+      <div ref={tagsRef} className={`pointer-events-none absolute inset-0 overflow-hidden ${driving || mode === "photo" ? "" : "hidden"}`} />
       {/* Cloud: the colour of the haze, over everything, while a flight changes worlds (ADR 0014). The loop sets both. */}
       <div ref={cloudRef} className="pointer-events-none absolute inset-0 opacity-0" />
       {/* Black from the first paint when there may be a tent to wait for; the effect lifts it. */}

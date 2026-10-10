@@ -64,8 +64,8 @@ unhurried exploration in a classic 4x4.
   from the beach by the camp and hooks round under the evening sun; at high water it's
   a pale shoal with flags standing in the sea. No surf, no foam, nothing on the HUD.
 - A photo mode (ADR 0018): P stops the world, the camera goes round the truck, and the
-  shutter keeps the picture, HUD-free. On screen only a shutter, "back" and one line of
-  how-to. Not while on a course. Pictures aren't collected, counted or listed.
+  shutter keeps the picture, with everyone's name over their truck and no other HUD.
+  On screen only those names, a shutter, "back" and one line of how-to. Not while on a course. Pictures aren't collected, counted or listed.
 - Driving together, as in the trailer's co-op shots: other players' trucks share the
   valley, name tags float over them, and chat appears as small speech bubbles.
 
