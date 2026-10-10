@@ -46,7 +46,8 @@ export function createRemotes(scene: THREE.Scene, world: World) {
     r.off = still();
     if (known) {
       r.car.y = known.y;
-      r.last = { ...known, speed: 0, turn: 0 };
+      // Back after a reload, it's at its tent and free, whatever it was when it left.
+      r.last = { ...known, speed: 0, turn: 0, stuck: false, hooked: false };
       r.heardAt = performance.now() / 1000;
     }
   }
@@ -168,16 +169,26 @@ export function createRemotes(scene: THREE.Scene, world: World) {
 
   /** Where to hang each player's name tag. */
   function tags() {
-    return [...remotes.values()].map((r) => ({ id: r.peer.id, name: r.peer.name, x: r.car.x, y: r.car.y + r.model.top + 1.1, z: r.car.z }));
+    return [...remotes.values()].map((r) => ({ id: r.peer.id, name: r.peer.name, x: r.car.x, y: r.car.y + r.model.top + 1.1, z: r.car.z, stuck: Boolean(r.last?.stuck) }));
   }
 
-  const positions = () => [...remotes.values()].map((r) => ({ id: r.peer.id, x: r.car.x, z: r.car.z, heading: r.car.heading, speed: r.car.speed }));
+  /** `stuck` and `hooked` are what its last pose said: hung up on a rock, and whether a winch has hold of it (ADR 0020). */
+  const positions = () =>
+    [...remotes.values()].map((r) => ({
+      id: r.peer.id, x: r.car.x, z: r.car.z, heading: r.car.heading, speed: r.car.speed, stuck: Boolean(r.last?.stuck), hooked: Boolean(r.last?.hooked),
+    }));
+
+  /** One player's truck as drawn, and its size, for running a winch cable to it. */
+  const truck = (id: string) => {
+    const r = remotes.get(id);
+    return r ? { car: r.car, spec: r.spec } : null;
+  };
 
   function dispose() {
     for (const id of [...remotes.keys()]) drop(id);
   }
 
-  return { sync, pose, jump, update, obstacles, tags, positions, dispose };
+  return { sync, pose, jump, update, obstacles, tags, positions, truck, dispose };
 }
 
 export type Remotes = ReturnType<typeof createRemotes>;

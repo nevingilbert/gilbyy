@@ -377,6 +377,23 @@ select pg_temp.check((select count(*) from realtime.messages where topic = 'worl
 select pg_temp.check(not public.is_in_world('world:valley') and not public.is_in_world('world') and not public.is_in_world('world:moon'), 'only the world you are in has a channel for you');
 reset role;
 
+-- The winch (ADR 0020): bought and fitted like any other part, and worth nothing but itself.
+update public.profiles set balance = 20 where id::text like '%00000000000a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.fails($$ select public.equip('bluff', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none","winch":"winch"}') $$, 'cannot fit an unbought winch');
+select pg_temp.fails($$ select public.equip('bluff', '{"winch":"hydraulic"}') $$, 'nor a winch the shop does not sell');
+select pg_temp.check((select balance from public.buy('winch:winch')) = 10, 'a winch costs its price');
+select pg_temp.check((select loadout->>'winch' from public.equip('bluff', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none","winch":"winch"}')) = 'winch', 'and fits once bought');
+select pg_temp.check((select loadout->>'winch' is null and vehicle = 'bluff' from public.equip('bluff', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}')), 'a loadout that names no winch still fits, as an older page sends it');
+-- BBB (ADR 0020): a tow costs its fee each time, and nothing else about it reaches the database.
+select pg_temp.check((select balance = 5 and lifetime = (select lifetime from public.me()) from public.call_tow()), 'a tow takes its fee and nothing else');
+select pg_temp.check((select balance from public.call_tow()) = 0, 'and takes it again the next time');
+select pg_temp.refused($$ select public.call_tow() $$, 'not enough miles', 'a driver without the fee is not towed');
+reset role;
+select pg_temp.check(not has_function_privilege('anon', 'public.call_tow()', 'execute') and has_function_privilege('authenticated', 'public.call_tow()', 'execute'),
+  'only someone signed in can ring BBB');
+
 -- Only the game's own functions can be called, and only when signed in.
 select pg_temp.check(not has_function_privilege('anon', 'public.me()', 'execute'), 'signed-out visitors cannot call the game''s functions');
 select pg_temp.check(not has_function_privilege('anon', 'public.discover(text)', 'execute') and not has_function_privilege('anon', 'public.leaderboard(text)', 'execute')

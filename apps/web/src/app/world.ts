@@ -29,7 +29,15 @@ export type { Airport } from "./airport";
  * the height of that top, a truck whose wheels are above it passes over: for the few
  * things a truck can be above, like the boards under a ramp's lip.
  */
-export type Obstacle = { x: number; z: number; r: number; h: number; top?: number };
+export type Obstacle = {
+  x: number;
+  z: number;
+  r: number;
+  h: number;
+  top?: number;
+  /** A boulder: the one thing a truck can ride up onto and be stuck on (ADR 0020). Posts and boards only stop it. */
+  boulder?: boolean;
+};
 /** Pines and broadleaves grow in the valley; palms and the jungle's canopy trees on the island. */
 export type TreeKind = "pine" | "broadleaf" | "palm" | "canopy";
 export type Tree = { x: number; y: number; z: number; scale: number; rot: number; kind: TreeKind; tone: number };
@@ -234,7 +242,7 @@ export function buildWorld(seed = 20261006): World {
   const solid = obstacleIndex();
   for (const t of trees) solid.add({ x: t.x, z: t.z, r: trunkRadius(t), h: Infinity });
   // A boulder's top is about its half-height above its centre, which sits partly buried.
-  for (const r of rocks) solid.add({ x: r.x, z: r.z, r: Math.min(r.sx, r.sz) * 0.8, h: r.y + r.sy * 0.95 - ground(r.x, r.z) });
+  for (const r of rocks) solid.add({ x: r.x, z: r.z, r: Math.min(r.sx, r.sz) * 0.8, h: r.y + r.sy * 0.95 - ground(r.x, r.z), boulder: true });
   // The bridges' guards, abutments and legs: you can't drive onto a bridge, or in under its ends.
   for (const o of bridgeObstacles(terrain.track, ground)) solid.add(o);
   // The plane on its stand.

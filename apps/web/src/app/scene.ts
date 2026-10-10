@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { buildAirport } from "./airport-model";
 import { buildWildlife } from "./animal-models";
 import { buildCampCentre, buildCampGate, buildTentSite, mergeByMaterial } from "./campground-model";
-import { buildCar, type CarModel } from "./car-model";
+import { buildCar, buildTowTruck, type CarModel, type TowTruck } from "./car-model";
 import { buildCoffeeShop } from "./coffee-shop-model";
 import { hourAt, skyAt } from "./daylight";
 import { standPose, type Frame } from "./flight";
@@ -25,7 +25,9 @@ import { buildSky } from "./sky";
 import { buildGrass, buildTerrainMesh, buildWaterMesh, makeSurface } from "./terrain-mesh";
 import { TRAIN_SPEED } from "./track";
 import type { VehicleId } from "./vehicles";
+import { TOW_SPEC } from "./tow";
 import type { Threat } from "./wildlife";
+import { cableEnds } from "./winch";
 import { CAMP_CENTRE, CAMP_GATE, sampleGrid, type Ground, type Obstacle, type SiteStyle, type World } from "./world";
 
 const SHADOW_SPAN = 55;
@@ -41,6 +43,15 @@ export type Garage = {
   heading: number;
   sink: number;
 };
+
+/** A winch cable between two trucks, by player id; null is the player's own (ADR 0020). */
+export type Rope = { from: string | null; to: string | null };
+
+/** One of BBB's tow trucks to draw (ADR 0020): where it stands, how solid, and whose truck its cable is on (null is the player's own). */
+export type TowDrawn = { car: Car; fade: number; cableTo?: string | null };
+
+/** A camera set down somewhere to watch something other than the player's truck. */
+export type Shot = { from: { x: number; y: number; z: number }; to: { x: number; y: number; z: number } };
 
 /** One frame of the flight's film (flight.ts), and the ground the truck stands on in it: the ramp and the hold as well as the apron. */
 export type Film = { frame: Frame; ground: Ground };
@@ -300,6 +311,63 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
   };
   park();
 
+  // Winch cables: a thin rod each, stretched between two trucks while one pulls the other off a rock.
+  const cableMat = new THREE.MeshLambertMaterial({ color: PALETTE.cable });
+  const cableGeo = new THREE.CylinderGeometry(0.035, 0.035, 1, 5);
+  const cables: THREE.Mesh[] = [];
+  let ropes: Rope[] = [];
+  const up = new THREE.Vector3(0, 1, 0);
+  const span = new THREE.Vector3();
+  // BBB's tow trucks: models are made as they're needed and kept for the next call-out.
+  const towTrucks: TowTruck[] = [];
+  let tows: TowDrawn[] = [];
+  /** Something for the chase camera to turn and look at past the truck, such as a tow truck driving in. */
+  let facing: { x: number; z: number } | null = null;
+  function drawTows(dt: number, time: number, night: number) {
+    tows.forEach((t, i) => {
+      let model = towTrucks[i];
+      if (!model) {
+        model = buildTowTruck();
+        scene.add(model.object);
+        towTrucks.push(model);
+      }
+      model.object.visible = t.fade > 0;
+      model.setFade(t.fade);
+      model.update(t.car, world, dt, TOW_SPEC);
+      model.setLights(night);
+      model.blink(time);
+    });
+    for (let i = tows.length; i < towTrucks.length; i++) towTrucks[i].object.visible = false;
+  }
+
+  /** Lays each cable from the winch to the stuck truck, as the two are drawn this frame. */
+  function drawCables(mine: Car, spec: CarSpec) {
+    const truck = (id: string | null) => (id === null ? { car: mine, spec } : stage.remotes.truck(id));
+    const pairs = [
+      ...ropes.map((rope) => [truck(rope.from), truck(rope.to)] as const),
+      ...tows.filter((t) => t.cableTo !== undefined).map((t) => [{ car: t.car, spec: TOW_SPEC }, truck(t.cableTo ?? null)] as const),
+    ];
+    let used = 0;
+    for (const [a, b] of pairs) {
+      if (!a || !b) continue;
+      const { from, to } = cableEnds(a.car, a.spec, b.car, b.spec);
+      let mesh = cables[used];
+      if (!mesh) {
+        mesh = new THREE.Mesh(cableGeo, cableMat);
+        scene.add(mesh);
+        cables.push(mesh);
+      }
+      used++;
+      span.set(to.x - from.x, to.y - from.y, to.z - from.z);
+      const length = span.length();
+      mesh.position.set((from.x + to.x) / 2, (from.y + to.y) / 2, (from.z + to.z) / 2);
+      mesh.quaternion.setFromUnitVectors(up, span.divideScalar(length || 1));
+      mesh.scale.set(1, length, 1);
+      mesh.visible = true;
+    }
+    for (let i = used; i < cables.length; i++) cables[i].visible = false;
+  }
+
   // Chase camera: high and behind, like Over the Hill's, easing after the car.
   let camYaw = NaN;
   const camPos = new THREE.Vector3();
@@ -353,7 +421,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
    * train. `circling` swings the camera slowly round the parked truck, for picking a rig.
    * During a flight, `film` is the frame to show: it places the plane and directs the camera.
    */
-  function render(state: Car, dt: number, time: number, spec: CarSpec, circling = false, film: Film | null = null) {
+  function render(state: Car, dt: number, time: number, spec: CarSpec, circling = false, film: Film | null = null, watch: Shot | null = null) {
     hour = hourAt(time);
     const daylight = skyAt(hour);
     night = daylight.night;
@@ -365,6 +433,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
 
     car.update(state, film?.ground ?? world, dt, spec);
     stage.remotes.update(dt, performance.now() / 1000, night);
+    drawTows(dt, time, night);
+    drawCables(state, spec);
     stage.grass.update(state.x, state.z, time);
     stage.water.update(time);
     stage.railway?.update(time, dt, night);
@@ -430,6 +500,13 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
       camera.lookAt(aim);
       // Afterwards the chase camera picks up from here, behind the truck wherever it's facing.
       camYaw = NaN;
+    } else if (watch) {
+      // Set down where it's told, turning to follow what it's watching.
+      camPos.set(watch.from.x, watch.from.y, watch.from.z);
+      aim.set(watch.to.x, watch.to.y, watch.to.z);
+      camera.position.copy(camPos);
+      camera.lookAt(aim);
+      camYaw = NaN;
     } else if (hover >= 0) {
       hover += dt;
       hang();
@@ -443,7 +520,9 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
       follow(2);
       camYaw = state.heading;
     } else {
-      let dy = state.heading - camYaw;
+      // Behind the truck, looking where it's going; or round to one side, to look past it at something.
+      const toward = facing ? Math.atan2(facing.x - state.x, facing.z - state.z) : state.heading;
+      let dy = toward - camYaw;
       dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       camYaw += dy * ease(2.2);
       const dist = 11.5 + Math.abs(state.speed) * 0.1;
@@ -458,7 +537,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
 
     // The shadow box follows the car, or the plane while it's the one to watch; snapping
     // it to texels stops it shimmering.
-    const focus = film ? film.frame.plane : state;
+    const focus = film ? film.frame.plane : watch ? watch.to : state;
     const texel = (SHADOW_SPAN * 2) / sun.shadow.mapSize.x;
     const tx = Math.round(focus.x / texel) * texel;
     const tz = Math.round(focus.z / texel) * texel;
@@ -593,6 +672,12 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     setRig,
     setDoor: (i: number, open: number) => stage.sites.models[i]?.setDoor(open),
     showRun: (mission: number, next: number, time: number) => stage.courses.show(mission, next, time),
+    /** Which trucks have a winch cable between them just now. */
+    setRopes: (list: Rope[]) => void (ropes = list),
+    /** BBB's tow trucks to draw this frame. */
+    setTows: (list: TowDrawn[]) => void (tows = list),
+    /** Turns the chase camera to look past the truck at something, until it's given null. */
+    face: (at: { x: number; z: number } | null) => void (facing = at),
     /** These belong to the world that's up, so they are asked for each time rather than kept. */
     get garages() {
       return stage.sites.garages;

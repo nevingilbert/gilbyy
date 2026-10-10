@@ -2,14 +2,16 @@ import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { readConvoy, type ConvoyMsg } from "./convoy";
 import type { Loadout } from "./shop";
 import { CAMP_PITCHES, type WorldId } from "./terrain";
+import type { TowLine } from "./tow";
 import type { VehicleId } from "./vehicles";
 
 /**
  * Everyone signed in drives the same valley, or the same island (ADR 0014): each world is
  * its own channel with its own thirty tents, and players in one never hear from the other.
  * This is how those in the same world hear about each other:
- * who's here and which tent is theirs (presence), where their truck is (poses), friend
- * requests, convoys (convoy.ts), and chat between friends.
+ * who's here and which tent is theirs (presence), where their truck is and whether it's
+ * stuck (poses), friend requests, convoys (convoy.ts), a winch hooking on and a tow truck
+ * turning up (ADR 0020), and chat between friends.
  *
  * Two transports with the same shape. Online it's a private Supabase Realtime channel,
  * which only signed-in players can join (see the realtime policies in the migration).
@@ -32,6 +34,10 @@ export type Pose = {
   steer: number;
   /** How fast it's turning, radians a second, so the others can follow it round a bend. */
   turn: number;
+  /** Hung up on a rock, and waiting for a winch (ADR 0020). */
+  stuck?: boolean;
+  /** Stuck, and someone's winch has hold of it. */
+  hooked?: boolean;
 };
 export type Peer = { id: string; name: string; vehicle: VehicleId; loadout: Loadout; tent: number; joined: number };
 export type ChatLine = { from: string; text: string };
@@ -47,6 +53,10 @@ export type NetHandlers = {
   friended(from: string): void;
   chat(line: ChatLine): void;
   convoy(msg: ConvoyMsg): void;
+  /** `from` has hooked a winch onto `to`, who may be anyone here: everyone sees the cable. */
+  winched(from: string, to: string): void;
+  /** BBB's tow truck has come into sight for `from`, down this line (tow.ts): everyone near draws the same one. */
+  towed(from: string, line: TowLine): void;
 };
 
 export type Joined = { tent: number } | { full: true } | { error: string };
@@ -63,6 +73,10 @@ export interface Net {
   say(to: string[], text: string): void;
   /** Tells the valley about a convoy. Only the gatherer's friends take any notice. */
   convoy(msg: ConvoyMsg): void;
+  /** Hooks a winch onto a stuck truck. Its driver decides whether that's believable. */
+  winch(to: string): void;
+  /** Says where the tow truck this driver rang for is coming in, as it comes into sight. */
+  tow(line: TowLine): void;
   /** The friends whose chat to listen for. */
   listen(friends: string[]): void;
   leave(): void;
@@ -162,6 +176,8 @@ export class PoseGate {
     const off = Math.hypot(pose.x - guess.x, pose.z - guess.z);
     const turned = Math.abs(Math.atan2(Math.sin(pose.heading - guess.heading), Math.cos(pose.heading - guess.heading)));
     const moving = Math.abs(pose.speed) > 0.2 || Math.abs(l.speed) > 0.2;
+    // Getting stuck, hooked or free is news even from a truck that isn't going anywhere.
+    if (Boolean(pose.stuck) !== Boolean(l.stuck) || Boolean(pose.hooked) !== Boolean(l.hooked)) return true;
     // A heartbeat while moving, so a lost message doesn't strand anyone.
     return off > 1.2 || turned > 0.08 || Math.abs(pose.speed - l.speed) > 2.5 || (moving && age > HEARTBEAT);
   }
@@ -209,9 +225,9 @@ export class PresenceBudget {
 }
 
 const round = (n: number, k = 100) => Math.round(n * k) / k;
-const packPose = (p: Pose) => [round(p.x), round(p.y), round(p.z), round(p.heading, 1000), round(p.pitch, 1000), round(p.roll, 1000), round(p.speed), round(p.steer, 1000), round(p.turn, 1000)];
-// A tab still running the previous version sends no turn.
-const unpackPose = (a: number[]): Pose => ({ x: a[0], y: a[1], z: a[2], heading: a[3], pitch: a[4], roll: a[5], speed: a[6], steer: a[7], turn: a[8] ?? 0 });
+export const packPose = (p: Pose) => [round(p.x), round(p.y), round(p.z), round(p.heading, 1000), round(p.pitch, 1000), round(p.roll, 1000), round(p.speed), round(p.steer, 1000), round(p.turn, 1000), p.stuck ? (p.hooked ? 2 : 1) : 0];
+// A tab still running an earlier version sends no turn, or no word on whether it's stuck.
+export const unpackPose = (a: number[]): Pose => ({ x: a[0], y: a[1], z: a[2], heading: a[3], pitch: a[4], roll: a[5], speed: a[6], steer: a[7], turn: a[8] ?? 0, stuck: a[9] >= 1, hooked: a[9] === 2 });
 
 /** The chat channel two friends share: the same name from either side. */
 export const chatTopic = (a: string, b: string) => (a < b ? `chat:${a}:${b}` : `chat:${b}:${a}`);
@@ -307,6 +323,14 @@ abstract class Base implements Net {
     if (this.me) this.emit("convoy", msg);
   }
 
+  winch(to: string) {
+    if (this.me) this.emit("winch", { from: this.me.id, to });
+  }
+
+  tow(line: TowLine) {
+    if (this.me) this.emit("tow", { from: this.me.id, x: line.x, z: line.z, heading: line.heading, length: line.length });
+  }
+
   protected heard(event: string, payload: Record<string, unknown>) {
     const me = this.me?.id;
     if (event === "pose" && typeof payload.id === "string" && Array.isArray(payload.p)) {
@@ -316,6 +340,12 @@ abstract class Base implements Net {
     } else if (event === "convoy") {
       const msg = readConvoy(payload);
       if (msg) this.on.convoy(msg);
+    } else if (event === "winch" && typeof payload.from === "string" && typeof payload.to === "string") {
+      this.on.winched(payload.from, payload.to);
+    } else if (event === "tow" && typeof payload.from === "string") {
+      const { x, z, heading, length } = payload;
+      const sound = [x, z, heading, length].every((n) => typeof n === "number" && Number.isFinite(n));
+      if (sound) this.on.towed(payload.from, { x, z, heading, length } as TowLine);
     } else if ((event === "ask" || event === "friended") && payload.to === me && typeof payload.from === "string") {
       if (event === "ask") this.on.asked(payload.from);
       else this.on.friended(payload.from);
@@ -377,7 +407,9 @@ export class SupabaseNet extends Base {
       .on("broadcast", { event: "where" }, ({ payload }) => this.heard("where", payload))
       .on("broadcast", { event: "ask" }, ({ payload }) => this.heard("ask", payload))
       .on("broadcast", { event: "friended" }, ({ payload }) => this.heard("friended", payload))
-      .on("broadcast", { event: "convoy" }, ({ payload }) => this.heard("convoy", payload));
+      .on("broadcast", { event: "convoy" }, ({ payload }) => this.heard("convoy", payload))
+      .on("broadcast", { event: "winch" }, ({ payload }) => this.heard("winch", payload))
+      .on("broadcast", { event: "tow" }, ({ payload }) => this.heard("tow", payload));
     this.world = channel;
     let joined = false;
     const error = await new Promise<string | null>((resolve) => {

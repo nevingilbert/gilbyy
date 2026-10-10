@@ -37,6 +37,10 @@ subdomains." Update the **You are here** marker as you progress.
 > more courses, so each world has as many for friends as to drive alone, a jump told
 > for its time in the air, and convoys and races for up to ten. Merged to `main` as pull
 > request 16; its migration, `20261010120000_more_courses.sql`, is on the live project.
+> Built but not merged (`decisions/0020`, `sessions/2026-10-10-stuck-winch-and-bbb.md`):
+> a truck can be stuck, hung up on a boulder it rammed, and gets off by a friend's
+> winch, a tow from BBB for miles, or a reload. In a pull request from
+> `feat/game-stuck-winch`; its migration passed a dry run and is not applied.
 > **Next:**
 > play one convoy and one race signed in from two Google accounts on the live
 > site; neither has been played over Supabase yet, only over `?net=local`. Still open:
@@ -184,7 +188,8 @@ Not done, roughly in order of how much they'd add:
 - **Measure on real devices**, a phone especially. Levers if slow: grass radius, tree
   count, pixel ratio, shadow map size, the number of spotlights.
 - Weather: rain, fog banks, a storm at night.
-- Dust, tyre tracks, an engine note.
+- Dust, tyre tracks, an engine note. A truck riding up onto a rock (`decisions/0020`)
+  would be the first thing to give dust and a crunch to.
 - Water that reads as water: shoreline foam, rivers that visibly flow.
 - Dirt trails between the garages.
 - ~~Buildings that link to other gilbyy.com pages.~~ Done 2026-10-08 as four easter
