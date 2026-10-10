@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
+import { CONVOY_MAX } from "./convoy";
 import { PARTS, STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, specFor, type PartCategory } from "./shop";
 import { STARTERS, VEHICLES } from "./vehicles";
 import { buildIsland } from "./island";
@@ -37,20 +38,24 @@ describe("the shop and the server agree", () => {
     expect(server).toEqual(client);
   });
 
-  it("on every mission's rewards and limits", () => {
+  it("on every mission's rewards and limits, and which world it's in", () => {
     const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id);
     const server = rows("missions", "id").map((r) => ({
       id: r.id, reward: +r.reward, repeat: +r.repeat_reward, cooldown: +r.cooldown_seconds, min: +r.min_seconds, crew: +(r.crew ?? 1), miles: +(r.min_miles ?? 0),
       world: r.world ?? "valley",
     }));
-    // The valley's courses and the island's, each stamped with the world that laid it out.
-    const client = [
-      ...buildWorld().missions.map((m) => ({ m, world: "valley" })),
-      ...buildIsland().missions.map((m) => ({ m, world: "island" })),
-    ].map(({ m, world }) => ({
-      id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds, crew: m.crew, miles: m.minMiles, world,
-    }));
+    // The valley's courses and the island's.
+    const client = [buildWorld(), buildIsland()].flatMap((w) => w.missions.map((m) => ({
+      id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds, crew: m.crew, miles: m.minMiles, world: w.id as string,
+    })));
     expect(server.sort(byId)).toEqual(client.sort(byId));
+  });
+
+  it("on how many can drive a convoy or a race", () => {
+    // The last word on it: how many others the newest complete_convoy() lets a driver name.
+    const limits = migrations.flatMap((sql) => [...sql.matchAll(/cardinality\(others\) > (\d+)/g)].map((m) => +m[1]));
+    expect(limits.at(-1)).toBe(CONVOY_MAX - 1);
+    expect(migrations.at(-1)).toContain(`a convoy is two to ${["", "", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][CONVOY_MAX]} drivers`);
   });
 });
 

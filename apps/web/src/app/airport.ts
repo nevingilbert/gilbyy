@@ -232,8 +232,9 @@ function enclosure(a: Airport, height: (x: number, z: number) => number) {
 /**
  * The valley's airstrip, hidden over the river where only the snorkel gets you: in a
  * hollow if there is one, well away from the two garages over there, its open end turned
- * toward the mountains rather than the lake. Chosen after everything else in the valley,
- * and from the ground as it already lies, so nothing else moves.
+ * toward the mountains rather than the lake. Chosen from the ground as it already lies,
+ * after the garages, the easter eggs and the valley's first thirteen courses, so none of
+ * those move; the courses added since are laid out round it (`planMore` in missions.ts).
  */
 export function valleyAirfield(t: Terrain, courseDist: Float32Array, avoid: { x: number; z: number }[]): Airport | null {
   const height = (x: number, z: number) => sampleGrid(t.heights, x, z);

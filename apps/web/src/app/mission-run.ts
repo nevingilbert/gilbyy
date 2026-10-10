@@ -16,11 +16,15 @@ export type Run = {
   clock: number;
   /** Index of the next gate to pass. */
   next: number;
+  /** How long the truck has been off the ground this time, and the longest it has been in one go all run. */
+  aloft: number;
+  air: number;
 };
 
-export type RunEvent = { kind: "go" } | { kind: "gate"; index: number } | { kind: "finish"; seconds: number } | { kind: "lost" };
+/** `air` is the longest the truck was off the ground in one go: what a jump is told for. */
+export type RunEvent = { kind: "go" } | { kind: "gate"; index: number } | { kind: "finish"; seconds: number; air: number } | { kind: "lost" };
 
-export const startRun = (mission: Mission): Run => ({ mission, clock: -COUNTDOWN, next: 0 });
+export const startRun = (mission: Mission): Run => ({ mission, clock: -COUNTDOWN, next: 0, aloft: 0, air: 0 });
 
 type Pt = { x: number; z: number };
 
@@ -41,17 +45,19 @@ export function crossed(gate: Gate, a: Pt, b: Pt) {
   return Math.abs(x * fz - z * fx) <= gate.width / 2 + 0.5;
 }
 
-/** Advances the run by `dt`, given where the truck was and is. */
-export function tick(run: Run, dt: number, from: Pt, to: Pt): RunEvent | null {
+/** Advances the run by `dt`, given where the truck was and is, and whether its wheels are on the ground. */
+export function tick(run: Run, dt: number, from: Pt, to: Pt, grounded = true): RunEvent | null {
   const before = run.clock;
   run.clock += dt;
   if (before < 0 && run.clock >= 0) return { kind: "go" };
   if (run.clock < 0) return null;
+  run.aloft = grounded ? 0 : run.aloft + dt;
+  run.air = Math.max(run.air, run.aloft);
   const gate = run.mission.gates[run.next];
   if (!gate) return null;
   if (crossed(gate, from, to)) {
     run.next++;
-    if (run.next >= run.mission.gates.length) return { kind: "finish", seconds: run.clock };
+    if (run.next >= run.mission.gates.length) return { kind: "finish", seconds: run.clock, air: run.air };
     return { kind: "gate", index: run.next - 1 };
   }
   if (Math.hypot(to.x - gate.x, to.z - gate.z) > GIVE_UP) return { kind: "lost" };
@@ -64,3 +70,5 @@ export function missionAt(missions: Mission[], x: number, z: number) {
 }
 
 export const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+/** Time in the air, to the hundredth: jumps differ by less than a tenth. */
+export const fmtAir = (s: number) => `${s.toFixed(2)} s`;
