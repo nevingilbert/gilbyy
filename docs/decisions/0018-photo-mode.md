@@ -36,16 +36,22 @@ don't" list. Photo mode is only a camera.
   little below level to nearly overhead. It never goes under the ground or the water,
   and it starts exactly where the chase camera was, so nothing jumps. Dragging turns the
   truck with the finger, like a turntable.
-- **The picture is the world only**: the canvas, drawn again and read straight back, at
-  its own resolution, with no HUD, name tags or chat. It is a PNG named by when it was
-  taken (`gilbyy-2026-10-10-173205.png`). A phone gets the share sheet, where Save Image
-  puts it with the player's photos; anything else downloads it. A soft flash says it
-  was taken.
+- **The picture is the world and who's in it**: the canvas, drawn again and read
+  straight back, at its own resolution, with everyone's name over their truck and
+  nothing else of the HUD. The other players' tags stay up in photo mode and follow the
+  camera round, and the photographer's own name goes up over their truck too, as the
+  others see it (signed in; single player has no name). Each tag is drawn onto the
+  picture where it is on screen, in its own font, colour and shadow. Chat bubbles go:
+  they time out while the world stands still. (Added the same day at the owner's
+  request, "make sure everyone's names persist in the photo".) It is a PNG named by
+  when it was taken (`gilbyy-2026-10-10-173205.png`). A phone gets the share sheet,
+  where Save Image puts it with the player's photos; anything else downloads it. A soft
+  flash says it was taken.
 - **Pictures go nowhere else.** They aren't uploaded, stored, shared with friends,
   counted or listed, and taking one pays nothing. No Supabase Storage, no Realtime, no
   migration.
-- **Nearly nothing on screen**: a shutter, "back", and one line on how to work it. The
-  title goes too.
+- **Nearly nothing on screen**: the names, a shutter, "back", and one line on how to
+  work it. The title goes too.
 - **Drawn only while the camera moves.** A still picture is the same picture, and a
   phone composing a shot shouldn't spend its battery redrawing it.
 
