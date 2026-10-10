@@ -2,7 +2,8 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { PALETTE } from "./palette";
 import { wheelGround, type Car, type CarSpec } from "./physics";
-import { lightsOf, paintColour, snorkelOf, tyresOf, winterOf, type Loadout } from "./shop";
+import { STOCK_LOADOUT, lightsOf, paintColour, snorkelOf, tyresOf, winchOf, winterOf, type Loadout } from "./shop";
+import { TOW_LOADOUT, TOW_RIG } from "./tow";
 import { buildVehicleBody } from "./vehicle-models";
 import { vehicleById, type VehicleId } from "./vehicles";
 import type { Ground } from "./world";
@@ -15,6 +16,23 @@ function tyreGeometry(radius: number, width: number, lugs: number) {
     parts.push(lug.translate(radius, 0, 0).rotateY((i / lugs) * Math.PI * 2));
   }
   return mergeGeometries(parts).rotateZ(Math.PI / 2);
+}
+
+/** A winch for the front bumper (ADR 0021): a cradle, a drum of cable between two cheeks, and a hook. Faces +z from its mount. */
+function buildWinch(dark: THREE.Material, cable: THREE.Material, hook: THREE.Material) {
+  const winch = new THREE.Group();
+  const add = (geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number) => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    winch.add(mesh);
+  };
+  add(new THREE.BoxGeometry(0.66, 0.07, 0.3), dark, 0, 0, 0.11);
+  add(new THREE.CylinderGeometry(0.085, 0.085, 0.34, 8).rotateZ(Math.PI / 2), cable, 0, 0.125, 0.11);
+  for (const side of [1, -1]) add(new THREE.BoxGeometry(0.05, 0.24, 0.24), dark, side * 0.2, 0.125, 0.11);
+  add(new THREE.BoxGeometry(0.3, 0.09, 0.04), dark, 0, 0.1, 0.27);
+  add(new THREE.BoxGeometry(0.07, 0.11, 0.07), hook, 0, 0.07, 0.31);
+  return winch;
 }
 
 /**
@@ -99,6 +117,15 @@ export function buildCar(vehicle: VehicleId) {
   const low = beam(parts.beams.low);
   const high = beam(parts.beams.high);
 
+  // The winch bolts on ahead of the bumper, at about axle height. Hidden until one is fitted.
+  const dark = new THREE.MeshLambertMaterial({ color: PALETTE.bumperBlack, flatShading: true });
+  const cable = new THREE.MeshLambertMaterial({ color: PALETTE.cable, flatShading: true });
+  const hook = new THREE.MeshLambertMaterial({ color: PALETTE.winchHook, flatShading: true });
+  const winch = buildWinch(dark, cable, hook);
+  winch.position.set(0, v.wheelRadius - v.ride + 0.16, v.length / 2 - 0.06);
+  winch.visible = false;
+  parts.body.add(winch);
+
   // Wheels hang off the root, not the body, so they can follow the ground on their own.
   const tyreMat = new THREE.MeshLambertMaterial({ color: PALETTE.tyre, flatShading: true });
   const rimMat = new THREE.MeshLambertMaterial({ color: PALETTE.rim, flatShading: true });
@@ -143,12 +170,13 @@ export function buildCar(vehicle: VehicleId) {
   let fittedChains = "";
   let jewelled = false;
   let twinkle = 0;
-  let lights = lightsOf({ paint: "", tyres: "", lights: "", snorkel: "", winter: "" });
+  let lights = lightsOf(STOCK_LOADOUT);
   let glow = 0;
 
   function setLoadout(l: Loadout) {
     paint.color.set(paintColour(vehicle, l));
     parts.extras.snorkel.visible = snorkelOf(l).fitted;
+    winch.visible = winchOf(l).fitted;
     lights = lightsOf(l);
     parts.extras.fogLamps.visible = lights.fogLamps;
     parts.extras.lightBar.visible = lights.bar;
@@ -235,7 +263,8 @@ export function buildCar(vehicle: VehicleId) {
   function update(car: Car, ground: Ground, dt: number, spec: CarSpec) {
     root.position.set(car.x, car.y, car.z);
     root.rotation.set(-car.pitch, car.heading, car.roll);
-    rolled += (car.speed * dt) / radius;
+    // Hung up on a rock, the wheels turn with the throttle and the truck doesn't.
+    rolled += ((car.stuck ? car.stuck.spin : car.speed) * dt) / radius;
     glint(dt);
 
     const under = wheelGround(car, ground, spec);
@@ -265,10 +294,54 @@ export function buildCar(vehicle: VehicleId) {
     root.traverse((o) => {
       if (o instanceof THREE.Mesh) o.geometry.dispose();
     });
-    for (const m of [paint, lamp, tyreMat, rimMat, chainMat, goldMat, ...stoneMats, starMat]) m.dispose();
+    for (const m of [paint, lamp, tyreMat, rimMat, chainMat, goldMat, ...stoneMats, starMat, dark, cable, hook]) m.dispose();
   }
 
   return { object: root, vehicle, top: parts.top, update, setLoadout, setLights, glint, park, dispose };
 }
 
 export type CarModel = ReturnType<typeof buildCar>;
+
+/**
+ * BBB's tow truck (ADR 0021): the little pickup in white with a winch on its bumper, a
+ * recovery boom over the bed and an amber lamp turning on the roof. It can be faded, for
+ * coming into sight and going out of it.
+ */
+export function buildTowTruck() {
+  const model = buildCar(TOW_RIG);
+  model.setLoadout(TOW_LOADOUT);
+  const dark = new THREE.MeshLambertMaterial({ color: PALETTE.bumperBlack, flatShading: true });
+  const lamp = new THREE.MeshLambertMaterial({ color: PALETTE.beacon, emissive: PALETTE.beacon, emissiveIntensity: 1, flatShading: true });
+  const add = (geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number, tilt = 0) => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, z);
+    mesh.rotation.x = tilt;
+    mesh.castShadow = true;
+    model.object.add(mesh);
+  };
+  const v = vehicleById(TOW_RIG);
+  // The boom leans back over the tailgate from a post behind the cab.
+  add(new THREE.BoxGeometry(0.12, 0.12, 1.5), dark, 0, model.top - 0.3, -v.length / 2 + 0.95, 0.5);
+  add(new THREE.BoxGeometry(0.9, 0.5, 0.1), dark, 0, model.top - 0.45, -0.55);
+  add(new THREE.BoxGeometry(0.4, 0.12, 0.16), lamp, 0, model.top + 0.06, 0.35);
+  let shown = 1;
+  return {
+    ...model,
+    /** The roof lamp turns: bright and dim about twice a second. */
+    blink: (time: number) => void (lamp.emissiveIntensity = 0.35 + 2.2 * Math.max(0, Math.sin(time * 12))),
+    /** 1 is solid; less, and it's on its way into or out of sight. */
+    setFade(fade: number) {
+      if (fade === shown) return;
+      shown = fade;
+      model.object.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        for (const m of [o.material].flat()) {
+          m.transparent = fade < 1;
+          m.opacity = fade;
+        }
+      });
+    },
+  };
+}
+
+export type TowTruck = ReturnType<typeof buildTowTruck>;

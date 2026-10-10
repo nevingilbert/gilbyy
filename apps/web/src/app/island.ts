@@ -395,7 +395,7 @@ export function buildIsland(seed = 20261009): World {
 
   const solid = obstacleIndex();
   for (const t of trees) solid.add({ x: t.x, z: t.z, r: trunkRadius(t), h: Infinity });
-  for (const r of rocks) solid.add({ x: r.x, z: r.z, r: Math.min(r.sx, r.sz) * 0.8, h: r.y + r.sy * 0.95 - ground(r.x, r.z) });
+  for (const r of rocks) solid.add({ x: r.x, z: r.z, r: Math.min(r.sx, r.sz) * 0.8, h: r.y + r.sy * 0.95 - ground(r.x, r.z), boulder: true });
   for (const o of planeObstacles(airport)) solid.add(o);
 
   // The sea stands at high water until it's told how far the tide is out (tide.ts).

@@ -32,8 +32,12 @@ HUD that is nearly absent.
 - Day and night on a fifteen-minute clock. Stock headlights are weak.
 - A train that loops the valley, with level crossings whose barriers drop as it passes.
 - Eight garages in different styles, each a shop. The miles you drive are what you spend
-  there, on rigs, paint, tyres, lights, a snorkel and snow chains. Bigger tyres climb
-  rocks, the snorkel crosses the rivers, and studded tyres or chains grip the snow.
+  there, on rigs, paint, tyres, lights, a snorkel, snow chains and a winch. Bigger tyres
+  climb rocks, the snorkel crosses the rivers, and studded tyres or chains grip the snow.
+- One way to come unstuck from all of that: signed in, a boulder a little too tall for
+  your tyres, rammed at speed, leaves the truck hung up on it. Then a friend's winch can
+  pull you off, or BBB will send a tow truck from the nearest garage for a few miles,
+  or you reload and start again from your tent.
 - Challenge courses that pay out miles, as many for friends as to drive alone: slaloms,
   climbs, lake loops, an ice drift and a jump off a timber ramp, told for its time in
   the air; convoys for two to ten friends, who drive together and are paid when

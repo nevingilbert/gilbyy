@@ -70,7 +70,7 @@ describe("pose sending", () => {
     const drive = (seconds: number) => {
       for (let i = 0; i < seconds * 120; i++) step(car, { ...noInput(), gas: true, left: true }, 1 / 120, flat, STOCK);
     };
-    const poseOf = (c: Car): Pose => ({ ...c, turn: yawRateOf(c, STOCK) });
+    const poseOf = (c: Car): Pose => ({ ...c, turn: yawRateOf(c, STOCK), stuck: false });
     drive(20); // Up to speed, and settled into the circle.
     const gate = new PoseGate();
     gate.sent(poseOf(car), 0);

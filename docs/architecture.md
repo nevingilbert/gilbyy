@@ -130,6 +130,13 @@ Pure modules, no three.js, all unit-tested:
 - `net.ts`: presence, tents, poses, friend requests and chat. `SupabaseNet` runs over
   Supabase Realtime; `LocalNet` runs over a `BroadcastChannel`, for testing across
   tabs.
+- `winch.ts`: the rules for pulling a stuck truck off a rock (ADR 0021). The sticking
+  itself is in `physics.ts`; who is stuck travels in the poses, and hooking on is one
+  broadcast.
+- `tow.ts`: BBB's tow truck. Its fee (taken by `call_tow()`), how long it takes to
+  come, the clear line it drives in on (`approachLine()`), and where it is at each
+  moment (`towVisit()`, `towLeaving()`). It is placed, not driven by the physics, so
+  one broadcast of its line lets every player near draw the same truck.
 - `goals.ts` (first-time guidance), `achievements.ts` (which goals are achievements), `track.ts` (train and crossings as functions of
   time, and the bridges' solid parts: a trespass guard on each approach that the train
   rolls over and no truck can cross, concrete abutments under the ends too low to drive
@@ -384,6 +391,11 @@ that repo's problem, not this one's.
     (`flagGap`; the finish always goes at once) and repeats every 0.8 s per truck
     (`countEvery`). A ten-truck convoy in a full world is on the order of ten thousand
     messages.
+  - Getting stuck and getting out (ADR 0021) cost next to nothing: a pose when a truck
+    sticks, one when a cable takes and one when it's free, each sent at once and past
+    `PoseGate`'s pacing; a single `winch` broadcast per rescue by a player; and a single
+    `tow` broadcast when BBB's truck comes into sight. Nothing about any of it goes in
+    presence.
   - The first private-channel join on a new or just-restored project can be refused
     with `MissingPartition` while Realtime creates its message partitions;
     `SupabaseNet.open()` tries three times.

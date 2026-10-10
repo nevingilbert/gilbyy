@@ -195,6 +195,15 @@ function drawDot(g: CanvasRenderingContext2D, x: number, y: number, s: number, c
   g.stroke();
 }
 
+/** A ring round a player's dot: that truck is stuck on a rock (ADR 0021). */
+function drawRing(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  g.strokeStyle = PALETTE.map.garage;
+  g.lineWidth = Math.max(1, s * 0.22);
+  g.beginPath();
+  g.arc(x, y, s, 0, Math.PI * 2);
+  g.stroke();
+}
+
 function drawGarage(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
   g.fillStyle = PALETTE.map.garage;
   g.beginPath();
@@ -269,8 +278,8 @@ function drawCar(g: CanvasRenderingContext2D, x: number, y: number, heading: num
 }
 
 export type Spot = { x: number; z: number; heading: number };
-/** Other things on the map this frame: the train (if seen), other players, and the player's pin if one is down. */
-export type Extras = { train?: Spot; players?: (Spot & { friend: boolean })[]; pin?: { x: number; z: number } | null };
+/** Other things on the map this frame: the train (if seen), other players (ringed if stuck), and the player's pin if one is down. */
+export type Extras = { train?: Spot; players?: (Spot & { friend: boolean; stuck?: boolean })[]; pin?: { x: number; z: number } | null };
 
 export function createMap(world: World, onFound: (key: string) => void = () => {}, onExplored: (cell: number) => void = () => {}) {
   const base = paintBase(world);
@@ -328,7 +337,10 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
     }
     for (const m of seenMissions) drawFlag(g, ...place(m.start.x, m.start.z), icon);
     if (extras.train) drawDot(g, ...place(extras.train.x, extras.train.z), icon * 0.55, PALETTE.map.train);
-    for (const p of extras.players ?? []) drawDot(g, ...place(p.x, p.z), icon * 0.5, p.friend ? PALETTE.map.friend : PALETTE.map.player);
+    for (const p of extras.players ?? []) {
+      drawDot(g, ...place(p.x, p.z), icon * 0.5, p.friend ? PALETTE.map.friend : PALETTE.map.player);
+      if (p.stuck) drawRing(g, ...place(p.x, p.z), icon * 1.05);
+    }
   };
 
   /** Round, north-up, centred on the truck: `size` px across, showing `radius` metres. */

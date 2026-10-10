@@ -5,6 +5,7 @@ import type { Mission } from "./missions";
 import { countFound, type FoundCount } from "./places";
 import { STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, soldOnlyIn, type Loadout, type Progress } from "./shop";
 import type { WorldId } from "./terrain";
+import { TOW_FEE } from "./tow";
 import type { VehicleId } from "./vehicles";
 import { WORLDS, isWorld } from "./worlds";
 
@@ -56,6 +57,8 @@ export interface Store {
   explored(): number[];
   /** Pays the fare and moves the truck to another world. Resolves to why not, or null once it's aboard. */
   fly(to: WorldId): Promise<string | null>;
+  /** Pays BBB's fee for a tow (ADR 0021). Resolves to why not, or null once it's paid. */
+  tow(): Promise<string | null>;
   setName(name: string): Promise<string | null>;
   /** Asks to be friends; "friends" if they'd already asked you. */
   requestFriend(id: string): Promise<"pending" | "friends" | { error: string }>;
@@ -114,6 +117,12 @@ export class LocalStore implements Store {
     if (to === this.p.world) return null;
     if (this.p.balance < WORLDS[to].fare) return "Not enough miles yet.";
     this.set({ balance: this.p.balance - WORLDS[to].fare, world: to });
+    return null;
+  }
+
+  async tow() {
+    if (this.p.balance < TOW_FEE) return "Not enough miles yet.";
+    this.set({ balance: this.p.balance - TOW_FEE });
     return null;
   }
 
@@ -281,7 +290,18 @@ export class SupabaseStore implements Store {
   async buy(key: string) {
     const error = await this.call("buy", { p_key: key });
     const only = soldOnlyIn(key);
-    return error?.includes("only sold") && only ? ONLY_SOLD(only) : error;
+    if (error?.includes("only sold") && only) return ONLY_SOLD(only);
+    // A database that hasn't had the newest migration yet doesn't stock the newest thing.
+    return error?.includes("no such item") ? "That isn't in stock yet. Try again later." : error;
+  }
+
+  async tow() {
+    // What's been driven counts toward the fee.
+    await this.flushMiles();
+    const error = await this.call("call_tow", {});
+    if (error?.includes("not enough miles")) return "Not enough miles yet.";
+    // A database that hasn't had BBB's migration yet has no such function.
+    return error && /could not find the function/i.test(error) ? "BBB isn't answering yet. Try again later." : error;
   }
 
   async fly(to: WorldId) {
@@ -298,7 +318,12 @@ export class SupabaseStore implements Store {
     return null;
   }
 
-  equip = (vehicle: VehicleId, loadout: Loadout) => this.call("equip", { p_vehicle: vehicle, p_loadout: loadout });
+  equip(vehicle: VehicleId, loadout: Loadout) {
+    // A database that hasn't heard of the winch yet refuses a loadout that names one, so
+    // an empty bumper is said by leaving it out. It reads back as none either way.
+    const { winch, ...rest } = loadout;
+    return this.call("equip", { p_vehicle: vehicle, p_loadout: winch === STOCK_LOADOUT.winch ? rest : loadout });
+  }
 
   async completeMission(m: Mission, seconds: number, crew: string[] = []) {
     await this.flush();

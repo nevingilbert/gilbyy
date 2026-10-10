@@ -73,8 +73,10 @@ unhurried exploration in a classic 4x4.
 
 ## What we don't (yet)
 
-- Winching, planks, deformable mud and snow, the photo compendium (photo mode is in, a
-  list of things to photograph is not).
+- Planks, deformable mud and snow, the photo compendium (photo mode is in, a list of
+  things to photograph is not). Winching came in on 2026-10-10 (ADR 0021), in the
+  smallest form that keeps the idea: a truck can be hung up on a boulder, and a friend's
+  winch or a tow truck gets it off. Mud and deep water that hold a truck are still out.
 - Weather. Rain, lightning and fog banks are the strongest candidates to add next.
 - More than two maps. There is the valley (with a snowy plateau in the north) and,
   since 2026-10-09, an island a flight away (ADR 0014), and nine rigs, each inspired by

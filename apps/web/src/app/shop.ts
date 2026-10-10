@@ -1,5 +1,5 @@
 import { PALETTE } from "./palette";
-import type { CarSpec } from "./physics";
+import { HANG, type CarSpec } from "./physics";
 import { SNORKEL_WADE } from "./terrain";
 import { VEHICLES, vehicleById, type VehicleId } from "./vehicles";
 
@@ -15,7 +15,7 @@ import { VEHICLES, vehicleById, type VehicleId } from "./vehicles";
  */
 export const METRES_PER_MILE = 1609.344;
 
-export type Category = "vehicle" | "paint" | "tyres" | "lights" | "snorkel" | "winter";
+export type Category = "vehicle" | "paint" | "tyres" | "lights" | "snorkel" | "winter" | "winch";
 export type PartCategory = Exclude<Category, "vehicle">;
 
 type Base = { id: string; name: string; blurb: string; price: number };
@@ -80,10 +80,16 @@ export const WINTER: Chains[] = [
   { id: "cartier", name: "Cartier chains", blurb: "Solid gold, a stone on every link. Grips no better.", price: 10000, fitted: true, jewelled: true },
 ];
 
-export const PARTS = { paint: PAINTS, tyres: TYRES, lights: LIGHTS, snorkel: SNORKELS, winter: WINTER } as const;
+/** For other people (ADR 0021): it hauls a stuck truck off its rock, and does nothing for the truck it's bolted to. */
+export const WINCHES: Toggle[] = [
+  { id: "none", name: "No winch", blurb: "Nothing to offer a stuck friend but sympathy.", price: 0, fitted: false },
+  { id: "winch", name: "Winch", blurb: "Pulls a stuck driver off their rock. It can't pull you off yours.", price: 10, fitted: true },
+];
+
+export const PARTS = { paint: PAINTS, tyres: TYRES, lights: LIGHTS, snorkel: SNORKELS, winter: WINTER, winch: WINCHES } as const;
 
 export type Loadout = Record<PartCategory, string>;
-export const STOCK_LOADOUT: Loadout = { paint: "factory", tyres: "road", lights: "stock", snorkel: "none", winter: "none" };
+export const STOCK_LOADOUT: Loadout = { paint: "factory", tyres: "road", lights: "stock", snorkel: "none", winter: "none", winch: "none" };
 
 const find = <T extends Base>(list: readonly T[], id: string) => list.find((u) => u.id === id) ?? list[0];
 export const paintOf = (l: Loadout) => find(PAINTS, l.paint);
@@ -93,6 +99,7 @@ export const tyresOf = (l: Loadout) => find(TYRES, l.tyres);
 export const lightsOf = (l: Loadout) => find(LIGHTS, l.lights);
 export const snorkelOf = (l: Loadout) => find(SNORKELS, l.snorkel);
 export const winterOf = (l: Loadout) => find(WINTER, l.winter);
+export const winchOf = (l: Loadout) => find(WINCHES, l.winch);
 
 /** Every purchasable thing as `category:id`, the key used in `owned` and on the server. */
 export const itemKey = (category: Category, id: string) => `${category}:${id}`;
@@ -128,6 +135,7 @@ export function specFor(vehicle: VehicleId, l: Loadout): CarSpec {
     clearance: v.clearance + t.clearanceAdd,
     snowGrip: Math.max(t.snowGrip, winterOf(l).fitted ? 0.85 : 0),
     radius: v.width / 2 + 0.2,
+    hang: HANG,
   };
 }
 
