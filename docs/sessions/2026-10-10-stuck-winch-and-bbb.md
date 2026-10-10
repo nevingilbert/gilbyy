@@ -6,7 +6,7 @@ Two days' work in one worktree, committed at the end of the second. On 2026-10-0
 truly stuck (rocks, not water) and sell a winch that pulls a friend off. On 2026-10-10:
 bring that up to date with a `main` that had moved thirty commits, and add the third
 way out the owner asked for, BBB, a tow truck you ring for miles. ADR
-`docs/decisions/0020-stuck-and-the-winch.md`. This replaces the checkpoint
+`docs/decisions/0021-stuck-and-the-winch.md`. This replaces the checkpoint
 `2026-10-09-stuck-and-the-winch.md`, which was never committed.
 
 ## Decisions made
@@ -57,9 +57,10 @@ way out the owner asked for, BBB, a tow truck you ring for miles. ADR
   `origin/main` at `b27baeb` with the work re-applied on top. It sat uncommitted for two
   days and was committed and pushed on 2026-10-10 when the owner asked, with a pull
   request into `main`.
-- **Renumbered.** The ADR is 0020 (0015–0019 went to wildlife, the island's second
-  pass, courses pay, honest crews, photo mode and more courses). The migration is
-  `20261010150000_winch.sql`, after everything `main` has.
+- **Renumbered, twice.** The ADR is 0021: 0015–0019 went to wildlife, the island's
+  second pass, courses pay, honest crews, photo mode and more courses, and then 0020
+  went to the tides while this was in review. The migration is
+  `20261010200000_winch.sql`, after the sandbar's, which went live first.
 
 ## Files changed
 
@@ -78,9 +79,9 @@ way out the owner asked for, BBB, a tow truck you ring for miles. ADR
 | `apps/web/src/app/Game.tsx` | Mode `calling`; prompts `stuck` and `winch`; `callTow`, `towOn`, `winchOff`, `onStuck`, `onFree`, `tendRopes`; `?winch` |
 | `apps/web/src/app/GarageMenu.tsx`, `map.ts` | Winch tab (tabs in four columns); a ring round a stuck player's dot |
 | `apps/web/src/app/shop.test.ts`, `play.test.ts` | Crew-size check no longer assumes the newest migration; a pose literal |
-| `supabase/migrations/20261010150000_winch.sql` | **New, not applied.** Winch rows, `equip()` with a sixth slot, `call_tow()` |
+| `supabase/migrations/20261010200000_winch.sql` | **New, not applied.** Winch rows, `equip()` with a sixth slot, `call_tow()` |
 | `supabase/tests/game.test.sql`, `README.md` | Winch and tow checks |
-| `docs/decisions/0020-stuck-and-the-winch.md` | **New.** |
+| `docs/decisions/0021-stuck-and-the-winch.md` | **New.** |
 | `CLAUDE.md`, `docs/architecture.md`, `art-direction.md`, `roadmap.md`, `vision.md` | Brought up to date |
 
 Verified in the worktree: typecheck, lint, 278 vitest tests, `next build`. Played across
@@ -120,7 +121,7 @@ Work in `.claude/worktrees/game-stuck-winch`: the changes exist only there.
 
 The pull request from `feat/game-stuck-winch` into `main` is open. Ask the owner which
 of the open choices to change before it merges. When they want it shipped: apply
-`supabase/migrations/20261010150000_winch.sql` to project `gilbyy`
+`supabase/migrations/20261010200000_winch.sql` to project `gilbyy`
 (`apqlumghzqkklmpwizex`), which needs their go-ahead for the exact command, run the
 advisors, and hand them the merge command
 (`gh pr merge <n> --repo nevingilbert/gilbyy --merge`), since merging is theirs to

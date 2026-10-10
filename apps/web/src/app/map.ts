@@ -1,6 +1,7 @@
 import { APRON, RUNWAY, fromField } from "./airport";
 import { cellAt, cellCentre } from "./fog";
 import { PALETTE } from "./palette";
+import { PIN_HEAD, PIN_STEM, onMini } from "./pin";
 import { placesOf } from "./places";
 import { HALF, WORLD, sampleGrid, type Mission, type World } from "./world";
 
@@ -12,7 +13,8 @@ import { HALF, WORLD, sampleGrid, type Mission, type World } from "./world";
  * saved from earlier visits. The fog is remembered as the grid cells the truck has been
  * in (fog.ts): `onExplored` is told each new one and `setExplored` clears the saved ones
  * again. Mission starts show wherever the fog has cleared, which is how they are
- * remembered too.
+ * remembered too. The player's pin (pin.ts) is drawn over the fog: it is theirs, and
+ * shows nothing under it.
  */
 const SIZE = 512;
 const PX = SIZE / WORLD.size;
@@ -183,9 +185,9 @@ function drawFlag(g: CanvasRenderingContext2D, x: number, y: number, s: number) 
   g.fill();
 }
 
-function drawDot(g: CanvasRenderingContext2D, x: number, y: number, s: number, colour: string) {
+function drawDot(g: CanvasRenderingContext2D, x: number, y: number, s: number, colour: string, rim: string = PALETTE.map.garage) {
   g.fillStyle = colour;
-  g.strokeStyle = PALETTE.map.garage;
+  g.strokeStyle = rim;
   g.lineWidth = Math.max(1, s * 0.3);
   g.beginPath();
   g.arc(x, y, s, 0, Math.PI * 2);
@@ -193,7 +195,7 @@ function drawDot(g: CanvasRenderingContext2D, x: number, y: number, s: number, c
   g.stroke();
 }
 
-/** A ring round a player's dot: that truck is stuck on a rock (ADR 0020). */
+/** A ring round a player's dot: that truck is stuck on a rock (ADR 0021). */
 function drawRing(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
   g.strokeStyle = PALETTE.map.garage;
   g.lineWidth = Math.max(1, s * 0.22);
@@ -232,6 +234,30 @@ function drawPlane(g: CanvasRenderingContext2D, x: number, y: number, heading: n
   g.restore();
 }
 
+/**
+ * The player's pin: a round head of radius `s` standing over the spot it marks, which is
+ * at its point. Outlined in paper like the truck's arrow, so it reads on the fog too.
+ */
+function drawPin(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  const stem = (s * PIN_STEM) / PIN_HEAD;
+  // Where the sides leave the head: the tangents from the point.
+  const flare = Math.acos(s / stem);
+  g.fillStyle = PALETTE.map.pin;
+  g.strokeStyle = PALETTE.map.paper;
+  g.lineWidth = Math.max(1, s * 0.28);
+  g.lineJoin = "round";
+  g.beginPath();
+  g.moveTo(x, y);
+  g.arc(x, y - stem, s, Math.PI / 2 + flare, Math.PI * 2.5 - flare);
+  g.closePath();
+  g.stroke();
+  g.fill();
+  g.fillStyle = PALETTE.map.paper;
+  g.beginPath();
+  g.arc(x, y - stem, s * 0.36, 0, Math.PI * 2);
+  g.fill();
+}
+
 function drawCar(g: CanvasRenderingContext2D, x: number, y: number, heading: number, s: number) {
   g.save();
   g.translate(x, y);
@@ -252,8 +278,8 @@ function drawCar(g: CanvasRenderingContext2D, x: number, y: number, heading: num
 }
 
 export type Spot = { x: number; z: number; heading: number };
-/** Other things on the map this frame: the train (if seen), other players, and where the guidance is pointing. */
-export type Extras = { train?: Spot; players?: (Spot & { friend: boolean; stuck?: boolean })[] };
+/** Other things on the map this frame: the train (if seen), other players (ringed if stuck), and the player's pin if one is down. */
+export type Extras = { train?: Spot; players?: (Spot & { friend: boolean; stuck?: boolean })[]; pin?: { x: number; z: number } | null };
 
 export function createMap(world: World, onFound: (key: string) => void = () => {}, onExplored: (cell: number) => void = () => {}) {
   const base = paintBase(world);
@@ -335,6 +361,12 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
     g.drawImage(fog, sx, sy, sw, sw, 0, 0, size, size);
     const place = (x: number, z: number): [number, number] => [(x - car.x + radius) * scale, (z - car.z + radius) * scale];
     markers(g, place, size * 0.035, extras);
+    if (extras.pin) {
+      // Further off than the minimap reaches, a bead on the rim says which way it is.
+      const at = onMini(extras.pin, car, radius * 0.9);
+      if (at.far) drawDot(g, ...place(at.x, at.z), size * 0.028, PALETTE.map.pin, PALETTE.map.paper);
+      else drawPin(g, ...place(at.x, at.z), size * 0.034);
+    }
     drawCar(g, size / 2, size / 2, car.heading, size * 0.05);
     g.restore();
     g.strokeStyle = PALETTE.map.rim;
@@ -356,6 +388,7 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
     g.drawImage(fog, sx, sx, sw, sw, 0, 0, size, size);
     const place = (x: number, z: number): [number, number] => [(x + span / 2) * scale, (z + span / 2) * scale];
     markers(g, place, size * 0.014, extras);
+    if (extras.pin) drawPin(g, ...place(extras.pin.x, extras.pin.z), size * PIN_HEAD);
     const [cx, cy] = place(car.x, car.z);
     drawCar(g, cx, cy, car.heading, size * 0.018);
   }

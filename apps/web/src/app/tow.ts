@@ -4,7 +4,7 @@ import type { VehicleId } from "./vehicles";
 import type { Ground } from "./world";
 
 /**
- * BBB, the tow truck a stuck driver can ring (ADR 0020). It costs miles, and it comes
+ * BBB, the tow truck a stuck driver can ring (ADR 0021). It costs miles, and it comes
  * whoever else is or isn't about: out of the nearest garage, across country as nothing
  * more than a distance closing, then into sight for the last stretch, where it pulls up,
  * winches the truck off its rock and backs away again.

@@ -9,7 +9,7 @@ import type { Ground, Obstacle } from "./world";
  * bumps and leans in corners, and a crest taken fast puts you in the air. Rocks low
  * enough for the tyres are bumps under the wheels; taller ones, and trees, stop you.
  *
- * One thing can end a drive (ADR 0020): a rock only a little too tall for the tyres, rammed
+ * One thing can end a drive (ADR 0021): a rock only a little too tall for the tyres, rammed
  * square and fast, is one the truck rides up onto. There it sits with its wheels off the
  * ground, and nothing the driver does moves it. A winch on someone else's truck does.
  *
@@ -241,8 +241,10 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
   const nx = car.x + (fx * car.speed + fz * car.side) * k;
   const nz = car.z + (fz * car.speed - fx * car.side) * k;
   // Fording is fine; driving into the deep end is not. The car stops at the edge but
-  // keeps a little speed, so steering can still turn it along the shore.
-  if (ground.waterAt(nx, nz) - ground.height(nx, nz) > spec.wade) {
+  // keeps a little speed, so steering can still turn it along the shore. A rising tide can
+  // leave it in deeper than it could have driven: it can always go where it's no deeper.
+  const deep = ground.waterAt(nx, nz) - ground.height(nx, nz);
+  if (deep > spec.wade && deep > ground.waterAt(car.x, car.z) - ground.height(car.x, car.z)) {
     car.speed = Math.max(-1.5, Math.min(1.5, car.speed));
     car.side = 0;
   } else {

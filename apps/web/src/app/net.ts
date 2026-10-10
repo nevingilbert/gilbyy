@@ -11,7 +11,7 @@ import type { VehicleId } from "./vehicles";
  * This is how those in the same world hear about each other:
  * who's here and which tent is theirs (presence), where their truck is and whether it's
  * stuck (poses), friend requests, convoys (convoy.ts), a winch hooking on and a tow truck
- * turning up (ADR 0020), and chat between friends.
+ * turning up (ADR 0021), and chat between friends.
  *
  * Two transports with the same shape. Online it's a private Supabase Realtime channel,
  * which only signed-in players can join (see the realtime policies in the migration).
@@ -34,7 +34,7 @@ export type Pose = {
   steer: number;
   /** How fast it's turning, radians a second, so the others can follow it round a bend. */
   turn: number;
-  /** Hung up on a rock, and waiting for a winch (ADR 0020). */
+  /** Hung up on a rock, and waiting for a winch (ADR 0021). */
   stuck?: boolean;
   /** Stuck, and someone's winch has hold of it. */
   hooked?: boolean;

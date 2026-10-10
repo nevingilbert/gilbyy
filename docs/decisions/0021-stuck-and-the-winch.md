@@ -1,4 +1,4 @@
-# 0020 — Getting stuck, the winch, and BBB
+# 0021 — Getting stuck, the winch, and BBB
 
 Date: 2026-10-10 (the sticking and the winch were built on 2026-10-09, BBB the day after)
 Status: Accepted. Amends the "don't add pressure" line in `CLAUDE.md`, and takes

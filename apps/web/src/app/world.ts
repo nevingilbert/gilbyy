@@ -35,7 +35,7 @@ export type Obstacle = {
   r: number;
   h: number;
   top?: number;
-  /** A boulder: the one thing a truck can ride up onto and be stuck on (ADR 0020). Posts and boards only stop it. */
+  /** A boulder: the one thing a truck can ride up onto and be stuck on (ADR 0021). Posts and boards only stop it. */
   boulder?: boolean;
 };
 /** Pines and broadleaves grow in the valley; palms and the jungle's canopy trees on the island. */
@@ -80,6 +80,8 @@ export type World = Ground & Terrain & {
   courseDist: Float32Array;
   /** For things placed after the world is built, like buildings. */
   addObstacles(list: readonly Obstacle[]): void;
+  /** Puts the sea `ebb` metres below high water (tide.ts). Only the island's sea has a tide; the valley's water stays put. */
+  setTide(ebb: number): void;
 };
 
 /** How wide a tree, a boulder and a bush stand, for the physics. */
@@ -258,5 +260,6 @@ export function buildWorld(seed = 20261006): World {
     height: ramps.length ? (x, z) => ground(x, z) + rampLift(ramps, x, z) : ground, waterAt, obstaclesNear: solid.near, limit: WORLD.limit,
     slipAt: (x, z) => Math.min(1, field(terrain.snow, x, z)) + field(terrain.ice, x, z),
     addObstacles: (list) => list.forEach(solid.add),
+    setTide: () => {},
   };
 }

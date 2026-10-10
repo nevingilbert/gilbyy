@@ -80,7 +80,7 @@ export const WINTER: Chains[] = [
   { id: "cartier", name: "Cartier chains", blurb: "Solid gold, a stone on every link. Grips no better.", price: 10000, fitted: true, jewelled: true },
 ];
 
-/** For other people (ADR 0020): it hauls a stuck truck off its rock, and does nothing for the truck it's bolted to. */
+/** For other people (ADR 0021): it hauls a stuck truck off its rock, and does nothing for the truck it's bolted to. */
 export const WINCHES: Toggle[] = [
   { id: "none", name: "No winch", blurb: "Nothing to offer a stuck friend but sympathy.", price: 0, fitted: false },
   { id: "winch", name: "Winch", blurb: "Pulls a stuck driver off their rock. It can't pull you off yours.", price: 10, fitted: true },

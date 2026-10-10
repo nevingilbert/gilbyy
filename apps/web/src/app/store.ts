@@ -57,7 +57,7 @@ export interface Store {
   explored(): number[];
   /** Pays the fare and moves the truck to another world. Resolves to why not, or null once it's aboard. */
   fly(to: WorldId): Promise<string | null>;
-  /** Pays BBB's fee for a tow (ADR 0020). Resolves to why not, or null once it's paid. */
+  /** Pays BBB's fee for a tow (ADR 0021). Resolves to why not, or null once it's paid. */
   tow(): Promise<string | null>;
   setName(name: string): Promise<string | null>;
   /** Asks to be friends; "friends" if they'd already asked you. */

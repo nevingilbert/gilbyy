@@ -47,6 +47,8 @@ HUD that is nearly absent.
   island: sea all round, a beach, dunes behind it and jungle in the middle, with its
   own camp on the beach and a garage that sells a dune buggy found nowhere else. The
   flight home costs the same. See `decisions/0014-airports-and-the-island.md`.
+- A tide on the island, and a sandbar off its camp that is only there when the sea is
+  out, with a course along it for then. See `decisions/0020-tides-and-the-sandbar.md`.
 - A first-time guide line, one thing at a time, pointing at the compass.
 - A map that starts grey and fills in as you explore, fresh on every visit.
 - A high chase camera, a compass, a minimap, a speedometer and an odometer. Little else on

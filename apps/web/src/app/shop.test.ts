@@ -55,8 +55,7 @@ describe("the shop and the server agree", () => {
     // The last word on it: how many others the newest complete_convoy() lets a driver name.
     const limits = migrations.flatMap((sql) => [...sql.matchAll(/cardinality\(others\) > (\d+)/g)].map((m) => +m[1]));
     expect(limits.at(-1)).toBe(CONVOY_MAX - 1);
-    // Said in the newest migration that has a word to say about crews, which isn't always the newest there is.
-    expect(migrations.filter((sql) => /cardinality\(others\)/.test(sql)).at(-1)).toContain(`a convoy is two to ${["", "", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][CONVOY_MAX]} drivers`);
+    expect(migrations.filter((sql) => sql.includes("function public.complete_convoy")).at(-1)).toContain(`a convoy is two to ${["", "", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][CONVOY_MAX]} drivers`);
   });
 });
 

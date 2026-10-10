@@ -1,6 +1,6 @@
 -- A winch for the front bumper, to pull another driver off a rock they're stuck on, and
 -- BBB, a tow truck a stuck driver can ring when nobody with a winch is about. See
--- docs/decisions/0020-stuck-and-the-winch.md.
+-- docs/decisions/0021-stuck-and-the-winch.md.
 --
 -- Being stuck, being winched off and being towed are between the players' browsers:
 -- nothing about any of them is stored or counted, so nothing here can check them. All

@@ -16,7 +16,8 @@ import { buildWorld, obstacleIndex, trunkRadius, type Bush, type Rock, type Tree
  * from, and three garages, one in each ring: a shack on the beach, an outpost in the dunes
  * and a lodge in the jungle. They are the only places that sell the dune buggy. A café
  * on the beach by the camp too (ADR 0016), and eight courses, half of them for friends
- * (ADR 0019).
+ * (ADR 0019). The sea has a tide (tide.ts), and off the camp there's a sandbar that only
+ * shows when it's out, with a ninth course along it (ADR 0020).
  *
  * It lies on the same grid as the valley, so the renderer, the physics and the map read
  * it the same way. Pure data, no three.js. A bearing here is a heading: 0 is +z.
@@ -30,6 +31,29 @@ export const ISLAND = {
   /** The tents stand this far up the beach from the waterline, at this height. */
   campBack: 72,
   campY: 2.3,
+} as const;
+
+/**
+ * The sandbar (ADR 0020): a spit that leaves the beach a short drive past the last tent,
+ * runs out to sea and hooks round to lie across the view from the camp, ending in a round
+ * bank. Its top is under the sea at high water and bare sand at low (tide.ts).
+ */
+export const SANDBAR = {
+  /** Where it leaves the beach: this many degrees round the shore from the middle of the camp, away from the café. */
+  from: -16,
+  /** Straight out to sea, then a quarter turn of this radius, then along the shore in front of the camp. */
+  out: 190,
+  bend: 100,
+  along: 280,
+  /** Half its width, and how big round the bank at its end is. */
+  half: 23,
+  head: 42,
+  /**
+   * Its top, give or take the ripples in it. Under enough water at high tide to be lost
+   * in the shallows, and little enough that every rig can wade home over it.
+   */
+  top: -0.7,
+  ripple: 0.07,
 } as const;
 
 /** The fire is this far down the beach from the row of tents. */
@@ -106,6 +130,80 @@ function layCamp(shape: ReturnType<typeof makeIsland>) {
     return { index, ...p, rot, parking: { x: p.x + Math.sin(rot) * 4, z: p.z + Math.cos(rot) * 4, heading: rot } };
   });
   return { pitches, heading: best.bearing, fire: along(best.bearing, best.back + FIRE_OUT), middle: along(best.bearing, best.back) };
+}
+
+/**
+ * The sandbar's middle line: where it is `s` metres along from the high-water mark, `side`
+ * metres to the left of the middle, and which way it runs there.
+ */
+function sandbarOf(shape: ReturnType<typeof makeIsland>, campBearing: number) {
+  const bearing = campBearing + SANDBAR.from * DEG;
+  const root = along(bearing, shape.shoreAlong(bearing));
+  // Out to sea, and along the shore toward the camp.
+  const [ox, oz] = [Math.sin(bearing), Math.cos(bearing)];
+  const [tx, tz] = [Math.cos(bearing), -Math.sin(bearing)];
+  const turn = (SANDBAR.bend * Math.PI) / 2;
+  const length = SANDBAR.out + turn + SANDBAR.along;
+  const at = (s: number, side = 0) => {
+    // How far round the quarter turn: none on the way out, all of it on the way along.
+    const phi = Math.max(0, Math.min(Math.PI / 2, (s - SANDBAR.out) / SANDBAR.bend));
+    const [a, b] = [
+      Math.min(s, SANDBAR.out) + Math.sin(phi) * SANDBAR.bend,
+      (1 - Math.cos(phi)) * SANDBAR.bend + Math.max(0, s - SANDBAR.out - turn),
+    ];
+    const heading = Math.atan2(ox * Math.cos(phi) + tx * Math.sin(phi), oz * Math.cos(phi) + tz * Math.sin(phi));
+    return { x: root.x + ox * a + tx * b + Math.cos(heading) * side, z: root.z + oz * a + tz * b - Math.sin(heading) * side, heading };
+  };
+  const line: Path = { xs: [], zs: [] };
+  for (let k = 0; k <= 80; k++) {
+    const p = at((length * k) / 80);
+    line.xs.push(p.x);
+    line.zs.push(p.z);
+  }
+  return { at, line, length, end: at(length) };
+}
+
+/**
+ * Raises the sandbar out of the seabed: level along its top, bar the ripples, with banks
+ * that fall away gently at first and then steeply into deep water. Only ever raises.
+ */
+function raiseSandbar(heights: Float32Array, bar: ReturnType<typeof sandbarOf>, seed: number) {
+  const ripple = makeNoise2D(seed + 6);
+  const bank = 115;
+  const toLine = nearest(bar.line, false, SANDBAR.head + bank).dist;
+  for (let k = 0; k < heights.length; k++) {
+    if (toLine[k] >= FAR) continue;
+    const [x, z] = [gridX(k % ROW), gridZ(Math.floor(k / ROW))];
+    // How far outside the sand's edge, along the spit or round the bank at its end.
+    const e = Math.max(0, Math.min(toLine[k] - SANDBAR.half, Math.hypot(x - bar.end.x, z - bar.end.z) - SANDBAR.head));
+    const y = SANDBAR.top + SANDBAR.ripple * ripple(x / 38, z / 38) - 0.08 * e - 0.004 * e * e;
+    if (y > heights[k]) heights[k] = y;
+  }
+}
+
+/**
+ * The course along the sandbar: from the beach, flag to flag out along the spit and round
+ * the hook, to a finish on the bank at its end. It can only be started while the tide has
+ * the whole of it dry (`ebb`). Paid a little over what its length would earn elsewhere,
+ * for the wait. Payouts must match `public.missions` (shop.test.ts checks).
+ */
+function sandbarCourse(bar: ReturnType<typeof sandbarOf>, ground: (x: number, z: number) => number): Mission {
+  // The arch stands up the beach, above high water.
+  const start = bar.at(-36);
+  const flags: Pt[] = [];
+  for (let s = 30, k = 0; s < bar.length - 40; s += 50, k++) flags.push(bar.at(s, k % 2 ? -8 : 8));
+  flags.push(bar.at(bar.length - 20));
+  // The lowest sand on the way, from where the spit leaves the beach, and a little over.
+  let low = 0;
+  for (let i = 1; i < flags.length; i++) {
+    for (let k = 0; k <= 12; k++) low = Math.min(low, ground(flags[i - 1].x + ((flags[i].x - flags[i - 1].x) * k) / 12, flags[i - 1].z + ((flags[i].z - flags[i - 1].z) * k) / 12));
+  }
+  return {
+    id: "sandbar", name: "Sandbar", blurb: `${flags.length - 1} flags out along the sandbar, while the tide's out.`,
+    start: { x: start.x, z: start.z, heading: Math.atan2(flags[0].x - start.x, flags[0].z - start.z) }, gates: gatesAlong(start, flags, 12),
+    reward: 25, repeatReward: 8, cooldown: 600, ...courseLimits(courseLength(start, flags)), crew: 1, race: false,
+    ebb: Math.ceil((0.15 - low) * 20) / 20,
+  };
 }
 
 /** The island. Deterministic, like the valley. */
@@ -212,11 +310,6 @@ export function buildIsland(seed = 20261009): World {
     for (let k = 0; k < d.length; k++) roadDist[k] = Math.min(roadDist[k], d[k]);
   }
 
-  const start = camp.pitches[0].parking;
-  const zone = new Uint8Array(ROW * ROW);
-  flood(heights, water, STOCK_WADE, zone, 1, start);
-  flood(heights, water, SNORKEL_WADE, zone, 2, start);
-
   /** Clear of the camp, the garages' yards, the airstrip, the courses and the tracks, by at least these distances. */
   const clear = (x: number, z: number, site: number, tents: number) =>
     field(siteDist, x, z) > site && field(campDist, x, z) > tents && field(courseDist, x, z) > 7 && field(roadDist, x, z) > 8;
@@ -276,11 +369,37 @@ export function buildIsland(seed = 20261009): World {
     bushes.push({ x, y: y - 0.25, z, scale: 0.6 + rand() * 0.9, rot: rand() * Math.PI * 2, tone: rand() });
   }
 
+  // The sandbar and its course (ADR 0020) go in after the scatter, which never reaches
+  // below the tide line: so nothing that was on the island before them has moved.
+  const bar = sandbarOf(shape, camp.heading);
+  raiseSandbar(heights, bar, seed);
+  const sandbar = sandbarCourse(bar, ground);
+  const toSandbar = courseDistOf([sandbar], 20, true);
+  missions.push(sandbar);
+  for (let k = 0; k < courseDist.length; k++) courseDist[k] = Math.min(courseDist[k], toSandbar[k]);
+  // Whatever stood where its arch went, up the beach, is taken away.
+  const clearOf = <T extends Pt>(list: T[]) => {
+    let n = 0;
+    for (const s of list) if (field(toSandbar, s.x, s.z) > 7) list[n++] = s;
+    list.length = n;
+  };
+  clearOf(trees);
+  clearOf(rocks);
+  clearOf(bushes);
+
+  // What a truck can reach at high water, wading and with a snorkel.
+  const start = camp.pitches[0].parking;
+  const zone = new Uint8Array(ROW * ROW);
+  flood(heights, water, STOCK_WADE, zone, 1, start);
+  flood(heights, water, SNORKEL_WADE, zone, 2, start);
+
   const solid = obstacleIndex();
   for (const t of trees) solid.add({ x: t.x, z: t.z, r: trunkRadius(t), h: Infinity });
   for (const r of rocks) solid.add({ x: r.x, z: r.z, r: Math.min(r.sx, r.sz) * 0.8, h: r.y + r.sy * 0.95 - ground(r.x, r.z), boulder: true });
   for (const o of planeObstacles(airport)) solid.add(o);
 
+  // The sea stands at high water until it's told how far the tide is out (tide.ts).
+  let sea: number = WORLD.water;
   return {
     id: "island",
     heights, water, forest, trackDist, riverDist, roadDist, siteDist, campDist, zone,
@@ -289,9 +408,10 @@ export function buildIsland(seed = 20261009): World {
     trees, bushes, rocks, missions, landmarks: [], courseDist, airport,
     cafe, start, pitches: camp.pitches, camp: { ...camp.middle, heading: camp.heading },
     sea: true, mapSpan: (ISLAND.shore + 420) * 2,
-    height: ground, waterAt: () => WORLD.water, obstaclesNear: solid.near, limit: WORLD.limit,
+    height: ground, waterAt: () => sea, obstaclesNear: solid.near, limit: WORLD.limit,
     slipAt: () => 0,
     addObstacles: (list) => list.forEach(solid.add),
+    setTide: (ebb) => void (sea = WORLD.water - ebb),
   };
 }
 

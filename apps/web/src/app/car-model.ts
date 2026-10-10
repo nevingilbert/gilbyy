@@ -18,7 +18,7 @@ function tyreGeometry(radius: number, width: number, lugs: number) {
   return mergeGeometries(parts).rotateZ(Math.PI / 2);
 }
 
-/** A winch for the front bumper (ADR 0020): a cradle, a drum of cable between two cheeks, and a hook. Faces +z from its mount. */
+/** A winch for the front bumper (ADR 0021): a cradle, a drum of cable between two cheeks, and a hook. Faces +z from its mount. */
 function buildWinch(dark: THREE.Material, cable: THREE.Material, hook: THREE.Material) {
   const winch = new THREE.Group();
   const add = (geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number) => {
@@ -303,7 +303,7 @@ export function buildCar(vehicle: VehicleId) {
 export type CarModel = ReturnType<typeof buildCar>;
 
 /**
- * BBB's tow truck (ADR 0020): the little pickup in white with a winch on its bumper, a
+ * BBB's tow truck (ADR 0021): the little pickup in white with a winch on its bumper, a
  * recovery boom over the bed and an amber lamp turning on the roof. It can be faded, for
  * coming into sight and going out of it.
  */

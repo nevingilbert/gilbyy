@@ -2,7 +2,7 @@ import type { Car, CarSpec } from "./physics";
 import { winchOf, type Loadout } from "./shop";
 
 /**
- * Getting someone off a rock (ADR 0020). A truck that rams a rock a little too tall for
+ * Getting someone off a rock (ADR 0021). A truck that rams a rock a little too tall for
  * its tyres is hung up on it (physics.ts) and can do nothing for itself. Anyone here with
  * a winch fitted can pull it off: they stop within the cable's length, hook on, and the
  * stuck truck is hauled toward them until it's clear. The winch does nothing for the truck
