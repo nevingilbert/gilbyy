@@ -8,5 +8,10 @@
 -- slot, and it fits whatever shop_items lists and the player owns.
 --
 -- The price must match apps/web/src/app/shop.ts; shop.test.ts checks.
+--
+-- The row went onto the live project by hand on 2026-10-10, as plain SQL, so the
+-- project's migration history doesn't list this file. Hence the `on conflict`: pushing
+-- it later changes nothing.
 
-insert into public.shop_items (key, price) values ('winter:cartier', 10000);
+insert into public.shop_items (key, price) values ('winter:cartier', 10000)
+on conflict (key) do update set price = excluded.price;
