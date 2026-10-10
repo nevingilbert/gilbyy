@@ -37,7 +37,9 @@ subdomains." Update the **You are here** marker as you progress.
 > more courses, so each world has as many for friends as to drive alone, a jump told
 > for its time in the air, and convoys and races for up to ten. Merged to `main` as pull
 > request 16; its migration, `20261010120000_more_courses.sql`, is on the live project.
-> Also on 2026-10-10, a tide on the island (`decisions/0020`,
+> Also on 2026-10-10, a pin: click the open map and the compass leads there. Client
+> only; merged to `main` as pull request 22 (`sessions/2026-10-10-map-pin.md`).
+> And a tide on the island (`decisions/0020`,
 > `sessions/2026-10-10-island-tides.md`): the sea goes out and back every ten minutes,
 > and at low water a sandbar shows off the camp with a course along it. Its migration,
 > `20261010180000_sandbar.sql`, is on the live project; it is open as pull request 23

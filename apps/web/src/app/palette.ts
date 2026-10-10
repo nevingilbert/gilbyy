@@ -270,6 +270,8 @@ export const PALETTE = {
     mission: "#e2702f",
     player: "#f2efe6",
     friend: "#ffd36b",
+    /** The player's own pin, and the compass mark while it leads there: a berry nothing else on the sheet uses. */
+    pin: "#a53b72",
     rim: "rgba(255,246,232,0.55)",
     /** The island's sheet: sand where the valley's is meadow. */
     sand: "#f2e3bd",
