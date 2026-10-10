@@ -98,7 +98,14 @@ loop was played the same way on 2026-10-09, before the merge, and not again sinc
   owner's go-ahead: `begin;`, the migration, every check, and a raise that rolled it all
   back (`supabase --workdir <shared checkout> db query --linked -f`, since the link
   lives in the shared checkout). Afterwards there was still no `winch:` row and no
-  `call_tow()`. The migration itself is not applied.
+  `call_tow()`. It was run again after `main` gained the sandbar's migration, and
+  passed again.
+- **The migration is on the live project** since 2026-10-10, when the owner said to
+  apply it: run as one transaction with `supabase db query --linked -f`, recorded with
+  `supabase migration repair --status applied 20261010200000 --linked`, and then every
+  check run against the migrated project, which passed. The security advisors show
+  `call_tow()` only where every other game function is listed (callable signed in, by
+  design) and nothing new.
 - **The live project has no `20261010090000_cartier_chains` in its migration list**,
   though its rows are there (`winter:cartier` is in `shop_items`): it was applied by
   hand and not recorded. `supabase db push` may want that sorted before it takes this
@@ -119,14 +126,12 @@ loop was played the same way on 2026-10-09, before the merge, and not again sinc
 
 Work in `.claude/worktrees/game-stuck-winch`: the changes exist only there.
 
-The pull request from `feat/game-stuck-winch` into `main` is open. Ask the owner which
-of the open choices to change before it merges. When they want it shipped: apply
-`supabase/migrations/20261010200000_winch.sql` to project `gilbyy`
-(`apqlumghzqkklmpwizex`), which needs their go-ahead for the exact command, run the
-advisors, and hand them the merge command
-(`gh pr merge <n> --repo nevingilbert/gilbyy --merge`), since merging is theirs to
-click. The page can ship before the migration: until it's applied the garage says the
-winch isn't in stock and BBB doesn't answer.
+This is pull request 21 into `main`, and its migration is on the live project. If it
+hasn't merged, the merge is the owner's to click
+(`gh pr merge 21 --repo nevingilbert/gilbyy --merge`). Once it's live: play it signed
+in from two accounts (the dev account `Devin` has the miles): ram a boulder, ring BBB,
+and have the other account buy a winch and pull the first off. Then ask the owner
+which of the open choices to change.
 
 To try it, two tabs of one browser on the worktree's dev server:
 

@@ -44,10 +44,10 @@ subdomains." Update the **You are here** marker as you progress.
 > and at low water a sandbar shows off the camp with a course along it. Its migration,
 > `20261010180000_sandbar.sql`, is on the live project; it is open as pull request 23
 > and not yet merged.
-> Built but not merged (`decisions/0021`, `sessions/2026-10-10-stuck-winch-and-bbb.md`):
-> a truck can be stuck, hung up on a boulder it rammed, and gets off by a friend's
-> winch, a tow from BBB for miles, or a reload. In a pull request from
-> `feat/game-stuck-winch`; its migration passed a dry run and is not applied.
+> And getting stuck (`decisions/0021`, `sessions/2026-10-10-stuck-winch-and-bbb.md`): a
+> truck can be hung up on a boulder it rammed, and gets off by a friend's winch, a tow
+> from BBB for miles, or a reload. Pull request 21; its migration,
+> `20261010200000_winch.sql`, is on the live project.
 > **Next:**
 > play one convoy and one race signed in from two Google accounts on the live
 > site; neither has been played over Supabase yet, only over `?net=local`. Still open:
