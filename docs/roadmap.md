@@ -40,8 +40,8 @@ subdomains." Update the **You are here** marker as you progress.
 > Also on 2026-10-10, a tide on the island (`decisions/0020`,
 > `sessions/2026-10-10-island-tides.md`): the sea goes out and back every ten minutes,
 > and at low water a sandbar shows off the camp with a course along it. Its migration,
-> `20261010180000_sandbar.sql`, is on the live project; the pull request from
-> `feat/game-island-tides` is open and not yet merged.
+> `20261010180000_sandbar.sql`, is on the live project; it is open as pull request 23
+> and not yet merged.
 > **Next:**
 > play one convoy and one race signed in from two Google accounts on the live
 > site; neither has been played over Supabase yet, only over `?net=local`. Still open:

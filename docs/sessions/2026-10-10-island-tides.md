@@ -9,7 +9,7 @@ high", and then "make that section have a mission in it". ADR
 Built in a worktree, `.claude/worktrees/island-tides` (branch `feat/game-island-tides`,
 from `origin/main` at `b27baeb`), because the shared checkout was eleven commits behind.
 The owner then said "yes, apply the migration and open a PR": the migration is on the
-live project and the branch is open as a pull request, not merged.
+live project and the branch is open as pull request 23, not merged.
 
 ## Decisions made
 
@@ -112,8 +112,7 @@ that has been removed. Frame rate not judged.
 
 ## Exact next step
 
-Merge the pull request from `feat/game-island-tides` (the owner's to do: merging is
-refused to the session). Then fly to the island signed in, wait at the arch past the
+Merge pull request 23 (the owner's to do: merging is refused to the session). Then fly to the island signed in, wait at the arch past the
 last tent for the tide, and drive Sandbar: the finish should pay 25 miles. Seen from a
 second browser, the sea should stand at the same height.
 
