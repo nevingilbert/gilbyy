@@ -10,7 +10,7 @@ import { currentGoal } from "./goals";
 import { buildWorldOf } from "./island";
 import { LANDMARKS, type LandmarkKind } from "./landmarks";
 import { createMap } from "./map";
-import { fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
+import { fmtAir, fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
 import { stackTags, type TagBox } from "./name-tags";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
 import { FlightCard, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
@@ -88,7 +88,8 @@ type Prompt =
   | { kind: "convoy"; lead: string; rest: string; act: boolean }
   | null;
 /** `crew` is the rest of a convoy or race: their names and how many flags each has passed. `place` is mine in a race. */
-type RunHud = { name: string; clock: number; gate: number; of: number; through: boolean; crew: { name: string; passed: number }[]; place: number | null } | null;
+/** `air` is set on a course with a ramp: the longest the truck has been off the ground so far, shown in place of the clock. */
+type RunHud = { name: string; clock: number; air: number | null; gate: number; of: number; through: boolean; crew: { name: string; passed: number }[]; place: number | null } | null;
 type ChatShown = { key: number; from: string; text: string };
 
 type Actions = {
@@ -354,6 +355,8 @@ export function Game() {
     let convoyAct: (() => void) | null = null;
     let throughIn: number | null = null;
     let raceOver: string | null = null;
+    // The longest jump at each ramp since the page loaded. A line on screen, like a race's result: kept nowhere.
+    const bestAir = new Map<string, number>();
     // Presence as the loop sees it, alongside the copy React renders.
     let presenceNow: Presence = "solo";
     const present = (p: Presence) => {
@@ -839,7 +842,7 @@ export function Game() {
     actions.current.zoomPhoto = (factor) => void (orbit = zoomOrbit(orbit, factor));
     actions.current.snap = () => {
       if (modeRef.current !== "photo") return;
-      keepPicture(view.snap(), photoName(new Date()));
+      keepPicture(picture(), photoName(new Date()));
       // A soft flash, as a shutter would.
       const flash = flashRef.current;
       if (!flash) return;
@@ -874,6 +877,8 @@ export function Game() {
 
     const names = (ids: string[]) => {
       const n = ids.map(nameOf);
+      // A big crew doesn't fit on the line: the first two, and how many more.
+      if (n.length > 3) return `${n[0]}, ${n[1]} and ${n.length - 2} others`;
       return n.length < 2 ? n.join("") : `${n.slice(0, -1).join(", ")} and ${n[n.length - 1]}`;
     };
 
@@ -914,7 +919,9 @@ export function Game() {
           throughIn = null;
           setRun(null);
           shownRun = "";
-          raceOver = `Race over: ${e.times.map((t, i) => `${ordinal(i + 1)} ${t.id === me ? "you" : nameOf(t.id)} ${fmtTime(t.seconds)}`).join(" · ")}`;
+          // The first three, and me wherever I came: ten times don't fit on a line.
+          const places = e.times.map((t, i) => ({ mine: t.id === me, text: `${ordinal(i + 1)} ${t.id === me ? "you" : nameOf(t.id)} ${fmtTime(t.seconds)}` }));
+          raceOver = `Race over: ${places.filter((p, i) => i < 3 || p.mine).map((p) => p.text).join(" · ")}`;
           say(raceOver, 9);
         } else if (e.kind === "home") {
           const m = e.mission;
@@ -1165,8 +1172,12 @@ export function Game() {
       tagsAt = now;
       const me = store.get().id;
       const list = view.remotes.tags();
-      const mine = bubbles.get(me);
-      if (mine) list.push({ id: me, name: "", x: car.x, y: car.y + view.carTop() + 1.1, z: car.z });
+      // In photo mode everyone in the picture has their name over their truck, this one's
+      // driver too, as the others see it; the chat goes. A picture is of who was there.
+      const posing = modeRef.current === "photo";
+      const myName = posing ? store.get().name : null;
+      const mine = posing ? undefined : bubbles.get(me);
+      if (myName || mine) list.push({ id: me, name: myName ?? "", x: car.x, y: car.y + view.carTop() + 1.1, z: car.z });
       const seen = new Set<string>();
       const shown: TagBox[] = [];
       for (const t of list) {
@@ -1185,7 +1196,7 @@ export function Game() {
         const bubble = bubbles.get(t.id);
         const sayEl = el.querySelector<HTMLSpanElement>("[data-say]")!;
         const nameEl = el.querySelector<HTMLSpanElement>("[data-name]")!;
-        const speaking = bubble && bubble.until > now ? bubble.text : "";
+        const speaking = !posing && bubble && bubble.until > now ? bubble.text : "";
         if (sayEl.textContent !== speaking) sayEl.textContent = speaking;
         sayEl.style.display = speaking ? "" : "none";
         const label = t.name + (friends.has(t.id) ? " ★" : "");
@@ -1230,6 +1241,39 @@ export function Game() {
           tags.delete(id);
         }
       }
+    };
+
+    /**
+     * The picture: the world as it's drawn this moment, and over it the name of everyone
+     * in it, as and where their tags are on screen. The tags are the page's, not the
+     * world's, so each is drawn onto the picture in its own font, colour and shadow.
+     */
+    const picture = () => {
+      const shot = view.snap();
+      const out = document.createElement("canvas");
+      out.width = shot.width;
+      out.height = shot.height;
+      const g = out.getContext("2d");
+      if (!g) return shot.toDataURL("image/png");
+      g.drawImage(shot, 0, 0);
+      const box = shot.getBoundingClientRect();
+      const scale = shot.width / Math.max(1, box.width);
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      for (const tag of tags.values()) {
+        const name = tag.el.querySelector<HTMLSpanElement>("[data-name]");
+        const shown = Number(tag.el.style.opacity || "1");
+        if (!name?.textContent || tag.lift === null || !(shown > 0)) continue;
+        const at = name.getBoundingClientRect();
+        const look = getComputedStyle(name);
+        g.font = `${look.fontWeight} ${parseFloat(look.fontSize) * scale}px ${look.fontFamily}`;
+        g.letterSpacing = `${(parseFloat(look.letterSpacing) || 0) * scale}px`;
+        g.fillStyle = look.color;
+        g.filter = look.filter;
+        g.globalAlpha = shown;
+        g.fillText(name.textContent, (at.left + at.width / 2 - box.left) * scale, (at.top + at.height / 2 - box.top) * scale);
+      }
+      return out.toDataURL("image/png");
     };
 
     /**
@@ -1333,7 +1377,7 @@ export function Game() {
     const runOn = (dt: number) => {
       if (!running) return;
       const r = running;
-      const ev = tick(r, dt, lastPose, car);
+      const ev = tick(r, dt, lastPose, car, car.grounded);
       if (r.clock < 0) setCount(Math.ceil(-r.clock));
       if (ev?.kind === "go") {
         setCount(0);
@@ -1369,25 +1413,33 @@ export function Game() {
           if (convoys.state) say("Through the finish. Wait for the others; the convoy's home when they're through.", 6);
           return;
         }
+        // A jump is told for its time in the air, and paid like any other course however long that was.
+        const before = bestAir.get(m.id);
+        if (m.ramp) bestAir.set(m.id, Math.max(before ?? 0, ev.air));
+        const how = !m.ramp ? `${m.name} in ${fmtTime(seconds)}`
+          : before === undefined ? `${m.name}: ${fmtAir(ev.air)} in the air`
+          : ev.air > before ? `${m.name}: ${fmtAir(ev.air)} in the air, your longest yet`
+          : `${m.name}: ${fmtAir(ev.air)} in the air (your longest is ${fmtAir(before)})`;
         void store.completeMission(m, seconds).then((res) => {
           goal("mission");
-          if ("paid" in res) say(`${m.name} in ${fmtTime(seconds)}. +${fmtMiles(res.paid)} mi`, 7);
-          else say(`${m.name} in ${fmtTime(seconds)}. ${res.error}`, 7);
+          if ("paid" in res) say(`${how}. +${fmtMiles(res.paid)} mi`, 7);
+          else say(`${how}. ${res.error}`, 7);
         });
         return;
       }
       view.showRun(runIndex, r.next, time);
-      showRun(r.mission, Math.max(0, r.clock), r.next, false);
+      showRun(r.mission, Math.max(0, r.clock), r.next, false, r.air);
     };
 
     /** The line at the top during a run: the course, the clock, the next flag, and with friends where the others are. */
-    const showRun = (m: Mission, clock: number, gate: number, through: boolean) => {
+    const showRun = (m: Mission, clock: number, gate: number, through: boolean, aloft = 0) => {
       const crew = convoys.others().map((d) => ({ name: nameOf(d.id), passed: d.passed }));
       const place = m.race && convoys.state ? convoys.place() : null;
-      const hud = `${m.id}|${gate}|${Math.floor(clock)}|${through}|${place}|${crew.map((c) => `${c.name}:${c.passed}`).join(",")}`;
+      const air = m.ramp ? aloft : null;
+      const hud = `${m.id}|${gate}|${Math.floor(clock)}|${air?.toFixed(1)}|${through}|${place}|${crew.map((c) => `${c.name}:${c.passed}`).join(",")}`;
       if (hud === shownRun) return;
       shownRun = hud;
-      setRun({ name: m.name, clock, gate, of: m.gates.length, through, crew, place });
+      setRun({ name: m.name, clock, air, gate, of: m.gates.length, through, crew, place });
     };
 
     const frame = (nowMs: number) => {
@@ -1434,6 +1486,7 @@ export function Game() {
           dist: orbit.dist,
         });
         view.photo(car, orbit, dt);
+        drawTags(now);
       } else {
         // A flight: the film places the truck and the plane, and directs the camera.
         const film = m === "flying" ? flyOn(dt) : null;
@@ -1608,7 +1661,7 @@ export function Game() {
         {...canvasDrag}
         className={`block h-full w-full touch-none transition-opacity duration-[1500ms] ${ready ? "opacity-100" : "opacity-0"}`}
       />
-      <div ref={tagsRef} className={`pointer-events-none absolute inset-0 overflow-hidden ${driving ? "" : "hidden"}`} />
+      <div ref={tagsRef} className={`pointer-events-none absolute inset-0 overflow-hidden ${driving || mode === "photo" ? "" : "hidden"}`} />
       {/* Cloud: the colour of the haze, over everything, while a flight changes worlds (ADR 0014). The loop sets both. */}
       <div ref={cloudRef} className="pointer-events-none absolute inset-0 opacity-0" />
       {/* Black from the first paint when there may be a tent to wait for; the effect lifts it. */}
@@ -1715,13 +1768,18 @@ export function Game() {
 
       {run && driving && (
         <div className="pointer-events-none absolute inset-x-4 top-11 text-center text-sm text-[rgba(255,246,232,0.9)] drop-shadow">
-          <span className="font-semibold">{run.name}</span> · {fmtTime(run.clock)} · {run.through ? "through" : `${Math.min(run.gate + 1, run.of)}/${run.of}`}
+          <span className="font-semibold">{run.name}</span> · {run.air === null ? fmtTime(run.clock) : `${fmtAir(run.air)} in the air`} · {run.through ? "through" : `${Math.min(run.gate + 1, run.of)}/${run.of}`}
           {run.place !== null && <span className="font-semibold"> · {ordinal(run.place)}</span>}
-          {run.crew.map((c, i) => (
+          {/* Up to three others by name; a bigger crew as a count, which is what fits. */}
+          {run.crew.length <= 3 ? run.crew.map((c, i) => (
             <span key={i} className="text-[rgba(255,246,232,0.7)]">
               {" "}· {c.name} {c.passed >= run.of ? "through" : `${Math.min(c.passed + 1, run.of)}/${run.of}`}
             </span>
-          ))}
+          )) : (
+            <span className="text-[rgba(255,246,232,0.7)]">
+              {" "}· {run.crew.filter((c) => c.passed >= run.of).length} of {run.crew.length} others through
+            </span>
+          )}
           <span className="ml-2 hidden text-xs text-[rgba(255,246,232,0.5)] sm:inline">{run.crew.length || run.through ? "Esc to leave" : "Esc to give up"}</span>
         </div>
       )}

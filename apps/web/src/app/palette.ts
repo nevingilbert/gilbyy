@@ -89,6 +89,9 @@ export const PALETTE = {
   rim: "#d8d0c4",
   /** Snow chains: worn steel, light enough to read against the tyre at a distance. */
   chains: "#a8a196",
+  /** Cartier chains: yellow gold, and the cold white of the stones set in it. */
+  chainGold: "#f0b92c",
+  chainStone: "#eef9ff",
   headlight: "#fff2d6",
   luggage: ["#3f6d8c", "#6b8f3a", "#d9a441"],
 

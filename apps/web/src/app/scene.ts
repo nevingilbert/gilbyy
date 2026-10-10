@@ -15,6 +15,8 @@ import { LOOK_UP, cameraAt, easeOrbit, orbitFrom, type Orbit } from "./photo";
 import type { Car, CarSpec } from "./physics";
 import { buildPlane } from "./plane-model";
 import { buildRailway } from "./railway";
+import { rampPoint } from "./ramp";
+import { buildRamp } from "./ramp-model";
 import { createRemotes } from "./remote";
 import { buildBushes, buildClouds, buildRocks, buildTrees } from "./scenery";
 import type { Loadout } from "./shop";
@@ -166,6 +168,13 @@ function placeMissions(world: World, glow: THREE.Material) {
       const [fx, fz] = [end.x + Math.sin(end.heading) * 6, end.z + Math.cos(end.heading) * 6];
       const finish = buildFinishArch(glow, across(world, fx, fz, end.heading));
       place(finish.object, finish.colliders, fx, fz, end.heading);
+    }
+    const ramp = m.ramp;
+    if (ramp) {
+      // Built from the ground the physics drives on, the deck included; its fence and the boards under its lip are the world's (world.ts).
+      const y = world.height(ramp.x, ramp.z);
+      const surface = (u: number, w: number) => world.height(rampPoint(ramp, u, w).x, rampPoint(ramp, u, w).z) - y;
+      place(buildRamp(surface), [], ramp.x, ramp.z, ramp.heading, y);
     }
     return { gates, loops, last };
   });
@@ -494,10 +503,10 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     renderer.render(scene, camera);
   }
 
-  /** The picture as it is now, as a PNG. Drawn again and read straight back, before the browser clears the canvas. */
+  /** Draws the picture as it is now and hands back the canvas, to be read at once, before the browser clears it. */
   function snap() {
     renderer.render(scene, camera);
-    return canvas.toDataURL("image/png");
+    return canvas;
   }
 
   /** Swaps the rig (a new body) or just refits it. */

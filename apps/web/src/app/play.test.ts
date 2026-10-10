@@ -187,6 +187,23 @@ describe("missions", () => {
     expect(end && "seconds" in end && end.seconds).toBeCloseTo(2.1);
   });
 
+  it("keeps the longest the truck was off the ground in one go, once the run is on", () => {
+    const run = startRun(course);
+    const here = { x: 0, z: -10 };
+    // In the air during the countdown doesn't count.
+    tick(run, COUNTDOWN - 0.1, here, here, false);
+    expect(run.air).toBe(0);
+    tick(run, 0.2, here, here);
+    for (let i = 0; i < 5; i++) tick(run, 0.1, here, here, false);
+    tick(run, 0.1, here, here);
+    for (let i = 0; i < 12; i++) tick(run, 0.1, here, here, false);
+    tick(run, 0.1, here, here);
+    for (let i = 0; i < 3; i++) tick(run, 0.1, here, here, false);
+    expect(run.air).toBeCloseTo(1.2);
+    tick(run, 1, { x: 0, z: -1 }, { x: 0, z: 1 });
+    expect(tick(run, 1, { x: 0, z: 19 }, { x: 0, z: 21 })).toMatchObject({ kind: "finish", air: run.air });
+  });
+
   it("gives up when you wander off", () => {
     const run = startRun(course);
     run.clock = 1;

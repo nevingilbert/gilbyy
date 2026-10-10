@@ -126,6 +126,7 @@ export function buildShowroom() {
     const r = 4.6 + (car ? vehicleById(car.vehicle).length : 4.5) * 0.85;
     camera.position.set(Math.sin(angle) * r, 3.2, Math.cos(angle) * r);
     camera.lookAt(0, 0.9, 0);
+    car?.glint(dt);
     renderer.render(scene, camera);
   }
 

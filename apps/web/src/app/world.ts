@@ -1,8 +1,9 @@
 import { FIELD_CLEAR, FIELD_REACH, fieldDist, inFunnel, levelField, raiseBank, screenTrees, valleyAirfield, type Airport } from "./airport";
 import { planeObstacles } from "./flight";
 import { LANDMARK_BLEND, LANDMARK_CLEAR, LANDMARK_FLAT, chooseLandmarks, type Landmark } from "./landmarks";
-import { planMissions, type Mission } from "./missions";
+import { courseDistOf, planMissions, planMore, type Mission } from "./missions";
 import { makeRandom } from "./noise";
+import { PAD, rampLift, rampObstacles, rampPad } from "./ramp";
 import { buildTerrain, CAFE, CAMP, CELL, START, campPitches, level, sampleGrid, WORLD, type Pitch, type Terrain, type WorldId } from "./terrain";
 import { bridgeObstacles } from "./track";
 
@@ -23,8 +24,12 @@ export type { Airport } from "./airport";
  * ground the renderer draws. Units are metres; y is up.
  */
 
-/** Something the truck can hit. `h` is how far its top stands above the ground. */
-export type Obstacle = { x: number; z: number; r: number; h: number };
+/**
+ * Something the truck can hit. `h` is how far its top stands above the ground. With `top`,
+ * the height of that top, a truck whose wheels are above it passes over: for the few
+ * things a truck can be above, like the boards under a ramp's lip.
+ */
+export type Obstacle = { x: number; z: number; r: number; h: number; top?: number };
 /** Pines and broadleaves grow in the valley; palms and the jungle's canopy trees on the island. */
 export type TreeKind = "pine" | "broadleaf" | "palm" | "canopy";
 export type Tree = { x: number; y: number; z: number; scale: number; rot: number; kind: TreeKind; tone: number };
@@ -100,8 +105,20 @@ export function buildWorld(seed = 20261006): World {
   const rand = makeRandom(seed + 20);
   const terrain = buildTerrain(seed, rand);
   const { heights, forest, trackDist, riverDist, roadDist, siteDist, campDist } = terrain;
-  const { missions, courseDist } = planMissions(terrain);
+  // The thirteen courses that were here first; then the easter eggs and the airstrip,
+  // chosen from those alone, as they always were; and only then the newer courses, laid
+  // out round all of it. So adding a course moves nothing a player has already found.
+  const first = planMissions(terrain);
+  const landmarks = chooseLandmarks(terrain, first, seed);
+  const airport = valleyAirfield(terrain, courseDistOf(first, 20), [...terrain.sites, ...landmarks]);
+  if (!airport) throw new Error("Nowhere over the river for an airstrip.");
+  const missions = [...first, ...planMore(terrain, first, landmarks, airport)];
+  // Keep every course clear of trees and rocks along its driving line, and where a crew lines up for it.
+  const courseDist = courseDistOf(missions, 20, true);
   const ground = (x: number, z: number) => sampleGrid(heights, x, z);
+  // A ramp stands on a levelled pad, at the height of the ground where the wheels roll on.
+  const ramps = missions.flatMap((m) => (m.ramp ? [m.ramp] : []));
+  for (const r of ramps) level(heights, rampPad(r), ground(r.x, r.z), PAD.flat, PAD.blend);
   const waterAt = (x: number, z: number) => sampleGrid(terrain.water, x, z);
   const field = (f: Float32Array, x: number, z: number) => sampleGrid(f, x, z);
   const slope = (x: number, z: number) => {
@@ -183,9 +200,8 @@ export function buildWorld(seed = 20261006): World {
     [trees, bushes, rocks] = [settle(trees), settle(bushes), settle(rocks)];
   };
 
-  // The easter-egg buildings go in last, so the scatter above is what it always was: each
-  // gets a levelled yard, and whatever stood there is cleared or settled onto the new ground.
-  const landmarks = chooseLandmarks(terrain, missions, seed);
+  // The easter-egg buildings go in after the scatter: each gets a levelled yard, and
+  // whatever stood there is cleared or settled onto the new ground.
   const toLandmark = (x: number, z: number) => landmarks.reduce((d, l) => Math.min(d, Math.hypot(l.x - x, l.z - z)), Infinity);
   reshape(
     // A levelled vertex moves the ground up to a cell beyond the blend.
@@ -196,8 +212,6 @@ export function buildWorld(seed = 20261006): World {
 
   // And after those, the airstrip over the river (ADR 0014): levelled, banked round, and
   // screened with pines, with the way in beyond its far end kept clear of trees.
-  const airport = valleyAirfield(terrain, courseDist, [...terrain.sites, ...landmarks]);
-  if (!airport) throw new Error("Nowhere over the river for an airstrip.");
   reshape(
     (x, z) => fieldDist(airport, x, z) < FIELD_REACH + 2 * CELL,
     () => {
@@ -225,12 +239,15 @@ export function buildWorld(seed = 20261006): World {
   for (const o of bridgeObstacles(terrain.track, ground)) solid.add(o);
   // The plane on its stand.
   for (const o of planeObstacles(airport)) solid.add(o);
+  // A ramp's fence and the boards under its lip.
+  for (const r of ramps) for (const o of rampObstacles(r, ground)) solid.add(o);
 
   return {
     ...terrain, id: "valley", cafe: CAFE, trees, bushes, rocks, missions, landmarks, courseDist, airport,
     start: START, pitches: campPitches(), camp: { x: CAMP.x, z: CAMP.z, heading: 0 },
     sea: false, mapSpan: WORLD.limit * 2.1,
-    height: ground, waterAt, obstaclesNear: solid.near, limit: WORLD.limit,
+    // A ramp isn't in the grid: its deck is laid over the ground for whoever asks.
+    height: ramps.length ? (x, z) => ground(x, z) + rampLift(ramps, x, z) : ground, waterAt, obstaclesNear: solid.near, limit: WORLD.limit,
     slipAt: (x, z) => Math.min(1, field(terrain.snow, x, z)) + field(terrain.ice, x, z),
     addObstacles: (list) => list.forEach(solid.add),
   };

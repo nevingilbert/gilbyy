@@ -2,7 +2,8 @@
 
 Date: 2026-10-07
 Status: Accepted. Adds to `0007`; changes nothing in it. Amended by `0011`: at the
-owner's request there is now a race too, built on the same agreement.
+owner's request there is now a race too, built on the same agreement. Amended by `0019`:
+a convoy is two to ten friends, not two to four, and there are several of them.
 
 ## Context
 

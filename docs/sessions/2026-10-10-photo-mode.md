@@ -91,6 +91,29 @@ only, no migration). First thing next session: try it on a real phone at gilbyy.
 share sheet's Save Image. If iOS doesn't offer the sheet, the fallback is in
 `keepPicture` in `apps/web/src/app/Game.tsx`.
 
+## Follow-up: everyone's names in the picture
+
+The owner then asked to "make sure everyone's names persist in the photo". Before
+this, photo mode hid the name tags (the tags layer showed only while driving) and the
+picture was the WebGL canvas alone, so names were in neither.
+
+- `drawTags` now runs in photo mode too (called after `view.photo()` in the frame
+  loop) and the tags layer shows in `"photo"` as well as while driving. In photo mode it
+  shows names only, no chat bubbles, and adds the player's own name over their truck
+  when they have one (`store.get().name`; single player has none).
+- `view.snap()` now renders and returns the canvas; `picture()` in `Game.tsx` copies it
+  to a 2D canvas and draws each visible tag's name at its on-screen box
+  (`getBoundingClientRect`), scaled by the canvas's pixel ratio, in the tag's computed
+  font, letter spacing, colour and `filter` (its drop shadow), at the tag's opacity.
+  `keepPicture` gets that canvas's PNG.
+- Verified with three `?net=local` tabs (Juniper photographing Maple and Rowan): all
+  three names on screen and in the saved PNG, where they were on screen. Single player:
+  photo mode and the picture as before, no tags. `pnpm typecheck`, `pnpm lint`,
+  `pnpm test` (246) pass. Restarted the branch from `main` (b27baeb) first, as pull
+  request 14 was merged. The owner asked for this to be merged too: pull request 18.
+- Not tried: Safari before 18 ignores a canvas `filter`, so its names would come out
+  without the drop shadow (still drawn).
+
 ## Tokens advisory
 
 Natural break: built, tested and screenshotted; no token limit was hit.

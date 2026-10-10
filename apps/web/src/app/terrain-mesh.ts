@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { makeNoise2D, smoothstep } from "./noise";
 import { PALETTE } from "./palette";
+import { rampLift } from "./ramp";
 import { CELL, ROW, WORLD, gridX, gridZ, sampleGrid, type World } from "./world";
 
 const colour = (hex: string) => new THREE.Color(hex);
@@ -282,6 +283,7 @@ export function buildGrass(world: World, surface: SurfaceAt) {
   const c = new THREE.Color();
   let cx = Infinity;
   let cz = Infinity;
+  const ramps = world.missions.flatMap((mission) => (mission.ramp ? [mission.ramp] : []));
 
   function relay(x: number, z: number) {
     cx = x;
@@ -296,6 +298,8 @@ export function buildGrass(world: World, surface: SurfaceAt) {
         const tz = (gz + hash(gx, gz, 2)) * SPACING;
         const d = Math.hypot(tx - x, tz - z);
         if (d > RADIUS) continue;
+        // Nothing grows through a ramp's boards.
+        if (ramps.length && rampLift(ramps, tx, tz) > 0) continue;
         const y = world.height(tx, tz);
         const ny = 2 / Math.hypot(world.height(tx + 1, tz) - world.height(tx - 1, tz), 2, world.height(tx, tz + 1) - world.height(tx, tz - 1));
         const [kind, tone] = surface(tx, y, tz, ny);

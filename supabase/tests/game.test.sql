@@ -75,20 +75,25 @@ $$;
 select pg_temp.check((select count(*) from public.profiles where id::text like '00000000-0000-0000-0000-00000000000_') = 3, 'every new account gets a profile');
 
 -- Miles: banked no faster than a truck could have driven them.
-update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%a';
+update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%00000000000a';
 select pg_temp.as_player('a');
 set role authenticated;
 select pg_temp.check((select lifetime from public.add_miles(1)) = 1, 'miles bank when the time allows');
-select pg_temp.check((select lifetime from public.add_miles(10)) = 1, 'miles do not bank faster than driving');
-update public.profiles set balance = 9999;
+select pg_temp.refused($$ select public.add_miles(10) $$, 'one breath', 'banking twice in a breath is refused');
 reset role;
-select pg_temp.check((select balance from public.profiles where id::text like '%a') = 1, 'players cannot write their own balance');
-select pg_temp.check((select count(*) = 2 and sum(asked) = 11 and sum(paid) = 1 from private.drive_log where user_id::text like '%a'),
-  'every bank is logged with what was claimed and what was paid');
-update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%a';
+update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%00000000000a';
 select pg_temp.as_player('a');
 set role authenticated;
-select pg_temp.check((select lifetime from public.add_miles(null)) = 1, 'claiming nothing banks nothing');
+select pg_temp.check((select lifetime from public.add_miles(10)) = 3, 'miles do not bank faster than driving');
+update public.profiles set balance = 9999;
+reset role;
+select pg_temp.check((select balance from public.profiles where id::text like '%00000000000a') = 3, 'players cannot write their own balance');
+select pg_temp.check((select count(*) = 2 and sum(asked) = 11 and sum(paid) = 3 from private.drive_log where user_id::text like '%00000000000a'),
+  'every bank is logged with what was claimed and what was paid, and a refused one not at all');
+update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%00000000000a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select lifetime from public.add_miles(null)) = 3, 'claiming nothing banks nothing');
 reset role;
 
 -- Shop.
@@ -97,7 +102,7 @@ set role authenticated;
 select pg_temp.fails($$ select public.buy('tyres:mud') $$, 'cannot buy without the miles');
 select pg_temp.fails($$ select public.buy('tyres:gold') $$, 'cannot buy what the shop does not sell');
 reset role;
-update public.profiles set balance = 250 where id::text like '%a';
+update public.profiles set balance = 250 where id::text like '%00000000000a';
 select pg_temp.as_player('a');
 set role authenticated;
 select pg_temp.check((select balance from public.buy('vehicle:summit')) = 50, 'buying takes the price');
@@ -119,7 +124,7 @@ select pg_temp.refused($$ select public.complete_mission('forest-slalom', 60) $$
 select public.add_miles(0.1);
 select pg_temp.refused($$ select public.complete_mission('forest-slalom', 60) $$, 'drive the whole course', 'nor one that banked too few');
 reset role;
-update public.profiles set last_drive_at = now() - interval '1 minute' where id::text like '%a';
+update public.profiles set last_drive_at = now() - interval '1 minute' where id::text like '%00000000000a';
 select pg_temp.as_player('a');
 set role authenticated;
 select public.add_miles(1);
@@ -133,6 +138,7 @@ set role authenticated;
 select pg_temp.refused($$ select public.complete_mission('ridge-run', 60) $$, 'drive the whole course', 'miles banked before the last run do not count again');
 select public.add_miles(1);
 select pg_temp.check(pg_temp.pays($$ select public.complete_mission('forest-slalom', 60) $$) = 4, 'later finishes pay the repeat reward');
+select pg_temp.refused($$ select public.complete_mission('jungle-loop', 200) $$, 'another world', 'an island course cannot be claimed from the valley');
 
 -- Names and goals.
 select pg_temp.check((select name from public.set_name('  Nevin  ')) = 'Nevin', 'names are trimmed and saved');
@@ -171,15 +177,29 @@ select pg_temp.fails($$ select public.complete_convoy('forest-slalom', 120, '{00
 select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{}') $$, 'a convoy needs someone else in it');
 select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000a}') $$, 'you are not your own convoy');
 select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000c}') $$, 'a convoy of strangers pays nothing');
-select pg_temp.fails($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c,00000000-0000-0000-0000-00000000000d,00000000-0000-0000-0000-00000000000e}') $$, 'a convoy is four drivers at most');
+select pg_temp.refused($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c,00000000-0000-0000-0000-00000000000d,00000000-0000-0000-0000-00000000000e,00000000-0000-0000-0000-000000000011,00000000-0000-0000-0000-000000000012,00000000-0000-0000-0000-000000000013,00000000-0000-0000-0000-000000000014,00000000-0000-0000-0000-000000000015,00000000-0000-0000-0000-000000000016}') $$,
+  'two to ten drivers', 'a convoy is ten drivers at most');
 select pg_temp.fails($$ select public.complete_convoy('convoy', 10, '{00000000-0000-0000-0000-00000000000b}') $$, 'impossibly fast convoys pay nothing');
 reset role;
 select pg_temp.rewind('a');
 select pg_temp.as_player('a');
 set role authenticated;
 select public.add_miles(2);
-select pg_temp.check(pg_temp.pays($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c}') $$) = 30,
-  'a convoy with a friend in it pays the full reward');
+select pg_temp.refused($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b}') $$, 'drivers who drove', 'a convoy whose crew never drove pays nothing');
+reset role;
+-- The friend drove the course too; the third who set off went quiet early, and doesn't
+-- block the ones who drove.
+update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%00000000000b';
+select pg_temp.as_player('b');
+set role authenticated;
+select public.add_miles(2);
+reset role;
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check(pg_temp.pays($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c,00000000-0000-0000-0000-00000000000d,00000000-0000-0000-0000-00000000000e,00000000-0000-0000-0000-000000000011,00000000-0000-0000-0000-000000000012,00000000-0000-0000-0000-000000000013,00000000-0000-0000-0000-000000000014,00000000-0000-0000-0000-000000000015}') $$) = 30,
+  'a convoy of ten with a friend in it pays the full reward');
+select pg_temp.check((select cardinality(crew) = 9 and crew @> '{00000000-0000-0000-0000-00000000000b}'
+  from public.mission_runs where user_id::text like '%00000000000a' and mission = 'convoy'), 'and the claim keeps who it set off with');
 select pg_temp.refused($$ select public.complete_convoy('convoy', 120, '{00000000-0000-0000-0000-00000000000b}') $$, 'come back later', 'convoys wait for the cooldown too');
 select pg_temp.fails($$ select public.complete_mission('race', 200) $$, 'a race cannot be claimed as a solo run');
 select pg_temp.fails($$ select public.complete_convoy('race', 200, '{00000000-0000-0000-0000-00000000000c}') $$, 'a race against strangers pays nothing');
@@ -221,7 +241,7 @@ select pg_temp.check((select goals = '{found-garage}' from public.leaderboard() 
 select pg_temp.check((select goals = '{}' from public.leaderboard() where not is_me), 'and your friend''s');
 update public.profiles set discovered = '{garage:workshop,garage:barn,garage:quonset}';
 reset role;
-select pg_temp.check((select cardinality(discovered) from public.profiles where id::text like '%a') = 2, 'players cannot write what they have found');
+select pg_temp.check((select cardinality(discovered) from public.profiles where id::text like '%00000000000a') = 2, 'players cannot write what they have found');
 
 -- Places are counted world by world, and an airstrip and an easter egg are places too (ADR 0016).
 select pg_temp.as_player('a');
@@ -238,7 +258,11 @@ select pg_temp.check((select garages = 0 and cafes = 0 and airports = 0 and eggs
 select pg_temp.check((select count(*) from public.leaderboard('island')) = 2, 'and is still you and your friends only');
 select pg_temp.check((select balance from public.profiles where id = (select auth.uid())) = (select balance from public.discover('egg:church')), 'finding pays nothing');
 reset role;
-select pg_temp.check((select count(*) from public.missions where id in ('beach-run', 'dune-dash', 'jungle-loop')) = 3, 'the island has its three courses');
+select pg_temp.check((select count(*) from public.missions where id in ('beach-run', 'dune-dash', 'jungle-loop') and world = 'island') = 3, 'the island has its first three courses');
+select pg_temp.check((select count(*) filter (where crew = 1) = 10 and count(*) filter (where crew > 1) = 10 from public.missions where world = 'valley'),
+  'the valley has ten courses to drive alone and ten for friends');
+select pg_temp.check((select count(*) filter (where crew = 1) = 4 and count(*) filter (where crew > 1) = 4 from public.missions where world = 'island'),
+  'and the island four of each');
 
 -- The map's fog: cells are only ever added, each player has their own, and nobody reads the table.
 select pg_temp.as_player('a');
@@ -265,11 +289,12 @@ reset role;
 select pg_temp.as_player('a');
 set role authenticated;
 select pg_temp.check((select world from public.me()) = 'valley', 'everyone starts in the valley');
+select pg_temp.refused($$ select public.complete_convoy('coast-convoy', 200, '{00000000-0000-0000-0000-00000000000b}') $$, 'in another world', 'an island convoy cannot be claimed from the valley either');
 select pg_temp.refused($$ select public.fly('island') $$, 'not enough miles', 'cannot fly without the fare');
 select pg_temp.refused($$ select public.fly('moon') $$, 'no such world', 'cannot fly somewhere that is not there');
 select pg_temp.refused($$ select public.fly(null) $$, 'no such world', 'nor to nowhere');
 reset role;
-update public.profiles set balance = 340 where id::text like '%a';
+update public.profiles set balance = 340 where id::text like '%00000000000a';
 select pg_temp.as_player('a');
 set role authenticated;
 select pg_temp.refused($$ select public.buy('vehicle:sandfly') $$, 'only sold in island', 'the Sandfly is not sold in the valley');
@@ -280,10 +305,17 @@ select pg_temp.check((select balance from public.buy('vehicle:sandfly')) = 40, '
 select pg_temp.refused($$ select public.fly('valley') $$, 'not enough miles', 'the way home costs the same');
 select pg_temp.check((select vehicle from public.equip('sandfly', '{"paint":"factory","tyres":"road","lights":"stock","snorkel":"none","winter":"none"}')) = 'sandfly', 'and can be driven once bought');
 select pg_temp.check((select balance from public.buy('tyres:allTerrain')) = 38, 'everything else is sold there too');
+select pg_temp.refused($$ select public.complete_mission('forest-slalom', 60) $$, 'another world', 'a valley course cannot be claimed from the island');
+reset role;
+select pg_temp.rewind('a');
+select pg_temp.as_player('a');
+set role authenticated;
+select public.add_miles(1);
+select pg_temp.check(pg_temp.pays($$ select public.complete_mission('beach-run', 60) $$) = 15, 'the island pays its own courses');
 update public.profiles set world = 'valley';
 reset role;
-select pg_temp.check((select world from public.profiles where id::text like '%a') = 'island', 'players cannot write where they are');
-select pg_temp.check((select count(*) = 1 and min(origin) = 'valley' and min(destination) = 'island' and sum(fare) = 150 from private.flight_log where user_id::text like '%a'),
+select pg_temp.check((select world from public.profiles where id::text like '%00000000000a') = 'island', 'players cannot write where they are');
+select pg_temp.check((select count(*) = 1 and min(origin) = 'valley' and min(destination) = 'island' and sum(fare) = 150 from private.flight_log where user_id::text like '%00000000000a'),
   'every flight is logged');
 
 -- The fog is kept for each world.
@@ -358,7 +390,7 @@ select pg_temp.check(not has_function_privilege('anon', 'public.is_in_world(text
 select pg_temp.check(not has_function_privilege('authenticated', 'public.handle_new_user()', 'execute'), 'the new-account trigger cannot be called directly');
 select pg_temp.check(not has_schema_privilege('anon', 'private', 'usage') and not has_schema_privilege('authenticated', 'private', 'usage'),
   'nobody can read the drive log, the flight log or the hourly totals from the game');
-select pg_temp.check((select sum(miles) from private.miles_hourly where user_id::text like '%a') = (select lifetime from public.profiles where id::text like '%a'),
+select pg_temp.check((select sum(miles) from private.miles_hourly where user_id::text like '%00000000000a') = (select lifetime from public.profiles where id::text like '%00000000000a'),
   'the hourly totals add up to the lifetime miles');
 
 select 'all checks passed' as result;
