@@ -110,7 +110,7 @@ picture was the WebGL canvas alone, so names were in neither.
   three names on screen and in the saved PNG, where they were on screen. Single player:
   photo mode and the picture as before, no tags. `pnpm typecheck`, `pnpm lint`,
   `pnpm test` (246) pass. Restarted the branch from `main` (b27baeb) first, as pull
-  request 14 was merged.
+  request 14 was merged. The owner asked for this to be merged too: pull request 18.
 - Not tried: Safari before 18 ignores a canvas `filter`, so its names would come out
   without the drop shadow (still drawn).
 
