@@ -74,10 +74,13 @@ island three to drive alone and none for friends.
   Sandfly does 24.5: flat out along Beach Run it finished in 45 s against a limit of 46
   and was refused as too fast to be true. Every course's `min_seconds` comes down a
   little. The cooldown and the miles check are what limit a cheat, not this.
-- **A course is in one world, and is paid only to a player who is there**
-  (`missions.world`, checked in `pay_run()`). Before this a client in the valley could
-  claim the island's courses without paying the fare. It follows the rule already in
-  `CLAUDE.md`: the client doesn't say which world it's in.
+- **Each new course is in one world, and is paid only to a player who is there.** That
+  rule (`missions.world`, checked in `pay_run()`) arrived the same day, with the
+  honest-crews change (`0018-honest-crews.md`), which also has `pay_run()` check that a
+  crew drove. This migration builds on that one: it adds the new rows with their worlds
+  and replaces only `complete_convoy()`, for the bigger crew. A crew of ten is paid on
+  the same terms as a crew of two: one of the named drivers must have banked the
+  course's miles.
 
 ## Consequences
 

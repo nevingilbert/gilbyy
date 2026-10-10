@@ -9,14 +9,11 @@
 -- 23 m/s round a course, and the island's own Sandfly does 24.5: flat out along the
 -- beach it was being refused as too fast to be true. It is 27 m/s now.
 --
--- A course is in one world, like a place or a thing sold in one world only, and is paid
--- only to a player who is there. Before this a client in the valley could claim the
--- island's courses without ever paying the fare.
+-- Builds on 20261010080000_honest_crews.sql, which gave each course its world and has
+-- pay_run() refuse one claimed from another, and check that a crew drove.
 --
 -- Rewards and limits must match apps/web/src/app/missions.ts and island.ts; shop.test.ts
--- checks, the world included.
-
-alter table public.missions add column world text not null default 'valley' references public.worlds;
+-- checks, the world and the size of a crew included.
 
 insert into public.missions (id, reward, repeat_reward, cooldown_seconds, min_seconds, crew, min_miles, world) values
   ('forest-slalom', 12, 4, 600, 15, 1, 0.15, 'valley'),
@@ -51,47 +48,9 @@ on conflict (id) do update set reward = excluded.reward, repeat_reward = exclude
   cooldown_seconds = excluded.cooldown_seconds, min_seconds = excluded.min_seconds, crew = excluded.crew,
   min_miles = excluded.min_miles, world = excluded.world;
 
--- Pays a finished run of `m`, if it holds up. As in 20261010000000_courses_pay.sql, with
--- one more thing refused: a course in a world the player isn't in.
-create or replace function private.pay_run(p public.profiles, m public.missions, p_seconds numeric) returns public.profiles
-language plpgsql security definer set search_path = '' as $$
-declare
-  last_run timestamptz;
-  last_any timestamptz;
-  banked numeric;
-  payout numeric;
-begin
-  if m.world <> p.world then raise exception 'that course is in another world'; end if;
-  if p_seconds is null or p_seconds = 'NaN' or p_seconds < m.min_seconds or p_seconds > 86400 then
-    raise exception 'too fast to be true';
-  end if;
-  select max(finished_at) into last_run from public.mission_runs where user_id = p.id and mission = m.id;
-  if last_run is not null and last_run > now() - make_interval(secs => m.cooldown_seconds) then
-    raise exception 'come back later';
-  end if;
-  -- One course at a time: no other run can have finished while this one was on.
-  select max(finished_at) into last_any from public.mission_runs where user_id = p.id;
-  if last_any is not null and last_any > now() - make_interval(secs => p_seconds) then
-    raise exception 'one course at a time';
-  end if;
-  -- The miles banked while the run was on. The client banks every 15 s and once more just
-  -- before it claims. It looks back twice the run's time: on a struggling device the game
-  -- clock runs slower than the wall's. A convoy is claimed when the last friend is home,
-  -- which can be a while after this driver finished, so a crew run looks further still.
-  -- Miles banked before the last paid run never count twice.
-  select coalesce(sum(paid), 0) into banked from private.drive_log
-    where user_id = p.id
-      and at > greatest(last_any, now() - make_interval(secs => p_seconds * 2 + case when m.crew > 1 then 600 else 30 end));
-  if banked < m.min_miles then raise exception 'drive the whole course to be paid'; end if;
-  payout := case when last_run is null then m.reward else m.repeat_reward end;
-  insert into public.mission_runs (user_id, mission, seconds, reward) values (p.id, m.id, p_seconds, payout);
-  update public.profiles set lifetime = lifetime + payout, balance = balance + payout where id = p.id returning * into p;
-  return p;
-end;
-$$;
-
--- Convoys and races, for two to ten now. Each driver claims their own, naming the others
--- who set off; at least one of them has to be a friend.
+-- Convoys and races, for two to ten now. As before, each driver claims their own, naming
+-- the others who set off; at least one of them has to be a friend, and the crew goes to
+-- pay_run to be checked and kept.
 create or replace function public.complete_convoy(p_mission text, p_seconds numeric, p_crew uuid[]) returns public.profiles
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -113,6 +72,6 @@ begin
   ) then
     raise exception 'a convoy needs a friend in it';
   end if;
-  return private.pay_run(p, m, p_seconds);
+  return private.pay_run(p, m, p_seconds, others);
 end;
 $$;

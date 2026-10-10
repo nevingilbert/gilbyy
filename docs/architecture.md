@@ -221,11 +221,13 @@ for sign-in (Google only), and Realtime for the shared valley. See
   `missions.min_miles`. Both `complete_mission()` and `complete_convoy()` now pay
   through `private.pay_run()`, which also refuses a run that overlaps the last one or
   banked less than `min_miles` since it (ADR 0017).
-- `20261010120000_more_courses.sql` adds twelve courses and `missions.world`, lowers
-  every course's `min_seconds` (27 m/s, not 23, which the Sandfly beat), has `pay_run()`
-  refuse a course in a world the player isn't in, and lets `complete_convoy()` take up
-  to nine others (ADR 0019). **Not applied to the live project yet**, and its checks in
-  `game.test.sql` have not been run against any database.
+- `20261010080000_honest_crews.sql` gives each course its world (`missions.world`) and
+  has `pay_run()` refuse a claim from another, pays a convoy only if enough of the crew
+  it names banked the course's miles (kept in `mission_runs.crew`), and has `add_miles()`
+  refuse a second bank within two seconds (`decisions/0018-honest-crews.md`).
+- `20261010120000_more_courses.sql` builds on that: twelve more courses, every course's
+  `min_seconds` lowered (27 m/s, not 23, which the Sandfly beat), and
+  `complete_convoy()` taking up to nine others (ADR 0019).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
