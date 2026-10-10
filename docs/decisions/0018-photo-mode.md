@@ -26,7 +26,7 @@ don't" list. Photo mode is only a camera.
 - **The world stops, for this browser only.** The sun, the train, the animals, the
   grass, the water and the other players' trucks stand where they were; the truck too,
   mid-air if that's where it was, and it carries on as it was when photo mode is put
-  away. Single player the clock stops as it does on the map. Signed in, the shared clock
+  away. Single player the clock stops as it does in a garage. Signed in, the shared clock
   keeps going, so the sun and the train catch up on the way out. The others see the
   truck stopped where it is (its pose is sent once with no speed), not guessed on down
   the road.
