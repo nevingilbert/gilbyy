@@ -256,6 +256,8 @@ function collide(car: Car, ground: Ground, spec: CarSpec) {
     const cz = car.z + fz * offset * end;
     for (const o of ground.obstaclesNear(cx, cz)) {
       if (o.h <= spec.clearance) continue;
+      // Over the top of it: on a ramp's deck, or in the air off its lip.
+      if (o.top !== undefined && car.y - spec.ride > o.top) continue;
       const dx = cx - o.x;
       const dz = cz - o.z;
       const d = Math.hypot(dx, dz);

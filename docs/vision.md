@@ -34,10 +34,11 @@ HUD that is nearly absent.
 - Eight garages in different styles, each a shop. The miles you drive are what you spend
   there, on rigs, paint, tyres, lights, a snorkel and snow chains. Bigger tyres climb
   rocks, the snorkel crosses the rivers, and studded tyres or chains grip the snow.
-- Four challenge courses (a forest slalom, a ridge climb, a lake loop and an ice drift)
-  that pay out miles; a convoy by the café for two to four friends, who drive it
-  together and are paid when everyone is home; and a race by the camp, where every
-  finisher is paid the same and the winner gets only the win. None of them is required.
+- Challenge courses that pay out miles, as many for friends as to drive alone: slaloms,
+  climbs, lake loops, an ice drift and a jump off a timber ramp, told for its time in
+  the air; convoys for two to ten friends, who drive together and are paid when
+  everyone is home; and races, where every finisher is paid the same and the winner
+  gets only the win. None of them is required.
 - An airstrip hidden over the river, where 150 miles buys a flight, truck and all, to an
   island: sea all round, a beach, dunes behind it and jungle in the middle, with its
   own camp on the beach and a garage that sells a dune buggy found nowhere else. The

@@ -31,7 +31,14 @@ subdomains." Update the **You are here** marker as you progress.
 > On 2026-10-10, photo mode (`decisions/0018`): P stops the world, the camera goes
 > round the truck, the shutter saves a picture. Client only; merged to `main` as pull
 > request 14 (`sessions/2026-10-10-photo-mode.md`).
-> **Next:** play one convoy and one race signed in from two Google accounts on the live
+> The same night, honest crews (`decisions/0018-honest-crews.md`, pull request 15): a
+> convoy pays only a crew that drove, and a course only in its own world.
+> And on 2026-10-10 (`decisions/0019`, `sessions/2026-10-09-more-courses.md`): twelve
+> more courses, so each world has as many for friends as to drive alone, a jump told
+> for its time in the air, and convoys and races for up to ten. Merged to `main` as pull
+> request 16; its migration, `20261010120000_more_courses.sql`, is on the live project.
+> **Next:**
+> play one convoy and one race signed in from two Google accounts on the live
 > site; neither has been played over Supabase yet, only over `?net=local`. Still open:
 > the frame rate on a real phone and laptop. Sign-in is Google only (the email link was
 > removed), and an idle tab now gives its tent back.

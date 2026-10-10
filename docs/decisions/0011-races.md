@@ -2,7 +2,8 @@
 
 Date: 2026-10-07
 Status: Accepted. Amends `0010`, which built the convoy and left races out, and the
-"don't add pressure" line in `CLAUDE.md`.
+"don't add pressure" line in `CLAUDE.md`. Amended by `0019`: a race is two to ten
+drivers, not two to four, and a result names the first three and you.
 
 ## Context
 

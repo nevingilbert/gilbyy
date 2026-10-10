@@ -73,8 +73,17 @@ Pure modules, no three.js, all unit-tested:
 - `missions.ts`: lays out the challenge courses on the real terrain at load (a forest
   slalom, a ridge climb, a lake loop, an ice drift, the convoy loop by the café and the
   race loop by the camp; the last two come from one loop planner, `loopNear()`).
-  `mission-run.ts`: the countdown, gates and finish of a run.
-- `convoy.ts`: a convoy or race of two to four friends, agreed among their clients over
+  `planMissions()` lays out the thirteen courses the valley had first; `planMore()` the
+  seven added since, after the easter eggs and the airstrip are chosen, so adding a
+  course moves nothing that was there (`decisions/0019`).
+  `mission-run.ts`: the countdown, gates and finish of a run, and the longest the truck
+  was off the ground in it, which is what the jump is told for.
+- `ramp.ts`: the jump's timber ramp. The height grid's cells are 10 m, too coarse for
+  one, so its deck is a function laid over the ground: `World.height` adds it for the
+  physics, the camera and the grass, and `ramp-model.ts` builds the boards from the same
+  surface. Its fence and the boards under its lip are obstacles; the boards have a
+  `top`, so only a truck on the ground behind is stopped by them.
+- `convoy.ts`: a convoy or race of two to ten friends, agreed among their clients over
   the `world` channel: gathering at the arch, setting off, flag counts, finish times,
   places, and coming home. Every message is safe to hear twice and is repeated until
   answered (`decisions/0010-convoys.md`, `0011-races.md`).
@@ -95,8 +104,9 @@ Pure modules, no three.js, all unit-tested:
     so nothing else in the valley moves), and the bank and screen of pines round it.
   - `island.ts`: `buildIsland()` returns the same `World` shape as the valley's
     `buildWorld()`, on the same grid: sea, beach, dunes and jungle, thirty pitches in a
-    row on the beach, an airstrip and one garage. It has an empty track, no rivers and
-    no courses.
+    row on the beach, an airstrip, three garages and a café. It has an empty track and
+    no rivers. `planCourses()` lays out its eight courses, four of them for friends
+    (`decisions/0016`, `0019`).
   - `flight.ts`: the flight as a film. `departure()` and `arrival()` give one frame for
     a time: the plane's pose, its ramp and wheels, where the truck is, the camera, and
     how much is lost in cloud. Also the plane's measurements, which the model shares,
@@ -211,6 +221,13 @@ for sign-in (Google only), and Realtime for the shared valley. See
   `missions.min_miles`. Both `complete_mission()` and `complete_convoy()` now pay
   through `private.pay_run()`, which also refuses a run that overlaps the last one or
   banked less than `min_miles` since it (ADR 0017).
+- `20261010080000_honest_crews.sql` gives each course its world (`missions.world`) and
+  has `pay_run()` refuse a claim from another, pays a convoy only if enough of the crew
+  it names banked the course's miles (kept in `mission_runs.crew`), and has `add_miles()`
+  refuse a second bank within two seconds (`decisions/0018-honest-crews.md`).
+- `20261010120000_more_courses.sql` builds on that: twelve more courses, every course's
+  `min_seconds` lowered (27 m/s, not 23, which the Sandfly beat), and
+  `complete_convoy()` taking up to nine others (ADR 0019).
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
@@ -345,6 +362,12 @@ that repo's problem, not this one's.
     gathering, a call every 3 s and a reply every 3 s from each joiner; while running,
     each driver's flag count on every flag and every 5 s. A two-minute convoy of two
     with four players in the valley is a few hundred messages, less than their poses.
+    A crew can be ten (ADR 0019), and ten trucks through one flag in the same second
+    would be ten broadcasts to up to thirty players, past the hundred a second. So past
+    four in a crew each truck waits half a second per truck between flag counts
+    (`flagGap`; the finish always goes at once) and repeats every 0.8 s per truck
+    (`countEvery`). A ten-truck convoy in a full world is on the order of ten thousand
+    messages.
   - The first private-channel join on a new or just-restored project can be refused
     with `MissingPartition` while Realtime creates its message partitions;
     `SupabaseNet.open()` tries three times.
