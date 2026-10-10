@@ -41,6 +41,8 @@ unhurried exploration in a classic 4x4.
 - A nearly absent HUD: a compass strip, a small round topo minimap, a speedometer in mph
   and an odometer.
   First-time guidance is one small line under the title and a mark on the compass.
+  A pin the player sets on the map borrows that same mark, round and in the pin's
+  berry while it leads there, so the compass never carries two.
 - Calm. Missions are optional, start only when you drive up and press E, and have no
   failure beyond giving up. Their timer shows only while you're on one. Friends can
   drive a convoy that comes home together (ADR 0010) or race (ADR 0011); a race pays

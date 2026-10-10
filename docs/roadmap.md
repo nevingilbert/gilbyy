@@ -37,6 +37,8 @@ subdomains." Update the **You are here** marker as you progress.
 > more courses, so each world has as many for friends as to drive alone, a jump told
 > for its time in the air, and convoys and races for up to ten. Merged to `main` as pull
 > request 16; its migration, `20261010120000_more_courses.sql`, is on the live project.
+> Also on 2026-10-10, a pin: click the open map and the compass leads there. Client
+> only; merged to `main` as pull request 22 (`sessions/2026-10-10-map-pin.md`).
 > **Next:**
 > play one convoy and one race signed in from two Google accounts on the live
 > site; neither has been played over Supabase yet, only over `?net=local`. Still open:

@@ -250,6 +250,11 @@ describe("single player progress", () => {
     expect(currentGoal([], false)?.id).toBe("garage");
     // The compass mark leads to a garage, then the café, then goes away.
     expect(currentGoal(["garage"], false)?.target).toBe("cafe");
+    // With a pin down the mark is on the pin, so the line doesn't send them after it.
+    expect(currentGoal([], false)?.text).toMatch(/Follow the mark/);
+    expect(currentGoal([], false, true)?.text).toMatch(/Take up your pin/);
+    expect(currentGoal([], false, true)?.target).toBe("garage");
+    expect(currentGoal(["garage"], true, true)?.text).toMatch(/friends/);
     expect(currentGoal(["garage"], false)?.text).not.toMatch(/friends/);
     expect(currentGoal(["garage"], true)?.text).toMatch(/friends/);
     expect(currentGoal(["garage", "cafe"], true)?.target).toBeNull();

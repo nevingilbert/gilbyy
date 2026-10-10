@@ -75,6 +75,10 @@ apps, you are in the wrong repo.
       graze, wander and get out of the way of trucks and the train (ADR 0015).
     - `photo.ts`: photo mode's camera, an orbit round the truck that stays out of the
       ground, and what a picture is called (ADR 0018).
+    - `pin.ts`: the pin a player sets by clicking the open map, for the compass to lead
+      to: where a click lands, when a click takes the pin up again, when you've got there,
+      and what the compass mark follows (a course, then a friend's call, then the pin,
+      then the first-time guidance). Not saved.
   - Online, also unit-tested:
     - `store.ts`: progress, either `LocalStore` (in memory) or `SupabaseStore`
       (database functions).
@@ -96,9 +100,9 @@ apps, you are in the wrong repo.
     - Missions: `mission-models.ts`, and `ramp-model.ts` (the jump, built from the same
       surface the physics drives on).
     - Animals: `animal-models.ts`, one instanced mesh per moving part of each species.
-  - `map.ts`: the 2D map of the world you're in, its fog of war, and the found places
-    that show through it. `fog.ts` (pure, unit-tested) is the grid the fog is saved as
-    (ADR 0013), kept per world.
+  - `map.ts`: the 2D map of the world you're in, its fog of war, the found places
+    that show through it, and the player's pin. `fog.ts` (pure, unit-tested) is the grid
+    the fog is saved as (ADR 0013), kept per world.
   - React: `Game.tsx` (loop, modes, HUD), `GarageMenu.tsx` (the shop), `Panels.tsx`
     (starter picker, banner, sign-in, name, leaderboard).
 - `supabase/`: the migrations (schema, RLS, the functions every write goes through,
@@ -146,7 +150,7 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't add links, menus, or navigation to the other apps. gilbyy.com is a game, not a launcher. The four easter-egg cards (ADR 0012) are the only links out; don't put those buildings on the map or the compass, or pay for finding them. They are counted, as "easter eggs found", once you've looked inside (ADR 0016).
 - Don't let the client write progress directly. Every change to miles, purchases and friendships goes through a checked `security definer` function in `supabase/migrations/`; keep prices and mission payouts in sync with `shop.ts`/`missions.ts`/`island.ts`, and how many can drive a convoy with `CONVOY_MAX` (`shop.test.ts` enforces both). Only the publishable key ever reaches the browser.
 - Don't move what's already in the valley when adding a course. New courses are planned after the older ones, the easter eggs and the airstrip (`planMore()` in `missions.ts`), and `courses.test.ts` pins where those are (ADR 0019).
-- Don't let the client say which world it's in. A flight goes through `fly()`, which takes the fare; the fares live in `worlds.ts` and `public.worlds`, and what's sold in one world only in `vehicles.ts` and `shop_items.world` (`flight.test.ts` holds both together). A course is paid only in the world it's in (`missions.world`, `decisions/0018-honest-crews.md`). The valley's airstrip is hidden: don't put it on the compass. It is counted ("0/1 airport found"), so players know to look for one, and goes on the map once found (ADR 0016).
+- Don't let the client say which world it's in. A flight goes through `fly()`, which takes the fare; the fares live in `worlds.ts` and `public.worlds`, and what's sold in one world only in `vehicles.ts` and `shop_items.world` (`flight.test.ts` holds both together). A course is paid only in the world it's in (`missions.world`, `decisions/0018-honest-crews.md`). The valley's airstrip is hidden: don't put it on the compass (a player's own pin, which can go anywhere, is theirs to put there). It is counted ("0/1 airport found"), so players know to look for one, and goes on the map once found (ADR 0016).
 - Don't make sign-in required. Single player with no account must keep working, and say clearly that nothing is saved.
 - Don't reach for a game engine, a physics engine, react-three-fiber or a post-processing stack. three.js is the one rendering dependency (ADR 0005); the physics is ours and stays a pure, tested function. Anything more needs its own ADR.
 - Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
@@ -190,5 +194,6 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - since 2026-10-10: photo mode (ADR 0018). P, or the photo button on a phone, stops the world; drag, the arrows, the wheel or a pinch move the camera round the truck; the shutter saves a PNG of the world with everyone's name over their truck and no other HUD (the share sheet on a phone). Not during a run, a convoy or a race. Client only; no migration. Merged to `main` as pull request 14; everyone's names in the picture since pull request 18.
 - since 2026-10-10 (ADR 0019): twelve more courses, so each world has as many for friends as to drive alone (ten and ten in the valley, four and four on the island); one of them a jump, Big Air, told for its time in the air off a timber ramp; and convoys and races for up to ten. Merged to `main` as pull request 16, and `20261010120000_more_courses.sql` is on the live project, where every check in `game.test.sql` passes. Not yet played signed in, and never with more than two trucks. See `docs/sessions/2026-10-09-more-courses.md`.
 - since 2026-10-10: Cartier chains, a third thing on the garage's Winter tab: snow chains in gold set with stones that twinkle and throw star glints, for 10,000 miles. The owner's number; they grip exactly like the 30-mile steel ones and are only for show. `20261010090000_cartier_chains.sql` is on the live project; not yet bought signed in.
+- since 2026-10-10: a pin. Click (or tap) the open map to put one down, anywhere, fog or not; the compass mark turns into it and leads there, and the minimap shows it, as a bead on its rim while it's further off than the minimap reaches. Clicking the pin takes it up; so does getting there, or flying. One at a time, not saved, and the game never sets one for you. Clicking off the sheet closes the map. Client only; no migration. Merged to `main` as pull request 22.
 
 The online half is connected (2026-10-07): the Supabase project `gilbyy` has every migration in `supabase/migrations/` (the convoy and race ones since 2026-10-08), Google sign-in works, and the whole list (name, tent, seeing each other, friending at the café, chat, leaderboard, a purchase and a mission payout that persist) was played from two browsers. It was merged to `main` the same day, so gilbyy.com offers sign-in. The convoy and the race were merged to `main` and went live on 2026-10-08; the database tests pass against the live project, but neither has been played signed in from two accounts yet. A tab left hidden for five minutes, or untouched for fifteen, gives its tent back and takes one again on return. Sign-in is Google only; the email-link option was removed because Supabase's built-in mailer only reaches members of the Supabase org. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.
