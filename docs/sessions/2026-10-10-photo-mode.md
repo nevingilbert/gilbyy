@@ -86,9 +86,8 @@ not judged (headless is ~3 fps).
 
 ## Exact next step
 
-Open a pull request from `claude/photo-mode-camera-rotation-wgotye` if the owner wants
-it merged (client only, no migration). Then try it on a real phone at gilbyy.com's
-preview: tap "photo" under the odometer, drag and pinch, tap the shutter, and check the
+The owner asked for it to be merged, so it went to `main` as pull request 14 (client
+only, no migration). First thing next session: try it on a real phone at gilbyy.com: tap "photo" under the odometer, drag and pinch, tap the shutter, and check the
 share sheet's Save Image. If iOS doesn't offer the sheet, the fallback is in
 `keepPicture` in `apps/web/src/app/Game.tsx`.
 
