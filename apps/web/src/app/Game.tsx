@@ -14,8 +14,10 @@ import { fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
 import { stackTags, type TagBox } from "./name-tags";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
 import { FlightCard, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
+import { PALETTE } from "./palette";
 import { KEY_TURN, clampOrbit, dragOrbit, photoName, zoomOrbit, type Orbit } from "./photo";
 import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
+import { markFor, onPin, pinAt, reached, type Spot } from "./pin";
 import { countFound, eggKey, foundLine } from "./places";
 import { createView, type Film, type Garage } from "./scene";
 import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "./shop";
@@ -93,6 +95,8 @@ type Actions = {
   act(): void;
   leave(): void;
   toggleMap(): void;
+  /** A click on the open map, 0–1 across a sheet `px` pixels wide: puts the pin there, or takes it up if the click is on it. */
+  pin(fx: number, fy: number, px: number): void;
   look(v: VehicleId): void;
   pick(v: VehicleId): void;
   preview(v: VehicleId, l: Loadout): void;
@@ -171,7 +175,7 @@ export function Game() {
   const panelRef = useRef(false);
   /** Things the UI asks the game loop to do; the loop owns all the state. */
   const actions = useRef<Actions>({
-    act: noop, leave: noop, toggleMap: noop, look: noop, pick: noop, preview: noop, fit: noop, say: noop,
+    act: noop, leave: noop, toggleMap: noop, pin: noop, look: noop, pick: noop, preview: noop, fit: noop, say: noop,
     photo: noop, turnPhoto: noop, zoomPhoto: noop, snap: noop,
     buy: async () => null, fly: async () => null, setName: async () => null, leaderboard: async () => [], chatOpen: () => false,
   });
@@ -199,6 +203,7 @@ export function Game() {
   const [chat, setChat] = useState<ChatShown[]>([]);
   const [canChat, setCanChat] = useState(false);
   const [canPhoto, setCanPhoto] = useState(true);
+  const [pinned, setPinned] = useState(false);
 
   useEffect(() => {
     typingRef.current = typing;
@@ -317,8 +322,16 @@ export function Game() {
     let runIndex = -1;
     let shownRun = "";
     let shownPrompt = "";
-    let target: { x: number; z: number } | null = null;
+    let target: Spot | null = null;
     let targetClock = 0;
+    /** Where the player has put their pin on the map, for the compass to lead to (pin.ts). */
+    let pin: Spot | null = null;
+    const setPin = (to: Spot | null) => {
+      pin = to;
+      // Looked at again straight away, not at the next half second.
+      targetClock = 0;
+      setPinned(to !== null);
+    };
     let tent = -1;
     let retryClock = 0;
     let lastPose = { x: car.x, z: car.z };
@@ -437,6 +450,8 @@ export function Game() {
       moving = [];
       nearGarage = -1;
       landmarkHere = friendHere = target = null;
+      // The pin was a spot in the world just left.
+      setPin(null);
       flightHere = false;
       shownPrompt = STALE;
       placeOnGround(world.start.x, world.start.z, world.start.heading, 0);
@@ -792,6 +807,10 @@ export function Game() {
         setModeBoth("map");
         requestAnimationFrame(() => sizeCanvas(fullRef.current));
       } else if (modeRef.current === "map") setModeBoth("drive");
+    };
+    actions.current.pin = (fx, fy, px) => {
+      if (modeRef.current !== "map") return;
+      setPin(pin && onPin(pin, fx, fy, world.mapSpan, px) ? null : pinAt(fx, fy, world.mapSpan));
     };
 
     // ——— Photo mode (ADR 0018) ———
@@ -1213,8 +1232,12 @@ export function Game() {
       }
     };
 
-    /** The guidance mark on the compass: the nearest thing the current goal is about. */
+    /**
+     * The mark on the compass: the next flag of a course, a friend's call, the pin, or the
+     * nearest thing the current goal is about (pin.ts has the order).
+     */
     const aim = (dt: number) => {
+      if (pin && reached(pin, car.x, car.z)) setPin(null);
       targetClock -= dt;
       if (targetClock <= 0) {
         targetClock = 0.5;
@@ -1225,13 +1248,8 @@ export function Game() {
         // A friend gathering a convoy or a race comes before the guidance; once in one, the course leads.
         const call = convoys.state ? undefined : convoys.callsOut()[0];
         const called = call ? (crewCourses.find((c) => c.id === call.mission)?.start ?? null) : null;
-        target =
-          running || convoys.state ? null
-          : called ? called
-          : !g ? null
-          : g.target === "garage" ? nearest(view.garages.map((x) => x.approach))
-          : g.target === "cafe" ? view.cafe
-          : null;
+        const guide = !g ? null : g.target === "garage" ? nearest(view.garages.map((x) => x.approach)) : g.target === "cafe" ? view.cafe : null;
+        target = markFor(Boolean(running || convoys.state), called, pin, guide);
         const cafe = view.cafe;
         if (g?.id === "cafe" && cafe && Math.hypot(cafe.x - car.x, cafe.z - car.z) < cafe.r + CAFE_SLACK) goal("cafe");
       }
@@ -1243,6 +1261,15 @@ export function Game() {
       if (!to || Math.hypot(to.x - car.x, to.z - car.z) < 12) {
         mark.style.opacity = "0";
         return;
+      }
+      // Leading to the pin, the mark is the pin's head: round, and in its colour. Kept on
+      // the element, which is a new one each time the compass comes back.
+      const mine = to === pin;
+      if ((mark.dataset.pin === "1") !== mine) {
+        mark.dataset.pin = mine ? "1" : "";
+        mark.style.backgroundColor = mine ? PALETTE.map.pin : "";
+        mark.style.borderRadius = mine ? "50%" : "";
+        mark.style.outline = mine ? `1.5px solid ${PALETTE.map.paper}` : "";
       }
       const off = wrapHalf(bearingOf(Math.atan2(to.x - car.x, to.z - car.z)) - bearingOf(car.heading)) * COMPASS.length * COMPASS_ITEM;
       const edge = COMPASS_VIEW / 2 + 10;
@@ -1395,7 +1422,7 @@ export function Game() {
           const lead = view.trainCars()[0];
           const train = lead && map.explored(lead.x, lead.z) ? { x: lead.x, z: lead.z, heading: lead.yaw } : undefined;
           const players = view.remotes.positions().map((p) => ({ ...p, friend: friends.has(p.id) }));
-          map.drawFull(g, full.width, car, { train, players });
+          map.drawFull(g, full.width, car, { train, players, pin });
         }
       } else if (m === "photo") {
         // The world stands still. Held arrows move the camera round the truck: each the way it points.
@@ -1474,7 +1501,7 @@ export function Game() {
           const lead = view.trainCars()[0];
           const train = lead && map.explored(lead.x, lead.z) ? { x: lead.x, z: lead.z, heading: lead.yaw } : undefined;
           const players = view.remotes.positions().map((p) => ({ ...p, friend: friends.has(p.id) }));
-          map.drawMini(g, mini.width, car, { train, players });
+          map.drawMini(g, mini.width, car, { train, players, pin });
         }
       }
 
@@ -1571,7 +1598,7 @@ export function Game() {
 
   const driving = mode === "drive" || mode === "entering" || mode === "leaving";
   // The guidance is about the valley's garages and café; the island has none.
-  const goal = profile?.world === "valley" ? currentGoal(profile.goals, online || presence === "local") : null;
+  const goal = profile?.world === "valley" ? currentGoal(profile.goals, online || presence === "local", pinned) : null;
   const solo = !online && presence !== "local";
 
   return (
@@ -1823,10 +1850,20 @@ export function Game() {
 
       {mode === "map" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={() => actions.current.toggleMap()}>
-          <canvas ref={fullRef} className="aspect-square w-[min(88vw,82dvh)] rounded-2xl shadow-2xl" />
-          <p className="absolute bottom-4 text-center text-xs text-[rgba(255,246,232,0.6)]">
+          {/* A click on the sheet is for the pin; anywhere off it closes the map. */}
+          <canvas
+            ref={fullRef}
+            className="aspect-square w-[min(88vw,82dvh)] cursor-crosshair rounded-2xl shadow-2xl"
+            onClick={(e) => {
+              e.stopPropagation();
+              const box = e.currentTarget.getBoundingClientRect();
+              actions.current.pin((e.clientX - box.left) / box.width, (e.clientY - box.top) / box.height, box.width);
+            }}
+          />
+          <p className="pointer-events-none absolute bottom-4 text-center text-xs text-[rgba(255,246,232,0.6)]">
             {profile && <span className="block tabular-nums text-[rgba(255,246,232,0.85)]">{foundLine(countFound(profile.found, profile.world), profile.world)} found</span>}
-            M or Esc to close
+            <span className="hidden sm:inline">{pinned ? "click the pin to take it up" : "click the map to set a pin for the compass"} · M or Esc to close</span>
+            <span className="sm:hidden">{pinned ? "tap the pin to take it up" : "tap the map to set a pin"} · tap outside to close</span>
           </p>
         </div>
       )}
