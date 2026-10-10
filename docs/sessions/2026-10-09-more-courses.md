@@ -78,10 +78,12 @@ crews) merged in.
 
 ## Open questions
 
-- **The migration is not applied and the pull request is not merged.** Changing the
-  live database was refused to the session by the app's permission check, so it is the
-  owner's to run or allow. Merging first would put twelve courses on the live site that
-  finish with "no such mission".
+- **Applied and merged on 2026-10-10, on the owner's "go ahead and do it".** The first
+  attempt was refused to the session by the app's permission check; he then allowed it.
+  The live migration history had honest crews as `20261010065902` (it was applied by
+  another route) where its file is `20261010080000`, with identical text. That entry
+  was repaired to the file's version, `supabase db push` then applied only this
+  migration, and every check passed again against the migrated project.
 - Whether "even" meant the totals (built) or only the new courses.
 - Nothing for friends has been played with real accounts, and never with more than two
   trucks. Ten is tested only in `convoy.test.ts`.
@@ -93,19 +95,14 @@ crews) merged in.
 
 ## Exact next step
 
-Apply the migration, then merge pull request 16. From the repo root, linked to the
-`gilbyy` project: the live migration history records honest crews as version `20261010065902` while its file is `20261010080000` (the text is identical; checked
-by hash). So, in order:
-
-1. `supabase migration repair --status reverted 20261010065902 --linked`
-2. `supabase migration repair --status applied 20261010080000 --linked`
-3. `supabase db push --linked --dry-run`, which should list only
-   `20261010120000_more_courses.sql`, then `supabase db push --linked`
-4. Check: `select count(*) from public.missions` is 28.
-5. Merge pull request 16; Vercel deploys `main`. Then change the "not merged" lines in
-   `CLAUDE.md` and `docs/roadmap.md` to say it is live.
+Play it signed in: on the live site, from two Google accounts that are friends, gather
+one of the new courses for friends (Trackside is by the railway west of camp, Flat Out
+north of it) and drive Big Air alone. Nothing for friends has been played over Supabase
+yet, old or new. If a third and fourth truck can be found, a crew of more than two has
+never been driven at all. Two records are numbered 0018 (`0018-photo-mode.md` and
+`0018-honest-crews.md`); renumbering one is a small tidy-up.
 
 ## Tokens advisory
 
-Long session; no token limit was hit. Stopped where the session's permissions end:
-built, tested, dry-run and in a pull request, waiting on the live database.
+Long session; no token limit was hit. Stopped at a natural break: built, applied,
+merged and live.
