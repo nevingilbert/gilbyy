@@ -34,9 +34,11 @@ subdomains." Update the **You are here** marker as you progress.
 > Built on 2026-10-09 and not merged yet (`decisions/0019`,
 > `sessions/2026-10-09-more-courses.md`): twelve more courses, so each world has as many
 > for friends as to drive alone, a jump told for its time in the air, and convoys and
-> races for up to ten. Its migration, `20261010120000_more_courses.sql`, is not on the
-> live project and its database checks have not been run.
-> **Next:** dry-run that migration against the live project, apply it, and merge. Then
+> races for up to ten. It is pull request 16. Its migration,
+> `20261010120000_more_courses.sql`, passed a rolled-back dry run against the live
+> project but is not applied yet. Honest crews (`decisions/0018-honest-crews.md`, pull
+> request 15) was merged the same night, and this builds on it.
+> **Next:** apply that migration (the steps are in the session file) and merge. Then
 > play one convoy and one race signed in from two Google accounts on the live
 > site; neither has been played over Supabase yet, only over `?net=local`. Still open:
 > the frame rate on a real phone and laptop. Sign-in is Google only (the email link was

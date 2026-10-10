@@ -40,9 +40,13 @@ ADR `docs/decisions/0019-more-courses-and-crews-of-ten.md`.
 - **The too-quick limit is 27 m/s, was 23** (`TOO_QUICK`). Found by driving: the Sandfly
   (24.5 m/s) finished Beach Run in 45 s against a limit of 46 and would have been
   refused. A bug on `main` today, though nobody owns a Sandfly yet.
-- **A course is paid only in its own world** (`missions.world`, checked in `pay_run()`).
-  Not asked for; added because a valley client could claim island courses without the
-  fare, which eight island courses makes worth doing.
+- **A course is paid only in its own world**, but that is not this change's doing. I had
+  written it into this migration; the same night another session's `honest_crews`
+  migration (pull request 15, ADR `0018-honest-crews.md`) put `missions.world` and the
+  check on the live project. This migration was rebuilt on top of it: it adds the rows,
+  lowers `min_seconds`, and replaces only `complete_convoy()`.
+- **This is ADR 0019**, not 0018: photo mode (pull request 14) took 0018 on `main` while
+  this was being built. Honest crews is also numbered 0018; that was left alone.
 - **Dropped:** a downhill race (no room for ten to line up on a summit) and a course
   fording a river back and forth (no free stretch of either river).
 
@@ -59,19 +63,25 @@ ADR `docs/decisions/0019-more-courses-and-crews-of-ten.md`.
 | `apps/web/src/app/Game.tsx` | Air time in the run line and the finish; big crews in the run line, prompt and race result |
 | `apps/web/src/app/scene.ts`, `terrain-mesh.ts`, `airport.ts` | The ramp placed; no grass through its boards; a comment |
 | `apps/web/src/app/courses.test.ts`, `convoy.test.ts`, `airport.test.ts`, `play.test.ts`, `shop.test.ts` | New and changed tests (203 → 239) |
-| `supabase/migrations/20261010120000_more_courses.sql` | **New, not applied.** `missions.world`, 28 rows, `pay_run()` and `complete_convoy()` replaced |
-| `supabase/tests/game.test.sql` | Checks for ten drivers, the split, and courses in the wrong world. **Never run** |
+| `supabase/migrations/20261010120000_more_courses.sql` | **New, not applied.** 28 rows with their worlds and new `min_seconds`; `complete_convoy()` for up to nine others |
+| `supabase/tests/game.test.sql` | Checks for ten drivers and the split, on top of honest crews' checks. Passed a rolled-back dry run on the live project |
 | `docs/decisions/0019-…`, `0010`, `0011`, `CLAUDE.md`, `docs/architecture.md`, `roadmap.md`, `vision.md` | The ADR; the rest brought up to date |
 
-Verified: lint, typecheck, 239 vitest tests, `pnpm build`. In the browser: a full run
-of Big Air (1.07 s, paid 15 mi in single player), the ramp from the side, Hilltop's
-corridor, and Dune Derby's prompt. Everything is in the worktree
-`.claude/worktrees/more-missions` on branch `worktree-more-missions`, **uncommitted**.
+Verified: lint, typecheck, 245 vitest tests (with photo mode's), `pnpm build`. In the
+browser: a full run of Big Air (1.07 s, paid 15 mi in single player), the ramp from the
+side, Hilltop's corridor, and Dune Derby's prompt. On 2026-10-10 the migration and every
+check in `game.test.sql` passed a dry run against the live project, in one transaction
+that rolled back and left nothing. It is pull request 16
+(https://github.com/nevingilbert/gilbyy/pull/16), branch `feat/game-more-courses`, in
+the worktree `.claude/worktrees/more-missions`, with `main` (photo mode and honest
+crews) merged in.
 
 ## Open questions
 
-- **The migration's SQL checks have not been run anywhere.** There is no Postgres or
-  Docker on this machine. The edits to `game.test.sql` were reasoned through, not run.
+- **The migration is not applied and the pull request is not merged.** Changing the
+  live database was refused to the session by the app's permission check, so it is the
+  owner's to run or allow. Merging first would put twelve courses on the live site that
+  finish with "no such mission".
 - Whether "even" meant the totals (built) or only the new courses.
 - Nothing for friends has been played with real accounts, and never with more than two
   trucks. Ten is tested only in `convoy.test.ts`.
@@ -83,16 +93,19 @@ corridor, and Dune Derby's prompt. Everything is in the worktree
 
 ## Exact next step
 
-Get the owner's go-ahead, then dry-run the migration against the live project as
-`supabase/tests/README.md` describes: `begin;`, then
-`supabase/migrations/20261010120000_more_courses.sql`, then `game.test.sql` without its
-`\set` and last line, then a `raise` to roll back. Expect `ALL CHECKS PASSED`. If a
-check fails, the likeliest are the ones added this session (search `game.test.sql` for
-`two to ten`, `in another world`, `ten courses to drive alone`). Then commit on a
-branch named `feat/game-more-courses`, open a pull request, apply the migration with
-`supabase db push`, and merge.
+Apply the migration, then merge pull request 16. From the repo root, linked to the
+`gilbyy` project: the live migration history records honest crews as version `20261010065902` while its file is `20261010080000` (the text is identical; checked
+by hash). So, in order:
+
+1. `supabase migration repair --status reverted 20261010065902 --linked`
+2. `supabase migration repair --status applied 20261010080000 --linked`
+3. `supabase db push --linked --dry-run`, which should list only
+   `20261010120000_more_courses.sql`, then `supabase db push --linked`
+4. Check: `select count(*) from public.missions` is 28.
+5. Merge pull request 16; Vercel deploys `main`. Then change the "not merged" lines in
+   `CLAUDE.md` and `docs/roadmap.md` to say it is live.
 
 ## Tokens advisory
 
-Long session; no token limit was hit. Stopped at a natural break: built, tested and
-documented, waiting on the owner for the database and the merge.
+Long session; no token limit was hit. Stopped where the session's permissions end:
+built, tested, dry-run and in a pull request, waiting on the live database.
