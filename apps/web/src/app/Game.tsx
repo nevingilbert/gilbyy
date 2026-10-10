@@ -14,6 +14,7 @@ import { fmtAir, fmtTime, missionAt, startRun, tick, type Run } from "./mission-
 import { stackTags, type TagBox } from "./name-tags";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
 import { FlightCard, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
+import { KEY_TURN, clampOrbit, dragOrbit, photoName, zoomOrbit, type Orbit } from "./photo";
 import { makeCar, noInput, step, yawRateOf, type Input } from "./physics";
 import { countFound, eggKey, foundLine } from "./places";
 import { createView, type Film, type Garage } from "./scene";
@@ -71,7 +72,7 @@ const COMPASS_VIEW = COMPASS_ITEM * 8;
 /** Metres a second to miles an hour, for the speedometer. */
 const MPH = 3600 / METRES_PER_MILE;
 
-type Mode = "boot" | "pick" | "drive" | "entering" | "garage" | "leaving" | "map" | "flying";
+type Mode = "boot" | "pick" | "drive" | "entering" | "garage" | "leaving" | "map" | "flying" | "photo";
 type Presence = "solo" | "local" | "joining" | "online" | "full" | "away";
 type Prompt =
   | { kind: "garage"; style: SiteStyle }
@@ -104,6 +105,13 @@ type Actions = {
   leaderboard(): ReturnType<Store["leaderboard"]>;
   say(text: string): void;
   chatOpen(): boolean;
+  /** Into photo mode from driving, or back out of it (ADR 0018). */
+  photo(): void;
+  /** Moves the photo camera round by a drag of so many pixels, or further off by `factor`. */
+  turnPhoto(dx: number, dy: number): void;
+  zoomPhoto(factor: number): void;
+  /** Takes the picture. */
+  snap(): void;
 };
 const noop = () => {};
 /** At a start line before "go". Not the brake: held at a standstill, that reverses. */
@@ -117,6 +125,30 @@ const smooth = (lo: number, hi: number, x: number) => {
 };
 const turnToward = (from: number, to: number, t: number) => from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * t;
 const wrapHalf = (t: number) => ((((t + 0.5) % 1) + 1) % 1) - 0.5;
+/**
+ * Hands a picture to the player: on a phone the share sheet, where Save Image puts it
+ * with their photos; otherwise a download. Called straight from the key or the tap, as
+ * sharing has to be.
+ */
+const keepPicture = (dataUrl: string, name: string) => {
+  const raw = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  const file = new File([bytes], name, { type: "image/png" });
+  const download = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(file);
+    a.download = name;
+    a.click();
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  };
+  if (window.matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) {
+    // Cancelling the sheet is a choice; anything else and it's saved the other way.
+    navigator.share({ files: [file] }).catch((e: unknown) => {
+      if (!(e instanceof DOMException && e.name === "AbortError")) download();
+    });
+  } else download();
+};
 const ordinal = (n: number) => `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}`;
 /** What a course for friends is called in passing. */
 const noun = (m: Mission) => (m.race ? "race" : "convoy");
@@ -131,6 +163,7 @@ export function Game() {
   const speedRef = useRef<HTMLSpanElement>(null);
   const markRef = useRef<HTMLDivElement>(null);
   const fadeRef = useRef<HTMLDivElement>(null);
+  const flashRef = useRef<HTMLDivElement>(null);
   const cloudRef = useRef<HTMLDivElement>(null);
   const tagsRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<Input>(noInput());
@@ -140,6 +173,7 @@ export function Game() {
   /** Things the UI asks the game loop to do; the loop owns all the state. */
   const actions = useRef<Actions>({
     act: noop, leave: noop, toggleMap: noop, look: noop, pick: noop, preview: noop, fit: noop, say: noop,
+    photo: noop, turnPhoto: noop, zoomPhoto: noop, snap: noop,
     buy: async () => null, fly: async () => null, setName: async () => null, leaderboard: async () => [], chatOpen: () => false,
   });
   const turnRef = useRef(0);
@@ -165,6 +199,7 @@ export function Game() {
   const [draft, setDraft] = useState("");
   const [chat, setChat] = useState<ChatShown[]>([]);
   const [canChat, setCanChat] = useState(false);
+  const [canPhoto, setCanPhoto] = useState(true);
 
   useEffect(() => {
     typingRef.current = typing;
@@ -439,6 +474,8 @@ export function Game() {
       const m = modeRef.current;
       if (!net || tent < 0 || m === "boot" || m === "pick") return;
       const pose = { x: car.x, y: car.y, z: car.z, heading: car.heading, pitch: car.pitch, roll: car.roll, speed: car.speed, steer: car.steer, turn: yawRateOf(car, spec) };
+      // In photo mode the truck stands still here, so it does there too, rather than being guessed on down the road.
+      if (m === "photo") Object.assign(pose, { speed: 0, turn: 0 });
       if (!asked && !gate.due(pose, now, peers.size + 1)) return;
       net.sendPose(pose);
       gate.sent(pose, now);
@@ -760,6 +797,50 @@ export function Game() {
       } else if (modeRef.current === "map") setModeBoth("drive");
     };
 
+    // ——— Photo mode (ADR 0018) ———
+
+    /** The orbit asked for, round the truck. The view eases the camera after it. */
+    let orbit: Orbit = { yaw: 0, pitch: 0.5, dist: 14 };
+    actions.current.photo = () => {
+      const m = modeRef.current;
+      if (m === "photo") {
+        inputRef.current = noInput();
+        // Straight back behind the truck, as if the viewfinder were put down.
+        view.cut();
+        setModeBoth("drive");
+        return;
+      }
+      if (m !== "drive") return;
+      // A run's clock, and the others in a convoy or a race, don't stop for a picture.
+      if (running) return say("No photos during a run. Finish it, or Esc to give up.");
+      if (convoys.state) return say(`No photos while you're in a ${noun(convoys.state.mission)}.`);
+      inputRef.current = noInput();
+      orbit = view.photoStart(car);
+      setModeBoth("photo");
+      sharePose(performance.now() / 1000, true);
+    };
+    actions.current.turnPhoto = (dx, dy) => void (orbit = dragOrbit(orbit, dx, dy));
+    actions.current.zoomPhoto = (factor) => void (orbit = zoomOrbit(orbit, factor));
+    actions.current.snap = () => {
+      if (modeRef.current !== "photo") return;
+      keepPicture(view.snap(), photoName(new Date()));
+      // A soft flash, as a shutter would.
+      const flash = flashRef.current;
+      if (!flash) return;
+      flash.style.transition = "none";
+      flash.style.opacity = "0.55";
+      void flash.offsetWidth;
+      flash.style.transition = "opacity 600ms ease-out";
+      flash.style.opacity = "0";
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (modeRef.current !== "photo") return;
+      // Not the page's zoom, which a pinch on a trackpad would otherwise be.
+      e.preventDefault();
+      actions.current.zoomPhoto(Math.exp(e.deltaY * (e.deltaMode === 1 ? 0.04 : 0.0015)));
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+
     const giveUp = (why: string) => {
       running = null;
       runIndex = -1;
@@ -784,7 +865,7 @@ export function Game() {
 
     /** Lines up behind the arch, with the others in their places, and counts down. */
     const setOff = (m: Mission, slot: number, crew: string[]) => {
-      if (modeRef.current === "map") setModeBoth("drive");
+      if (modeRef.current === "map" || modeRef.current === "photo") setModeBoth("drive");
       inputRef.current = noInput();
       const at = lineUp(m, slot);
       placeOnGround(at.x, at.z, at.heading, 0);
@@ -902,6 +983,18 @@ export function Game() {
         actions.current.toggleMap();
         return;
       }
+      if (m === "photo") {
+        // The arrows move the camera round, below; these do the rest.
+        const zoom = k === "+" || k === "=" ? 1 / 1.15 : k === "-" || k === "_" ? 1.15 : 0;
+        const snap = k === " " || k === "Enter";
+        const back = k === "Escape" || k === "p" || k === "P";
+        if (zoom || snap || back) {
+          e.preventDefault();
+          if (zoom) actions.current.zoomPhoto(zoom);
+          else if (!e.repeat) (snap ? actions.current.snap : actions.current.photo)();
+          return;
+        }
+      }
       if (m === "drive" && !e.repeat) {
         if (k === "e" || k === "E" || k === "Enter" || ((k === "f" || k === "F") && friendHere)) {
           actions.current.act();
@@ -917,6 +1010,10 @@ export function Game() {
           setBoard(true);
           return;
         }
+        if (k === "p" || k === "P") {
+          actions.current.photo();
+          return;
+        }
         if ((k === "t" || k === "T") && nearbyFriends().length) {
           inputRef.current = noInput();
           setTyping(true);
@@ -927,9 +1024,9 @@ export function Game() {
       const control = keyMap[k];
       if (!control) return;
       e.preventDefault();
-      if (m !== "drive") return;
+      if (m !== "drive" && m !== "photo") return;
       inputRef.current[control] = true;
-      setShowHint(false);
+      if (m === "drive") setShowHint(false);
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const control = keyMap[e.key];
@@ -1288,7 +1385,7 @@ export function Game() {
       const now = nowMs / 1000;
       const m = modeRef.current;
       const garage = view.garages[cut.garage];
-      time = shared ? Date.now() / 1000 - SHARED_EPOCH : time + (m === "garage" || m === "map" ? 0 : dt);
+      time = shared ? Date.now() / 1000 - SHARED_EPOCH : time + (m === "garage" || m === "map" || m === "photo" ? 0 : dt);
 
       onConvoy(convoys.tick(now));
       // Through the finish, waiting for the rest of the convoy.
@@ -1315,6 +1412,16 @@ export function Game() {
           const players = view.remotes.positions().map((p) => ({ ...p, friend: friends.has(p.id) }));
           map.drawFull(g, full.width, car, { train, players });
         }
+      } else if (m === "photo") {
+        // The world stands still. Held arrows move the camera round the truck: each the way it points.
+        const i = inputRef.current;
+        const turn = KEY_TURN * dt;
+        orbit = clampOrbit({
+          yaw: orbit.yaw + (Number(i.right) - Number(i.left)) * turn,
+          pitch: orbit.pitch + (Number(i.gas) - Number(i.brake)) * turn * 0.6,
+          dist: orbit.dist,
+        });
+        view.photo(car, orbit, dt);
       } else {
         // A flight: the film places the truck and the plane, and directs the camera.
         const film = m === "flying" ? flyOn(dt) : null;
@@ -1367,7 +1474,10 @@ export function Game() {
         view.render(car, dt, time, spec, m === "boot" || m === "pick", film);
         drawTags(now);
         aim(dt);
-        if (Math.floor(now * 2) !== Math.floor((now - dt) * 2)) setCanChat(nearbyFriends().length > 0);
+        if (Math.floor(now * 2) !== Math.floor((now - dt) * 2)) {
+          setCanChat(nearbyFriends().length > 0);
+          setCanPhoto(!running && !convoys.state);
+        }
 
         const mini = miniRef.current;
         // The minimap unmounts while you're in a garage, so check its size each frame. Both
@@ -1425,6 +1535,7 @@ export function Game() {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("pagehide", onUnload);
+      canvas.removeEventListener("wheel", onWheel);
       for (const tag of tags.values()) tag.el.remove();
       view.dispose();
     };
@@ -1440,17 +1551,33 @@ export function Game() {
     onPointerLeave: () => void (inputRef.current[control] = false),
   });
 
-  // In the garage, dragging across the picture turns the camera round the truck.
-  const drag = useRef<number | null>(null);
-  const showroomDrag = {
-    onPointerDown: (e: React.PointerEvent) => void (drag.current = e.clientX),
-    onPointerMove: (e: React.PointerEvent) => {
-      if (drag.current === null || modeRef.current !== "garage") return;
-      turnRef.current -= (e.clientX - drag.current) * 0.004;
-      drag.current = e.clientX;
+  // Dragging across the picture turns the camera round the truck: in the garage, and in
+  // photo mode, where two fingers also pinch it nearer or further.
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const canvasDrag = {
+    onPointerDown: (e: React.PointerEvent<HTMLCanvasElement>) => {
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      e.currentTarget.setPointerCapture(e.pointerId);
     },
-    onPointerUp: () => void (drag.current = null),
-    onPointerLeave: () => void (drag.current = null),
+    onPointerMove: (e: React.PointerEvent) => {
+      const was = pointers.current.get(e.pointerId);
+      if (!was) return;
+      const m = modeRef.current;
+      const [dx, dy] = [e.clientX - was.x, e.clientY - was.y];
+      if (pointers.current.size === 2 && m === "photo") {
+        const other = [...pointers.current.entries()].find(([id]) => id !== e.pointerId)![1];
+        const before = Math.hypot(was.x - other.x, was.y - other.y);
+        const after = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+        if (before > 0 && after > 0) actions.current.zoomPhoto(before / after);
+      } else if (pointers.current.size === 1) {
+        if (m === "garage") turnRef.current -= dx * 0.004;
+        else if (m === "photo") actions.current.turnPhoto(dx, dy);
+      }
+      was.x = e.clientX;
+      was.y = e.clientY;
+    },
+    onPointerUp: (e: React.PointerEvent) => void pointers.current.delete(e.pointerId),
+    onPointerCancel: (e: React.PointerEvent) => void pointers.current.delete(e.pointerId),
   };
 
   const look = useCallback((v: VehicleId) => actions.current.look(v), []);
@@ -1466,7 +1593,7 @@ export function Game() {
     <div className="relative h-[100dvh] w-full select-none overflow-hidden bg-[#efb08c]">
       <canvas
         ref={canvasRef}
-        {...showroomDrag}
+        {...canvasDrag}
         className={`block h-full w-full touch-none transition-opacity duration-[1500ms] ${ready ? "opacity-100" : "opacity-0"}`}
       />
       <div ref={tagsRef} className={`pointer-events-none absolute inset-0 overflow-hidden ${driving ? "" : "hidden"}`} />
@@ -1474,10 +1601,14 @@ export function Game() {
       <div ref={cloudRef} className="pointer-events-none absolute inset-0 opacity-0" />
       {/* Black from the first paint when there may be a tent to wait for; the effect lifts it. */}
       <div ref={fadeRef} className={`pointer-events-none absolute inset-0 bg-black ${onlineConfigured ? "opacity-100" : "opacity-0"}`} />
+      {/* The shutter's flash in photo mode. */}
+      <div ref={flashRef} className="pointer-events-none absolute inset-0 bg-[rgba(255,246,232,1)] opacity-0" />
 
-      <h1 className="pointer-events-none absolute left-5 top-4 text-lg font-semibold tracking-tight text-[rgba(255,246,232,0.78)] drop-shadow-sm">
-        gilbyy
-      </h1>
+      {mode !== "photo" && (
+        <h1 className="pointer-events-none absolute left-5 top-4 text-lg font-semibold tracking-tight text-[rgba(255,246,232,0.78)] drop-shadow-sm">
+          gilbyy
+        </h1>
+      )}
       {driving && goal && !run && (
         <p className="pointer-events-none absolute left-5 top-11 max-w-[15rem] text-xs leading-snug text-[rgba(255,246,232,0.72)] drop-shadow">
           {goal.text}
@@ -1535,6 +1666,15 @@ export function Game() {
               {fmtMiles(profile?.balance ?? 0)} mi
               {(presence === "online" || presence === "local") && <span className="font-normal text-[rgba(255,246,232,0.5)]"> · {people} here</span>}
             </button>
+            {/* On a phone, under the odometer: the row of driving buttons has no room for it. A keyboard has P. */}
+            {canPhoto && mode === "drive" && (
+              <button
+                onClick={() => actions.current.photo()}
+                className="mt-1.5 h-11 w-11 rounded-full border border-white/25 bg-black/20 text-xs text-white/75 backdrop-blur sm:hidden"
+              >
+                photo
+              </button>
+            )}
           </div>
         </>
       )}
@@ -1545,6 +1685,7 @@ export function Game() {
           {[
             { key: "M", label: "map" },
             { key: "L", label: "leaderboard" },
+            { key: "P", label: "photo", note: canPhoto ? "" : "not on a course" },
             { key: "T", label: "talk", note: canChat ? "" : "when a friend is near" },
           ].map((k) => (
             <li key={k.key} className="flex items-center gap-2">
@@ -1664,6 +1805,39 @@ export function Game() {
               </>
             )}
           </button>
+        </div>
+      )}
+
+      {/* Photo mode: nothing on screen but how to work it, the shutter, and the way back. */}
+      {mode === "photo" && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-3 px-4 pb-7">
+          <div className="pointer-events-auto flex items-center gap-8">
+            <button
+              onClick={(e) => {
+                e.currentTarget.blur();
+                actions.current.photo();
+              }}
+              className="h-11 w-11 rounded-full border border-white/25 bg-black/20 text-xs text-white/75 backdrop-blur"
+            >
+              back
+            </button>
+            <button
+              onClick={(e) => {
+                e.currentTarget.blur();
+                actions.current.snap();
+              }}
+              aria-label="Take a picture"
+              title="Take a picture (Space)"
+              className="flex h-16 w-16 items-center justify-center rounded-full border-[3px] border-[rgba(255,246,232,0.9)] bg-black/15 shadow-lg backdrop-blur active:scale-95"
+            >
+              <span className="h-12 w-12 rounded-full bg-[rgba(255,246,232,0.85)]" />
+            </button>
+            <span className="h-11 w-11" />
+          </div>
+          <p className="text-center text-xs text-[rgba(255,246,232,0.78)] drop-shadow">
+            <span className="hidden sm:inline">drag or arrows to move round · scroll to zoom · Space to take a picture · Esc to go back</span>
+            <span className="sm:hidden">drag to move round · pinch to zoom</span>
+          </p>
         </div>
       )}
 
