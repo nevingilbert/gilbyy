@@ -317,12 +317,15 @@ for sign-in (Google only), and Realtime for the shared valley. See
   to `routes` (whose `way` may now be `'boat'`), the Slipstream in `shop_items` (sold only
   in Vegas), Vegas's eight courses, its places and both docks (a new kind of place), a
   `docks` column on `leaderboard()`, and every other course's `min_seconds` redone for
-  the faster limit (`TOO_QUICK`, 34 m/s) (ADR 0023). Not yet applied to the live project.
+  the faster limit (`TOO_QUICK`, 34 m/s) (ADR 0023). Applied to the live project on
+  2026-10-15 with Japan's, the same way as the city's (its SQL with `db query`, then
+  `migration repair`), after a rolled-back dry run of both with `game.test.sql` passed;
+  the checks pass against the migrated project too.
 - `20261015200000_japan_and_the_helicopter.sql` adds Japan to `worlds` (150 miles), the
   helicopter to `routes` (whose `way` may now be `'heli'`), the Kei Truck in `shop_items`
   (sold only in Japan), Japan's eight courses, its places and both helipads (a new kind of
-  place), and a `helipads` column on `leaderboard()` (ADR 0024). Not yet applied to the
-  live project; it follows Vegas's.
+  place), and a `helipads` column on `leaderboard()` (ADR 0024). Applied to the live
+  project on 2026-10-15, straight after Vegas's.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

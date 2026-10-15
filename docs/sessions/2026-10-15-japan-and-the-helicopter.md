@@ -82,14 +82,16 @@ down past the pad's offer, the welcome said).
 
 ## Open questions
 
-- Neither Vegas's nor Japan's migration is on the live project, and `game.test.sql` hasn't
-  run against them: both need the owner's go-ahead (a rolled-back dry run first, Vegas's
-  then Japan's).
+- Both migrations are on the live project (2026-10-15, with the owner's go-ahead): a
+  rolled-back dry run of Vegas's and Japan's with `game.test.sql` passed (once the count of
+  worlds in it was raised from 3 to 5; nobody had raised it for Vegas), then each was run
+  with `db query`, recorded with `migration repair`, and the checks pass against the
+  migrated project. Neither world has been played signed in.
 - Not built: lanterns over the town's doors at night, a bullet train, falling blossom.
 - Real-device frame rate in Japan is unmeasured (18,855 trees, 218 houses).
 
 ## Exact next step
 
-With the owner's go-ahead: dry-run Vegas's and Japan's migrations together with
-`game.test.sql` against the live project, then apply them in order and repair the
-migration list; then merge pull requests 24, 25 and Japan's, in that order.
+The owner merges the stack from the top down, so nothing needs retargeting: pull request
+26 into `feat/game-vegas`, then 25 into `feat/game-city-and-train`, then 24 into `main`,
+which deploys all three worlds at once. Then play the trips signed in.
