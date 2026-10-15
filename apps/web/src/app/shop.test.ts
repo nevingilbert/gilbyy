@@ -1,11 +1,22 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect } from "vitest";
+import { buildCity } from "./city";
+import { loadCityData } from "./city-streets";
 import { CONVOY_MAX } from "./convoy";
 import { PARTS, STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, specFor, type PartCategory } from "./shop";
 import { STARTERS, VEHICLES } from "./vehicles";
 import { buildIsland } from "./island";
-import { buildWorld } from "./world";
+import { buildVegas } from "./vegas";
+import { buildJapan } from "./japan";
+import { buildWorld, type World } from "./world";
+
+const worlds: World[] = [buildWorld(), buildIsland()];
+// The city's ground and streets are fetched on their own (ADR 0022).
+beforeAll(async () => {
+  await loadCityData();
+  worlds.push(buildCity(), buildVegas(), buildJapan());
+}, 30000);
 
 const dir = resolve(__dirname, "../../../../supabase/migrations");
 const migrations = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort().map((f) => readFileSync(resolve(dir, f), "utf8"));
@@ -44,8 +55,9 @@ describe("the shop and the server agree", () => {
       id: r.id, reward: +r.reward, repeat: +r.repeat_reward, cooldown: +r.cooldown_seconds, min: +r.min_seconds, crew: +(r.crew ?? 1), miles: +(r.min_miles ?? 0),
       world: r.world ?? "valley",
     }));
-    // The valley's courses and the island's.
-    const client = [buildWorld(), buildIsland()].flatMap((w) => w.missions.map((m) => ({
+    // The valley's courses, the island's, the city's, Vegas's and Japan's.
+    expect(worlds.map((w) => w.id)).toEqual(["valley", "island", "city", "vegas", "japan"]);
+    const client = worlds.flatMap((w) => w.missions.map((m) => ({
       id: m.id, reward: m.reward, repeat: m.repeatReward, cooldown: m.cooldown, min: m.minSeconds, crew: m.crew, miles: m.minMiles, world: w.id as string,
     })));
     expect(server.sort(byId)).toEqual(client.sort(byId));

@@ -25,6 +25,8 @@ export type BodyParts = {
   beams: { low: THREE.Vector3; high: THREE.Vector3 };
   /** Height of the highest point (roof, rack or bar) above the body centre, for a name tag. */
   top: number;
+  /** A part that turns about its own y all the time, if the rig has one: the robotaxi's roof scanner. */
+  spinner: THREE.Object3D | null;
 };
 
 type Materials = { paint: THREE.Material; lamp: THREE.Material };
@@ -122,6 +124,7 @@ class Rig {
   wing: number;
   top: number;
   readonly beams = { low: new THREE.Vector3(), high: new THREE.Vector3() };
+  spinner: THREE.Object3D | null = null;
 
   constructor(
     readonly v: Vehicle,
@@ -381,7 +384,7 @@ class Rig {
     };
     const { snorkel, fogLamps, lightBar, ditchLights } = this.xk;
     const extras = { snorkel: hidden(snorkel), fogLamps: hidden(fogLamps), lightBar: hidden(lightBar), ditchLights: hidden(ditchLights) };
-    return { body: this.body, extras, beams: this.beams, top: this.top };
+    return { body: this.body, extras, beams: this.beams, top: this.top, spinner: this.spinner };
   }
 }
 
@@ -974,7 +977,215 @@ function sandfly(r: Rig) {
   });
 }
 
-const BUILDERS: Record<VehicleId, (r: Rig) => void> = { ridgeback, bluff, mule, overlander, prairie, highland, summit, duneclaw, sandfly };
+/**
+ * An electric crossover run as a robotaxi, the kind San Francisco's fleets drive: low and
+ * cab-forward, a closed nose, black cladding round the arches, sensor pods at the corners,
+ * and on the roof a dome with a scanner turning in it.
+ */
+function robotaxi(r: Rig) {
+  const { F, roof } = r;
+  const sill = -0.48, belt = 0.08, side = 0.96, cowl = 0.9, zf = F - 0.12, zr = -F + 0.12;
+  // A short bonnet sloping down to a blunt, closed nose; the tail kept high and cut off square.
+  r.slab(r.paint, [[zf, sill], [zf, -0.12], [zf - 0.16, -0.04], [cowl, belt], [zr + 0.06, belt + 0.05], [zr, belt - 0.03], [zr, sill]], -side, side, "round");
+  r.liners(sill);
+  r.flares(r.black, "round", sill, 0.07, side - 0.02, r.hw - 0.01, 0.02);
+  r.both((s) => r.box(r.black, 0.04, 0.1, 2 * (r.axles[1] - r.ah) - 0.08, s * (side + 0.012), sill + 0.06, 0));
+  // The cabin: the screen well forward and steep, the roof falling away to the tail; a black glass roof.
+  const a: Sec = { y: belt - 0.02, w: side - 0.04, z0: zr + 0.1, z1: cowl + 0.02 };
+  const b: Sec = { y: roof - 0.06, w: side - 0.2, z0: zr + 0.46, z1: 0.16 };
+  r.add(r.paint, loft(a, b));
+  r.glassBand(a, b, belt + 0.04, b.y);
+  r.pillar(r.black, a, b, belt + 0.03, b.y, 0.1, 0.04);
+  r.pillar(r.black, a, b, belt + 0.03, b.y, 0.16, -0.92);
+  r.add(r.black, loft(grow({ ...b, y: b.y - 0.01 }, 0.03), grow({ ...b, y: roof }, 0.015)));
+  r.wipers(a, b, belt + 0.06, [-0.3, 0.3], 0.5);
+  r.seam(side, [[0.82, sill + 0.08], [0.82, belt - 0.01]]);
+  r.seam(side, [[-0.12, sill + 0.08], [-0.12, belt - 0.01]]);
+  r.both((s) => r.box(r.black, 0.012, 0.03, 0.22, s * (side + 0.004), -0.04, 0.42));
+  // The nose: a dark panel where a grille would be, slim lamps across the corners, a black lip.
+  const ly = -0.1;
+  r.box(r.black, 1.02, 0.15, 0.02, 0, ly - 0.08, zf + 0.012);
+  r.both((s) => {
+    r.lampBox(r.lamp, 0.34, 0.06, s * 0.66, ly + 0.03, zf);
+    r.box(r.lamp, 0.02, 0.06, 0.14, s * (side + 0.004), ly + 0.03, zf - 0.08);
+  });
+  r.beams.low.set(0, ly + 0.03, zf + 0.06);
+  r.wedge(r.paint, side, side - 0.1, -0.48, -0.2, zf - 0.04, F);
+  r.box(r.black, 1.4, 0.12, 0.03, 0, -0.4, F + 0.005);
+  // A light strip right across the tail, and the black diffuser under it.
+  r.box(r.tail, 1.6, 0.05, 0.02, 0, 0.02, zr - 0.012);
+  r.both((s) => r.lampBox(r.tail, 0.22, 0.09, s * (side - 0.18), -0.05, zr, -1));
+  r.wedge(r.paint, side - 0.06, side, -0.46, -0.1, -F, zr + 0.04);
+  r.box(r.black, 1.5, 0.12, 0.03, 0, -0.38, -F + 0.01);
+  // Sensor pods: white housings with dark faces, low in the nose, on each front wing, on the tail.
+  const pod = lambert(PALETTE.paint.pearlWhite);
+  r.box(pod, 0.24, 0.12, 0.1, 0, -0.28, F + 0.03);
+  r.box(r.glass, 0.18, 0.07, 0.01, 0, -0.28, F + 0.085);
+  r.box(pod, 0.24, 0.12, 0.1, 0, -0.02, -F - 0.02);
+  r.box(r.glass, 0.18, 0.07, 0.01, 0, -0.02, -F - 0.075);
+  r.both((s) => {
+    r.box(pod, 0.12, 0.2, 0.22, s * (side + 0.07), 0.02, cowl + 0.3);
+    r.box(r.glass, 0.01, 0.12, 0.14, s * (side + 0.13), 0.02, cowl + 0.32);
+  });
+  r.mirrors(a.w, belt + 0.1, cowl - 0.18, pod, 1.15);
+  // The roof scanner: a black plate, a white pedestal and drum, a domed cap; and in the drum a
+  // dark band with two windows in it, which turns.
+  const at = b.z0 + (b.z1 - b.z0) * 0.55;
+  r.box(r.black, 0.62, 0.04, 0.7, 0, roof + 0.02, at);
+  r.k.cyl(pod, 0.22, 0.12, 0, roof + 0.1, at, 0, 0, 16);
+  r.k.cyl(pod, 0.19, 0.2, 0, roof + 0.26, at, 0, 0, 16);
+  r.k.add(pod, new THREE.SphereGeometry(0.19, 16, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0, roof + 0.36, at);
+  const scanner = new Kit();
+  scanner.cyl(r.black, 0.196, 0.08, 0, 0, 0, 0, 0, 16);
+  for (const s of [1, -1]) scanner.box(r.glass, 0.12, 0.05, 0.02, 0, 0, s * 0.198);
+  const turning = scanner.build(new THREE.Group());
+  turning.position.set(0, roof + 0.26, at);
+  r.body.add(turning);
+  r.spinner = turning;
+  r.raise(roof + 0.56);
+
+  r.snorkel(a, b, side, belt);
+  r.fogLamps(0.58, -0.4, F - 0.04, 0.06);
+  r.lightBar(1.2, roof + 0.1, b.z1 - 0.12, roof);
+  r.ditchLights(a, b, belt);
+}
+
+/**
+ * A Formula 1 car (ADR 0023): a needle nose over a wide front wing, the driver low in the
+ * tub under the halo, sidepods with their intakes, the engine cover falling away from the
+ * airbox to a tall rear wing, and the wheels out in the air on their wishbones. Sold only
+ * in Las Vegas, for the street circuit.
+ */
+function slipstream(r: Rig) {
+  const { F } = r;
+  const g = -r.v.ride;
+  const wheel = r.v.track / 2;
+  const [front, rear] = [r.axles[1], r.axles[0]];
+  const helmet = lambert(PALETTE.vegas.signGold);
+  // The floor, flat under everything between the wheels, and the diffuser rising out of its back.
+  r.box(r.black, 1.4, 0.04, 3.3, 0, g + 0.1, -0.25);
+  r.add(r.black, hexa((sx, sy, sz) => [sx * 0.6, sy > 0 ? (sz > 0 ? g + 0.12 : g + 0.34) : g + 0.08, sz > 0 ? rear + 0.1 : -F + 0.12]));
+  // The tub, and the nose falling away from it to a blunt tip over the wing.
+  r.add(r.paint, hexa((sx, sy, sz) => [sx * 0.42, sy > 0 ? 0.12 : g + 0.12, sz > 0 ? 0.95 : -0.65]));
+  r.add(r.paint, hexa((sx, sy, sz) => [sx * (sz > 0 ? 0.1 : 0.33), sy > 0 ? (sz > 0 ? -0.18 : 0.09) : sz > 0 ? g + 0.2 : g + 0.13, sz > 0 ? F - 0.12 : 0.95]));
+  // The front wing: two planes across the whole track, an endplate at each end, under the nose.
+  r.box(r.paint, 2 * wheel + 0.32, 0.035, 0.44, 0, g + 0.12, F - 0.28);
+  r.k.box(r.black, 2 * wheel + 0.2, 0.03, 0.22, 0, g + 0.2, F - 0.46, -0.3);
+  r.both((s) => r.box(r.paint, 0.03, 0.22, 0.6, s * (wheel + 0.16), g + 0.2, F - 0.32));
+  r.box(r.black, 0.12, 0.12, 0.3, 0, g + 0.2, F - 0.32);
+  // The cockpit: a dark well in the tub, the driver's helmet in it.
+  r.box(r.dark, 0.5, 0.04, 0.85, 0, 0.12, 0.42);
+  r.k.add(helmet, new THREE.SphereGeometry(0.135, 12, 8), 0, 0.2, 0.18);
+  r.box(r.glass, 0.2, 0.06, 0.03, 0, 0.21, 0.31);
+  // The halo: a hoop round the cockpit, on a post at its front.
+  r.both((s) => r.add(r.black, tube(0.03, [s * 0.36, 0.12, -0.02], [s * 0.2, 0.36, 0.28], 0.02)));
+  r.add(r.black, tube(0.03, [-0.2, 0.36, 0.28], [0.2, 0.36, 0.28], 0.02));
+  r.add(r.black, tube(0.028, [0, 0.36, 0.28], [0, 0.14, 0.78], 0.02));
+  // Sidepods either side, intakes at their fronts, sweeping in to the gearbox.
+  r.both((s) => {
+    r.add(r.paint, hexa((sx, sy, sz) => [s * (sx * s > 0 ? (sz > 0 ? 0.74 : 0.48) : 0.4), sy > 0 ? (sz > 0 ? 0.04 : -0.16) : g + 0.12, sz > 0 ? 0.6 : -1.15]));
+    r.box(r.dark, 0.3, 0.26, 0.02, s * 0.58, -0.12, 0.61);
+  });
+  // The airbox over the driver's head, and the engine cover falling away from it to the back.
+  r.add(r.paint, hexa((sx, sy, sz) => [sx * (sz > 0 ? 0.16 : 0.22), sy > 0 ? (sz > 0 ? 0.48 : 0.42) : 0.1, sz > 0 ? 0.06 : -0.35]));
+  r.box(r.dark, 0.2, 0.14, 0.02, 0, 0.38, 0.07);
+  r.add(r.paint, hexa((sx, sy, sz) => [sx * (sz > 0 ? 0.36 : 0.14), sy > 0 ? (sz > 0 ? 0.42 : 0.02) : g + 0.14, sz > 0 ? -0.35 : rear - 0.25]));
+  // The rear wing: endplates, the main plane and the flap above it, on a pylon.
+  const wz = -F + 0.28;
+  r.both((s) => r.box(r.paint, 0.03, 0.64, 0.52, s * 0.5, 0.18, wz));
+  r.k.box(r.black, 1.0, 0.05, 0.34, 0, 0.32, wz + 0.02, 0.12);
+  r.k.box(r.paint, 1.0, 0.035, 0.2, 0, 0.47, wz - 0.06, 0.3);
+  r.box(r.black, 0.06, 0.3, 0.16, 0, 0.12, wz + 0.1);
+  r.box(r.tail, 0.14, 0.08, 0.03, 0, g + 0.32, -F + 0.04);
+  // Wishbones out to the hubs, front and back, and the mirrors on their stalks.
+  for (const z of [front, rear]) {
+    r.both((s) => {
+      const hub: V3 = [s * (wheel - 0.12), r.wy, z];
+      r.add(r.black, tube(0.022, [s * 0.3, g + 0.18, z - 0.18], hub));
+      r.add(r.black, tube(0.022, [s * 0.3, g + 0.18, z + 0.18], hub));
+      r.add(r.black, tube(0.022, [s * 0.32, 0.02, z], [s * (wheel - 0.12), r.wy + 0.12, z]));
+    });
+  }
+  r.both((s) => {
+    r.add(r.black, tube(0.015, [s * 0.36, 0.06, 0.62], [s * 0.5, 0.16, 0.64]));
+    r.box(r.black, 0.14, 0.07, 0.06, s * 0.54, 0.17, 0.64);
+  });
+  // Two little lamps in the nose's tip, for night: it has no headlights to speak of.
+  r.both((s) => r.box(r.lamp, 0.05, 0.03, 0.02, s * 0.05, -0.21, F - 0.11));
+  r.beams.low.set(0, -0.21, F - 0.08);
+  r.raise(0.5);
+
+  // Extras. The snorkel is a periscope off the airbox; the fog lamps are in the wing's endplates.
+  const k = r.xk.snorkel;
+  r.add(r.trim, tube(0.05, [0, 0.46, -0.1], [0, 0.95, -0.1], 0.02), k);
+  r.box(r.trim, 0.16, 0.14, 0.24, 0, 0.98, -0.04, k);
+  r.box(r.dark, 0.12, 0.09, 0.02, 0, 0.98, 0.09, k);
+  r.raise(1.06);
+  r.fogLamps(wheel + 0.16, g + 0.24, F - 0.06, 0.05);
+  r.lightBar(0.62, 0.48, 0.2, 0.36);
+  const d = r.xk.ditchLights;
+  r.both((s) => {
+    r.box(r.black, 0.12, 0.1, 0.08, s * 0.66, 0.08, 0.62, d);
+    r.box(r.lamp, 0.09, 0.07, 0.02, s * 0.66, 0.08, 0.67, d);
+  });
+}
+
+/**
+ * A kei truck (ADR 0024), the little farm truck of Japan's back roads: the cab sits right
+ * over the front wheels, its front flat and upright and nearly all glass, a long flat bed
+ * with low sides behind it, and a pipe guard over the back window. Sold only in Japan.
+ */
+function kei(r: Rig) {
+  const { F, roof } = r;
+  const sill = -0.4, belt = 0.18, side = 0.72, zf = F - 0.08, cab = 0.18, back = -F + 0.04, bedTop = 0.24, floor = -0.06;
+  // The cab: a box over the front wheels, its arch cut, the glasshouse lofted onto it.
+  r.slab(r.paint, [[zf, sill], [zf, belt], [cab, belt], [cab, sill]], -side, side, "round");
+  r.liners(sill, 0.36, [r.axles[1]]);
+  const a: Sec = { y: belt - 0.02, w: side - 0.02, z0: cab + 0.01, z1: zf - 0.01 };
+  const b: Sec = { y: roof, w: side - 0.07, z0: cab + 0.03, z1: zf - 0.16 };
+  r.add(r.paint, loft(a, b));
+  r.sideGlass(a, b, belt + 0.05, roof - 0.08, 0.06, 0.3);
+  r.endGlass(a, b, belt + 0.05, roof - 0.07, 0.06, 1);
+  r.endGlass(a, b, belt + 0.12, roof - 0.12, 0.28, -1);
+  r.wipers(a, b, belt + 0.07, [-0.25, 0.25], 0.42);
+  r.box(r.dark, 2 * side - 0.1, 0.02, b.z1 - b.z0 - 0.1, 0, roof + 0.005, (b.z0 + b.z1) / 2);
+  // The face: square lamps at its corners, a black band between them, a black bumper.
+  const ly = -0.04;
+  r.both((s) => {
+    r.lampBox(r.lamp, 0.2, 0.14, s * 0.5, ly, zf);
+    r.box(lambert(PALETTE.hazardYellow), 0.08, 0.06, 0.02, s * 0.5, ly - 0.14, zf + 0.012);
+  });
+  r.box(r.black, 0.62, 0.08, 0.02, 0, ly, zf + 0.012);
+  r.beams.low.set(0, ly, zf + 0.06);
+  r.box(r.black, 2 * side + 0.04, 0.14, 0.12, 0, -0.33, F - 0.06);
+  // The doors, their handles, mirrors out at the front corners.
+  r.seam(side, [[zf - 0.16, sill + 0.06], [zf - 0.16, belt - 0.01]]);
+  r.seam(side, [[cab + 0.05, sill + 0.06], [cab + 0.05, belt - 0.01]]);
+  r.both((s) => r.box(r.black, 0.02, 0.03, 0.1, s * (side + 0.01), 0.06, cab + 0.18));
+  r.mirrors(a.w, belt + 0.12, zf - 0.12);
+  // The bed, its sides hinged down at the floor, and the guard over the back window.
+  bed(r, { front: cab - 0.05, back, top: bedTop, floor, sill, side, style: "round", inset: 0.36 });
+  r.seam(side, [[cab - 0.08, floor + 0.03], [back + 0.06, floor + 0.03]]);
+  const gz = cab - 0.1, gt = roof + 0.04;
+  r.both((s) => r.add(r.black, tube(0.03, [s * (side - 0.06), bedTop, gz], [s * (side - 0.06), gt, gz], 0.02)));
+  r.add(r.black, tube(0.03, [-(side - 0.06), gt, gz], [side - 0.06, gt, gz], 0.03));
+  for (const x of [-0.3, 0, 0.3]) r.add(r.black, tube(0.015, [x, bedTop, gz], [x, gt, gz]));
+  // Two crates of greens, and the tail lamps on the bed's back corners.
+  const crate = lambert(PALETTE.japan.shedBlue), greens = lambert(PALETTE.japan.meadow[0]);
+  for (const [x, z] of [[-0.3, -0.5], [0.25, -1.1]]) {
+    r.k.box(crate, 0.5, 0.3, 0.4, x, floor + 0.17, z, 0, 0.1);
+    r.k.box(greens, 0.44, 0.06, 0.34, x, floor + 0.33, z, 0, 0.1);
+  }
+  r.both((s) => r.lampBox(r.tail, 0.1, 0.16, s * (side - 0.08), 0.02, back, -1));
+  r.box(r.black, 2 * side, 0.1, 0.1, 0, -0.36, -F + 0.06);
+
+  r.snorkel(a, b, side, belt);
+  r.fogLamps(0.42, -0.3, F - 0.01, 0.06);
+  r.lightBar(1.1, roof + 0.1, b.z1 - 0.12, roof);
+  r.ditchLights(a, b, belt);
+}
+
+const BUILDERS: Record<VehicleId, (r: Rig) => void> = { ridgeback, bluff, mule, overlander, prairie, highland, summit, duneclaw, sandfly, robotaxi, slipstream, kei };
 
 /** One rig's body, painted with `materials.paint` (the caller recolours it) and lit with `materials.lamp`. */
 export function buildVehicleBody(v: Vehicle, materials: { paint: THREE.Material; lamp: THREE.Material }): BodyParts {

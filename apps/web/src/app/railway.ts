@@ -267,5 +267,9 @@ export function buildRailway(world: World, lampMaterial: THREE.MeshLambertMateri
     }
   }
 
-  return { object: group, update, cars: () => poses };
+  /** The timetable's train is put away while the train's film shows its own (ADR 0022). */
+  const showTrain = (on: boolean) => {
+    for (const c of cars) c.object.visible = on;
+  };
+  return { object: group, update, cars: () => poses, showTrain };
 }

@@ -19,9 +19,11 @@ export const WORLD = {
 
 /**
  * The places there are to drive. Each is its own ground on the same grid: the valley you
- * start in, and the island a plane takes you to (island.ts, ADR 0014).
+ * start in, the island a plane takes you to (island.ts, ADR 0014), San Francisco, a
+ * train ride away (city.ts, ADR 0022), Las Vegas and the Grand Canyon, a ferry ride from
+ * the island (vegas.ts, ADR 0023), and Japan, a helicopter ride from Vegas (japan.ts, ADR 0024).
  */
-export type WorldId = "valley" | "island";
+export type WorldId = "valley" | "island" | "city" | "vegas" | "japan";
 
 export const CELL = WORLD.size / WORLD.segments;
 export const HALF = WORLD.size / 2;
@@ -246,6 +248,8 @@ export type Track = Path & {
   bridges: [number, number][];
   /** Level crossings, as distances along the track. */
   crossings: number[];
+  /** Where the front of the train stops at the station, as a distance along the track, if the line has one (ADR 0022). */
+  stop?: number;
 };
 
 const TRACK_SPACING = 5;
@@ -346,8 +350,13 @@ function runRiver(base: (x: number, z: number) => number, angle: number, seed: n
   return { xs, zs, surface };
 }
 
-/** Eight in the valley, and the beach shack on the island. */
-export type SiteStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack" | "outpost" | "lodge";
+/** Eight in the valley, three on the island, three in the city, three in Vegas and three in Japan. */
+export type SiteStyle =
+  | "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch"
+  | "shack" | "outpost" | "lodge"
+  | "victorian" | "pier" | "airfield"
+  | "speedshop" | "pitgarage" | "tradingpost"
+  | "passworks" | "harbour" | "kura";
 export type Site = { x: number; z: number; rot: number; style: SiteStyle; y: number };
 
 export type Terrain = {
@@ -457,14 +466,35 @@ export function level(heights: Float32Array, box: { x0: number; x1: number; z0: 
   }
 }
 
-/** Which vertices a truck can reach from `from` without wading deeper than `wade`. */
-export function flood(heights: Float32Array, water: Float32Array, wade: number, into: Uint8Array, mark: number, from: { x: number; z: number } = START) {
+/**
+ * Writes into `out` each vertex's distance from the segment a–b, less `widen` (a strip that
+ * wide either side of it counts as on it), where that's within `reach` and nearer than what's there.
+ */
+export function markNear(out: Float32Array, a: { x: number; z: number }, b: { x: number; z: number }, reach: number, widen = 0) {
+  const i0 = Math.max(0, Math.floor((Math.min(a.x, b.x) - reach + HALF) / CELL));
+  const i1 = Math.min(WORLD.segments, Math.ceil((Math.max(a.x, b.x) + reach + HALF) / CELL));
+  const j0 = Math.max(0, Math.floor((Math.min(a.z, b.z) - reach + HALF) / CELL));
+  const j1 = Math.min(WORLD.segments, Math.ceil((Math.max(a.z, b.z) + reach + HALF) / CELL));
+  const [dx, dz] = [b.x - a.x, b.z - a.z];
+  const len2 = dx * dx + dz * dz || 1;
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const [x, z] = [gridX(i), gridZ(j)];
+      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2));
+      const d = Math.hypot(x - a.x - t * dx, z - a.z - t * dz);
+      const k = j * ROW + i;
+      if (d < reach) out[k] = Math.min(out[k], Math.max(0, d - widen));
+    }
+  }
+}
+
+/** Which vertices a truck can reach from `from` without wading deeper than `wade`, staying `within` the world's edge. */
+export function flood(
+  heights: Float32Array, water: Float32Array, wade: number, into: Uint8Array, mark: number, from: { x: number; z: number } = START,
+  within = (x: number, z: number) => Math.hypot(x, z) < WORLD.limit,
+) {
   const startK = Math.round((from.z + HALF) / CELL) * ROW + Math.round((from.x + HALF) / CELL);
-  const ok = (k: number) => {
-    const x = gridX(k % ROW);
-    const z = gridZ(Math.floor(k / ROW));
-    return Math.hypot(x, z) < WORLD.limit && water[k] - heights[k] < wade;
-  };
+  const ok = (k: number) => within(gridX(k % ROW), gridZ(Math.floor(k / ROW))) && water[k] - heights[k] < wade;
   const queue = [startK];
   const seen = new Uint8Array(ROW * ROW);
   seen[startK] = 1;

@@ -94,9 +94,12 @@ Pure modules, no three.js, all unit-tested:
   roll chase the four wheels. Rocks under the tyres' clearance are bumps under the
   wheels. Sideways slip decays fast on dirt, slowly on snow and very slowly on ice,
   scaled by the tyres' snow grip.
-- `vehicles.ts` (the eight rigs, and the Sandfly, which only the island's garage sells)
-  and `shop.ts` (parts, prices, and `specFor()`, which turns a rig and its loadout into
-  a `CarSpec`).
+- `vehicles.ts` (the eight rigs, the Sandfly, which only the island's garages sell, the
+  Robotaxi, only the city's, the Slipstream, only Vegas's, and the Kei Truck, only
+  Japan's) and `shop.ts` (parts,
+  prices, and `specFor()`, which turns a rig and its loadout into a `CarSpec`). A
+  `CarSpec` with `road` set is a racing car: where `Ground.pavedAt` says there's no tarmac
+  under it, `step()` gives it `OFF_ROAD`'s share of its push and its top speed (ADR 0023).
 - The second world and the way to it (`decisions/0014-airports-and-the-island.md`):
   - `worlds.ts`: the worlds there are and what the flight to each costs.
   - `airport.ts`: an airstrip (a 260 m runway and an apron) in "field space", the search
@@ -118,6 +121,58 @@ Pure modules, no three.js, all unit-tested:
     a time: the plane's pose, its ramp and wheels, where the truck is, the camera, and
     how much is lost in cloud. Also the plane's measurements, which the model shares,
     and the parked plane's colliders.
+- The third world and the train to it (`decisions/0022-san-francisco-and-the-train.md`):
+  - `worlds.ts` also says what goes where (`ROUTES`): the plane between the valley and
+    the island, the train between the valley and the city.
+  - `track.ts`'s `trainMotion()` is the valley's timetable: round the loop at speed,
+    braking into the station, a minute there (`DWELL`), and away again. `atStation()` is
+    what the platform is told.
+  - `rail.ts` is a line of rail that goes somewhere and stops, and the cars of a train on
+    one; it also lays a line's bed into the height grid (`besideBed`, `clearBed`) and
+    finds where the cutting's floor ends for a tunnel's face (`mouthAt`). `station.ts`
+    builds the two stations from their lines, and `rail-trip.ts` is the trip as a film,
+    pure like the flight's.
+  - `city.ts`'s `buildCity()` returns the same `World` shape again, from `city-data.ts`:
+    heights, water and streets baked from public map data by
+    `apps/web/scripts/bake-city.mjs` (Node, no dependencies), about 415 KB, loaded with
+    `import()` only when the city is wanted (`loadCityData()` in `city-streets.ts`). The
+    street map becomes a 2048-square kerb-distance texture the terrain's shader paints
+    from; buildings are lots along the street fronts (`city-buildings.ts`), their walls
+    one 2 m distance field the physics asks about; the bridges are decks
+    (`city-bridges.ts`) with their own heights, so `World.height(x, z, above)` takes the
+    height a truck is at and answers with the surface under it. `cable-car.ts` is the
+    Powell–Hyde line's timetable; the cars are solid like the train's.
+- The fourth world and the ferry to it (`decisions/0023-las-vegas-and-the-ferry.md`):
+  - `ROUTES` has the ferry between the island and Vegas, both ways (`"boat"`).
+  - `dock.ts` is a dock in "dock space" (`fromDock`/`toDock`): a causeway laid into the
+    height grid by `layDock()`, with a quay wall at its end and the berth dredged deep,
+    and its top exact for the physics (`causewayTop()`, which the island's and Vegas's
+    `height()` lay over the grid, as the valley's does the jump's deck). `ferry.ts` is the
+    crossing as a film, pure like the flight's and the train's: `sailOut()` and
+    `sailIn()`, a frame for any time, and `ferryBase()` for what the truck's wheels stand on.
+  - `vegas.ts`'s `buildVegas()` returns the same `World` shape again, with nothing to
+    fetch: the ground from noise and a few drawn lines (the canyon's, the side canyon's,
+    the lake's blobs), roads graded into it on smoothed profiles (`gradeRoad`) and painted
+    from a kerb map like the city's (`kerbMapOf`), the resorts as boxes in the city's wall
+    field, and courses partly found by `routeAcross()`, a grid search for the gentlest
+    drivable way between two spots. `World.vegas` carries what only the renderer needs.
+  - The island's dock is built in after everything else there (`islandDock`), on the
+    shore nearest the camp that's clear of the courses, the garages, the airstrip and the
+    sandbar, and takes away only the scatter where it goes.
+- The fifth world and the helicopter to it (`decisions/0024-japan-and-the-helicopter.md`):
+  - `ROUTES` has the helicopter between Vegas and Japan, both ways (`"heli"`).
+  - `heli.ts` is a helipad in "pad space" (`fromPad`/`toPad`): the circle a truck waits
+    on, the helicopter's stand beside it, and the trip as a film, pure like the others:
+    `liftOff()` and `setDown()`, a frame for any time, the truck hanging the slings'
+    length (`SLUNG`) under the hook while it's off the ground. A world's `pad` is levelled
+    and kept clear of scatter (`markNear` into its site field); Vegas's and Japan's.
+  - `japan.ts`'s `buildJapan()` returns the same `World` shape again, with nothing to
+    fetch: the ground from noise and a few shapes (the cone, the lake, the ridge with its
+    pass, the terraces' shelves), roads graded into it by `roads.ts` with a bench wide
+    enough to stay level across a slope, the town's houses as boxes in the city's wall
+    field, the mountain's snow as slippery as the valley's, and the paddies as water a
+    hand deep that the renderer lays level on each terrace. `World.japan` carries what
+    only the renderer needs.
 - `wildlife.ts`: the animals (`decisions/0015-wildlife.md`). `SPECIES` says which world
   each kind lives in and how it behaves, `habitat()` where a herd can make its home,
   `placeHerds()` puts every herd down from a fixed seed (the first ones in front of the
@@ -251,6 +306,26 @@ for sign-in (Google only), and Realtime for the shared valley. See
   `supabase db query --linked -f`, and `supabase migration repair --status applied
   20261010180000` recorded it. `supabase db push --include-all` would record the
   Cartier chains file too and change nothing else.
+- `20261015120000_city_and_train.sql` adds the city to `worlds` (150 miles, like the
+  flights), a `routes` table that `fly()` now checks so it only goes where the plane or
+  the train does, the Robotaxi in `shop_items` (sold only in the city), the city's eight
+  courses, its places and both stations (a new kind of place), and a `stations` column
+  on `leaderboard()` (ADR 0022). Applied to the live project on 2026-10-15 the same way as
+  the sandbar's (its SQL with `db query`, then `migration repair`), after a rolled-back dry
+  run with `game.test.sql` passed; the checks pass against the migrated project too.
+- `20261015180000_vegas_and_the_ferry.sql` adds Vegas to `worlds` (150 miles), the ferry
+  to `routes` (whose `way` may now be `'boat'`), the Slipstream in `shop_items` (sold only
+  in Vegas), Vegas's eight courses, its places and both docks (a new kind of place), a
+  `docks` column on `leaderboard()`, and every other course's `min_seconds` redone for
+  the faster limit (`TOO_QUICK`, 34 m/s) (ADR 0023). Applied to the live project on
+  2026-10-15 with Japan's, the same way as the city's (its SQL with `db query`, then
+  `migration repair`), after a rolled-back dry run of both with `game.test.sql` passed;
+  the checks pass against the migrated project too.
+- `20261015200000_japan_and_the_helicopter.sql` adds Japan to `worlds` (150 miles), the
+  helicopter to `routes` (whose `way` may now be `'heli'`), the Kei Truck in `shop_items`
+  (sold only in Japan), Japan's eight courses, its places and both helipads (a new kind of
+  place), and a `helipads` column on `leaderboard()` (ADR 0024). Applied to the live
+  project on 2026-10-15, straight after Vegas's.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
@@ -410,6 +485,8 @@ that repo's problem, not this one's.
   means a custom SMTP sender, which is a new service and so a decision for the owner
   under the free-tier rule.
 - **Vercel Hobby:** 100 GB bandwidth/month, 100 GB-hr serverless. Realistic for hobby; watch images.
+  San Francisco's baked data is about 415 KB more, already compressed, fetched only by
+  players who go there or reload there (ADR 0022).
 - **Sentry free:** 5k errors/month.
 - **GitHub Actions:** 2k minutes/month on private; unlimited on public.
 - **CodeRabbit:** unlimited reviews on public repos; limited on private.

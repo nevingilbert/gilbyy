@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Kit, lambert, pane, prism, ring, roof, tone, type Circle } from "./garages";
+import { Kit, lambert, pane, prism, ring, roof, tiledRoof, tone, type Circle } from "./garages";
 import { PALETTE } from "./palette";
 
 const W = 12;
@@ -46,10 +46,60 @@ function cup(k: Kit) {
 }
 
 /**
+ * Vegas's café (ADR 0023): a fifties diner, front facing +z. A long chrome box with round
+ * ends, a band of windows right round it, a teal stripe over them and a red one under, a
+ * vestibule at the door, and a sign on a pole whose neon comes up at night. Its paved lot in
+ * front is free of colliders, for friends to meet on. Origin at ground level in the middle.
+ */
+export function buildDiner(windows: THREE.Material, glow: THREE.Material): ReturnType<typeof buildCoffeeShop> {
+  const object = new THREE.Group();
+  const k = new Kit();
+  const DW = 15, DD = 7, DH = 4.2, DF = DD / 2, R = DD / 2;
+  const chrome = lambert(PALETTE.vegas.chrome), flute = lambert(tone(PALETTE.vegas.chrome, 0.82)), teal = lambert(PALETTE.vegas.teal);
+  const red = lambert(PALETTE.vegas.dinerRed), dark = lambert(PALETTE.doorDark);
+  const straight = DW - 2 * R;
+  // The body: a box between two half-round ends, chrome below the windows, fluted.
+  k.box(chrome, straight, DH, DD, 0, DH / 2, 0);
+  for (const s of [1, -1]) k.add(chrome, new THREE.CylinderGeometry(R, R, DH, 16, 1, false, s > 0 ? 0 : Math.PI, Math.PI).translate(0, DH / 2, 0), (s * straight) / 2, 0, 0);
+  for (let y = 0.35; y < 1.6; y += 0.3) {
+    for (const s of [1, -1]) k.box(flute, straight, 0.06, 0.04, 0, y, s * (DF + 0.02));
+  }
+  // The window band, the teal stripe over it and the red under, right round.
+  const bandRound = (m: THREE.Material, h: number, y: number, out: number) => {
+    for (const s of [1, -1]) k.box(m, straight, h, 0.06, 0, y, s * (DF + out));
+    for (const s of [1, -1]) k.add(m, new THREE.CylinderGeometry(R + out, R + out, h, 16, 1, true, s > 0 ? 0 : Math.PI, Math.PI).translate(0, y, 0), (s * straight) / 2, 0, 0);
+  };
+  bandRound(windows, 1.3, 2.45, 0.03);
+  bandRound(teal, 0.55, 3.45, 0.05);
+  bandRound(red, 0.22, 1.7, 0.05);
+  k.box(lambert(PALETTE.vegas.stucco[4]), straight + 0.4, 0.25, DD + 0.4, 0, DH + 0.12, 0);
+  for (const s of [1, -1]) k.add(lambert(PALETTE.vegas.stucco[4]), new THREE.CylinderGeometry(R + 0.2, R + 0.2, 0.25, 16, 1, false, s > 0 ? 0 : Math.PI, Math.PI), (s * straight) / 2, DH + 0.12, 0);
+  // The vestibule at the door, glass-fronted, a little roof over it.
+  k.box(chrome, 3.2, 3.0, 1.6, 0, 1.5, DF + 0.8);
+  pane(k.at(0, 1.3, DF + 1.62), windows, 1.4, 2.2, PALETTE.vegas.chrome);
+  k.box(red, 3.8, 0.25, 2.2, 0, 3.1, DF + 0.9);
+  k.box(dark, 3.2, 0.06, 2.4, 0, 0.03, DF + 2.2);
+  // The sign: a tall pole, a red board with neon round it, and the star on top.
+  const sign = k.at(-DW / 2 - 2.5, 0, DF + 3);
+  sign.cyl(chrome, 0.18, 9, 0, 4.5, 0, 0, 0, 8);
+  sign.box(red, 1.0, 3.2, 4.4, 0, 8.2, 0);
+  sign.box(glow, 1.06, 0.18, 4.6, 0, 9.85, 0);
+  sign.box(glow, 1.06, 0.18, 4.6, 0, 6.55, 0);
+  for (const s of [1, -1]) sign.box(glow, 1.06, 3.3, 0.18, 0, 8.2, s * 2.3);
+  for (let i = 0; i < 4; i++) sign.box(lambert(PALETTE.vegas.signGold), 0.2, 1.6, 0.2, 0, 11.1, 0, (i * Math.PI) / 4);
+  // The lot out front, paved, its bays marked.
+  const lot = lambert(PALETTE.city.asphalt);
+  k.box(lot, 26, 0.12, 18, 0, 0.0, DF + 11);
+  for (let x = -10.5; x <= 10.5; x += 3) k.box(lambert(PALETTE.runwayPaint), 0.12, 0.02, 4.5, x, 0.07, DF + 17);
+  const colliders = ring([{ x: -DW / 2 - 2.5, z: DF + 3, r: 0.35 }], -DW / 2, DW / 2, -DF, DF + 1.6);
+  return { object: k.build(object), colliders, meet: { x: 0, z: DF + 11, r: 9 } };
+}
+
+/**
  * A small roadside café, front facing +z. Origin at ground level in the middle of the building, which is 12 m by 9 m;
  * in front of it a flagged patio (to z ≈ 10) and then a gravel lot (to z = 25), both left free of colliders.
  */
-export function buildCoffeeShop(windows: THREE.Material, glow: THREE.Material): {
+export function buildCoffeeShop(windows: THREE.Material, glow: THREE.Material, lot = true): {
   object: THREE.Group;
   colliders: Circle[];
   /** The meeting spot in local space: the patio/parking area in front of the shop where players gather. */
@@ -143,10 +193,10 @@ export function buildCoffeeShop(windows: THREE.Material, glow: THREE.Material): 
   }
   k.box(dark, 0.06, 0.12, 0.06, 0, 2.58, F + 3.9);
 
-  // Gravel lot, with timber wheel stops facing the patio.
+  // Gravel lot, with timber wheel stops facing the patio. On a city square there is none (ADR 0022).
   const lz0 = PATIO_END, lw = 24;
-  k.box(lambert(PALETTE.dirt[1]), lw, 0.3, LOT_END - lz0, 0, -0.13, (lz0 + LOT_END) / 2);
-  for (let x = -7.5; x <= 7.5; x += 3) k.box(wood, 1.6, 0.14, 0.22, x, 0.09, lz0 + 1.0);
+  if (lot) k.box(lambert(PALETTE.dirt[1]), lw, 0.3, LOT_END - lz0, 0, -0.13, (lz0 + LOT_END) / 2);
+  if (lot) for (let x = -7.5; x <= 7.5; x += 3) k.box(wood, 1.6, 0.14, 0.22, x, 0.09, lz0 + 1.0);
 
   // Out the side and back: a propane tank on blocks, coffee sacks on a pallet.
   const tank = lambert(PALETTE.barrierWhite);
@@ -170,5 +220,76 @@ export function buildCoffeeShop(windows: THREE.Material, glow: THREE.Material): 
     F,
   );
   // Centred so the circle just clears the front wall's colliders and spans patio and lot.
-  return { object: k.build(object), colliders, meet: { x: 0, z: F + 11.5, r: 11 } };
+  return { object: k.build(object), colliders, meet: lot ? { x: 0, z: F + 11.5, r: 11 } : { x: 0, z: F + 8, r: 8 } };
+}
+
+/**
+ * Japan's café (ADR 0024): a teahouse by the lake, front facing +z. Dark cedar on a stone
+ * footing under a deep roof of grey tiles, paper screens along the front that glow at night,
+ * a curtain over the door and a veranda before it; out front two benches spread with red
+ * cloth under red parasols, and a stone lantern by the path. Its gravel yard is free of
+ * colliders, for friends to meet on. Origin at ground level in the middle.
+ */
+export function buildTeahouse(windows: THREE.Material, glow: THREE.Material): ReturnType<typeof buildCoffeeShop> {
+  const object = new THREE.Group();
+  const k = new Kit();
+  const TW = 11, TD = 7.5, TF = TD / 2, TH = 3.55;
+  const j = PALETTE.japan;
+  const cedar = lambert(j.cedarWall), timber = lambert(j.timber), plaster = lambert(j.plaster), stone = lambert(j.stone);
+  const red = lambert(j.vermilion), noren = lambert(j.noren), dark = lambert(PALETTE.doorDark);
+  k.box(stone, TW + 0.8, 0.55, TD + 0.8, 0, 0.275, 0);
+  k.box(cedar, TW, TH - 0.55, TD, 0, 0.55 + (TH - 0.55) / 2, 0);
+  // Posts along the front, paper screens between them, the door in the middle with its curtain.
+  const posts = [-TW / 2, -3.3, -1.1, 1.1, 3.3, TW / 2];
+  for (const x of posts) k.box(timber, 0.26, TH - 0.55, 0.26, x, 0.55 + (TH - 0.55) / 2, TF + 0.02);
+  for (let i = 0; i < posts.length - 1; i++) {
+    const [a, b] = [posts[i], posts[i + 1]];
+    const x = (a + b) / 2;
+    if (Math.abs(x) < 0.5) {
+      k.box(dark, b - a - 0.3, 2.3, 0.06, x, 0.55 + 1.15, TF + 0.02);
+      k.box(noren, b - a - 0.2, 0.85, 0.05, x, 0.55 + 1.95, TF + 0.12);
+      continue;
+    }
+    const w = b - a - 0.3;
+    k.box(windows, w, 2.0, 0.06, x, 0.55 + 1.25, TF + 0.02);
+    for (const y of [0.55 + 0.6, 0.55 + 1.25, 0.55 + 1.9]) k.box(timber, w, 0.05, 0.08, x, y, TF + 0.06);
+    for (const dx of [-w / 4, 0, w / 4]) k.box(timber, 0.05, 2.0, 0.08, x + dx, 0.55 + 1.25, TF + 0.06);
+  }
+  // The veranda along the front.
+  k.box(timber, TW + 1, 0.12, 1.4, 0, 0.6, TF + 0.7);
+  for (const x of [-TW / 2, 0, TW / 2]) k.box(timber, 0.2, 0.55, 0.2, x, 0.27, TF + 1.3);
+  // The roof: deep eaves, the ridge along the front, the gables plastered.
+  const rk = k.at(0, 0, 0, Math.PI / 2);
+  rk.add(plaster, prism([[TF, TH], [0, TH + 2.4], [-TF, TH]], TW), 0, 0, 0);
+  tiledRoof(rk, TD, TW, TH, 2.4, 1.4);
+  // Out front: benches spread with red cloth under red parasols.
+  const shade = lambert(j.vermilion, THREE.DoubleSide);
+  for (const s of [1, -1]) {
+    const [bx, bz] = [s * 3.6, TF + 3.4];
+    k.box(timber, 2.4, 0.08, 0.8, bx, 0.45, bz);
+    for (const e of [1, -1]) k.box(timber, 0.1, 0.42, 0.7, bx + e * 1.0, 0.21, bz);
+    k.box(red, 2.5, 0.04, 0.9, bx, 0.51, bz);
+    k.cyl(dark, 0.04, 3.0, bx - s * 0.2, 1.5, bz - 0.7, 0, 0, 5);
+    k.add(shade, new THREE.ConeGeometry(1.9, 0.6, 16, 1, true), bx - s * 0.2, 3.0, bz - 0.7);
+  }
+  // A stone lantern by the path, its light lit at night.
+  const [lx, lz] = [-TW / 2 - 1.6, TF + 2.2];
+  k.box(stone, 0.8, 0.3, 0.8, lx, 0.15, lz);
+  k.cyl(stone, 0.16, 0.9, lx, 0.75, lz, 0, 0, 8);
+  k.box(stone, 0.5, 0.45, 0.5, lx, 1.42, lz);
+  k.box(glow, 0.3, 0.25, 0.52, lx, 1.42, lz);
+  k.add(stone, new THREE.ConeGeometry(0.6, 0.38, 4).rotateY(Math.PI / 4), lx, 1.83, lz);
+  // The gravel yard.
+  k.box(lambert(j.town[0]), 22, 0.3, 16, 0, -0.13, TF + 9.4);
+  const colliders = ring(
+    [
+      { x: lx, z: lz, r: 0.5 },
+      ...[1, -1].map((s) => ({ x: s * 3.6, z: TF + 3.4, r: 1.2 })),
+    ],
+    -TW / 2,
+    TW / 2,
+    -TF,
+    TF + 1.4,
+  );
+  return { object: k.build(object), colliders, meet: { x: 0, z: TF + 11, r: 8 } };
 }

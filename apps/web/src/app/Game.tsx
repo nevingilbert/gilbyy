@@ -4,7 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { achievementFor } from "./achievements";
 import { CONVOY_MAX, Convoys, GATHER_REACH, lineUp, type ConvoyEvent } from "./convoy";
 import { secondsUntil } from "./daylight";
+import { cityData, loadCityData } from "./city-streets";
+import { DOCK_REACH, PIER, dockBoard, dockLeave, fromDock } from "./dock";
+import { LAND, SAIL, ferryBase, sailIn, sailOut, type FerryFrame } from "./ferry";
 import { ARRIVE, BOARD_REACH, DEPART, arrival, boardSpot, deckAt, departure, leaveSpot, rideOnDeck } from "./flight";
+import { LIFT, PAD_REACH, SET, liftOff, padBoard, padLeave, setDown } from "./heli";
+import { arrival as trainIn, departure as trainOut, inEnd, outEnd, wagonBase, type TrainFrame } from "./rail-trip";
+import { BOARD_REACH as STATION_REACH } from "./station";
 import { GarageMenu, fmtMiles } from "./GarageMenu";
 import { currentGoal } from "./goals";
 import { buildWorldOf } from "./island";
@@ -13,7 +19,7 @@ import { createMap } from "./map";
 import { fmtAir, fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
 import { stackTags, type TagBox } from "./name-tags";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
-import { FlightCard, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker } from "./Panels";
+import { LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker, TripCard } from "./Panels";
 import { PALETTE } from "./palette";
 import { KEY_TURN, clampOrbit, dragOrbit, photoName, zoomOrbit, type Orbit } from "./photo";
 import { between, makeCar, noInput, step, yawRateOf, type Input } from "./physics";
@@ -25,7 +31,8 @@ import { GARAGE_NAMES } from "./showroom";
 import { LocalStore, SupabaseStore, type Profile, type Store } from "./store";
 import { currentSession, onSessionChange, onlineConfigured, signInWithGoogle, signOut, supabase } from "./supabase";
 import { TIDE, ebbAt, untilEbb } from "./tide";
-import { trainObstacles } from "./track";
+import { atStation, trainObstacles } from "./track";
+import { cableObstacles } from "./cable-car";
 import { VEHICLES, type VehicleId } from "./vehicles";
 import {
   TOW_FEE, TOW_LEAVE, TOW_RUN, TOW_SPEC, TOW_STOP, approachLine, fmtAway, standTow, towArrived, towAway, towLeaving, towVisit, towWait,
@@ -33,7 +40,7 @@ import {
 } from "./tow";
 import { WINCH_LIMIT, WINCH_REACH, WINCH_STILL, WINCH_TAKES, canWinch, hasWinch, stuckHelp } from "./winch";
 import type { Ground, Mission, Obstacle, SiteStyle, WorldId } from "./world";
-import { WORLDS, flightFrom, isWorld } from "./worlds";
+import { WORLDS, isWorld, wayFrom, type Way } from "./worlds";
 
 /** Physics runs at a fixed rate, independent of the display's refresh rate. */
 const STEP = 1 / 120;
@@ -77,6 +84,9 @@ const hintWorld = (world: WorldId | null) => {
 /** What a start arch on the sandbar says while the sea covers it, `seconds` before the tide is next out. Never a countdown: the sea is in no hurry. */
 const tideLine = (seconds: number) =>
   `The sand's under the sea for now.${!Number.isFinite(seconds) ? "" : seconds < 50 ? " The tide's nearly out." : ` The tide's out again in about ${Math.max(1, Math.round(seconds / 60))} min.`}`;
+/** What the platform says while the train is out round the loop, `seconds` before it's next in (ADR 0022). Not a countdown either. */
+const trainLine = (seconds: number) =>
+  seconds < 50 ? "The train's nearly in." : `The next train's in about ${Math.max(1, Math.round(seconds / 60))} min.`;
 
 const COMPASS = ["N", "·", "NE", "·", "E", "·", "SE", "·", "S", "·", "SW", "·", "W", "·", "NW", "·"];
 const COMPASS_ITEM = 28;
@@ -94,8 +104,11 @@ type Prompt =
   | { kind: "friend"; id: string; name: string; asked: boolean }
   /** At the door of the bank, church, school or casino (ADR 0012). */
   | { kind: "landmark"; id: LandmarkKind }
-  /** On the apron behind the plane's tail (ADR 0014). */
-  | { kind: "flight"; to: WorldId }
+  /**
+   * On the apron behind the plane's tail (ADR 0014), or beside the train's flat wagon (ADR
+   * 0022). `wait` is how many seconds until the train's at the platform: 0 when it is.
+   */
+  | { kind: "trip"; way: Way; to: WorldId; wait: number }
   /** At the convoy's arch, or gathering one: `lead` in bold, then `rest`. `act` if E does something. */
   | { kind: "convoy"; lead: string; rest: string; act: boolean }
   /** Hung up on a rock (ADR 0021): `lead` in bold, then `rest`. `act` if E rings BBB for a tow. */
@@ -222,7 +235,7 @@ export function Game() {
   const [signingIn, setSigningIn] = useState(false);
   const [board, setBoard] = useState(false);
   const [visiting, setVisiting] = useState<LandmarkKind | null>(null);
-  const [boarding, setBoarding] = useState<WorldId | null>(null);
+  const [boarding, setBoarding] = useState<{ way: Way; to: WorldId } | null>(null);
   const [run, setRun] = useState<RunHud>(null);
   const [count, setCount] = useState<number | null>(null);
   const [typing, setTyping] = useState(false);
@@ -248,16 +261,21 @@ export function Game() {
     // the plane, ?world=island starts single player there, ?rig= skips the picker,
     // ?miles= starts single player with miles to spend (and with ?rig= and ?winch, one of
     // them fitted), ?net=local plays across tabs of this browser with no account,
-    // ?tide=low or high holds the island's tide there. Not linked from anywhere.
+    // ?tide=low or high holds the island's tide there, ?station parks you beside the train's
+    // flat wagon. Not linked from anywhere.
     const params = new URLSearchParams(window.location.search);
     const localNet = params.get("net") === "local";
     const worldParam = params.get("world");
     /** Where single player starts: the valley, unless the address says otherwise. Nothing is saved, so nowhere else. */
     const soloWorld: WorldId = isWorld(worldParam) ? worldParam : "valley";
 
-    // Signed in, the truck is wherever its last flight left it. The profile says where, but
+    // Signed in, the truck is wherever its last trip left it. The profile says where, but
     // not for a moment yet, so start with this browser's best guess and swap if it's wrong.
-    let world = buildWorldOf(isWorld(worldParam) ? worldParam : ((onlineConfigured && !localNet && hintedWorld()) || "valley"));
+    // The city's ground and streets are fetched on their own (ADR 0022): until they're in,
+    // the valley stands in for it, and the city goes up as soon as they are.
+    const guess: WorldId = isWorld(worldParam) ? worldParam : (onlineConfigured && !localNet && hintedWorld()) || "valley";
+    if (guess === "city") void loadCityData();
+    let world = buildWorldOf(guess === "city" && !cityData() ? "valley" : guess);
     let courses = world.missions.filter((m) => m.crew === 1);
     let crewCourses = world.missions.filter((m) => m.crew > 1);
     let store: Store = new LocalStore("local", null, soloWorld);
@@ -307,16 +325,23 @@ export function Game() {
     const startHour = Number(params.get("hour"));
     /** How far out the tide is held, in metres below high water, or null to let it come and go. */
     const heldTide = params.get("tide") === "low" ? TIDE.fall : params.get("tide") === "high" ? 0 : null;
-    const startGarage = view.garages[Number(params.get("garage"))];
+    let placeAsAsked = () => {};
 
     // The physics sees the train and other players' trucks as obstacles on top of the static world.
     let moving: Obstacle[] = [];
-    // Through `world`, not a copy of it: a flight puts another world up.
+    // Through `world`, not a copy of it: a trip puts another world up. Where a bridge crosses
+    // over (ADR 0022) the ground is whichever surface is under the truck, by how high it is.
     const ground: Ground = {
-      height: (x, z) => world.height(x, z),
+      height: (x, z) => world.height(x, z, car.y - spec.ride - 0.5),
       waterAt: (x, z) => world.waterAt(x, z),
       slipAt: (x, z) => world.slipAt(x, z),
-      limit: world.limit,
+      get limit() {
+        return world.limit;
+      },
+      get square() {
+        return world.square;
+      },
+      pavedAt: (x, z) => world.pavedAt?.(x, z) ?? false,
       obstaclesNear: (x, z) => {
         const still = world.obstaclesNear(x, z);
         const near = moving.filter((o) => Math.abs(o.x - x) < 24 && Math.abs(o.z - z) < 24);
@@ -348,14 +373,18 @@ export function Game() {
     let flushClock = 0;
     let nearGarage = -1;
     let landmarkHere: LandmarkKind | null = null;
-    /** Whether the truck is waiting behind the plane, where E opens the flight's card. */
-    let flightHere = false;
     /**
-     * A flight in progress (ADR 0014): which half of its film is showing (`out` of this
-     * world, or `in` to the next), how far into it, and where the truck was when it boarded.
+     * Whether the truck is waiting behind the plane, or beside the train's flat wagon, where
+     * E opens the trip's card; and if it's the train, how long until it's in (0 when it is).
      */
-    let trip: { to: WorldId; leg: "out" | "in"; t: number; from: { x: number; z: number; heading: number } } | null = null;
-    /** The truck came here by plane, so it isn't moved to its tent when one is found. */
+    let tripHere: { way: Way; wait: number } | null = null;
+    /**
+     * A trip in progress, by plane (ADR 0014) or by train (ADR 0022): which half of its film
+     * is showing (`out` of this world, or `in` to the next), how far into it, and where the
+     * truck was when it boarded. `held` is time spent in the dark waiting for the next world.
+     */
+    let trip: { way: Way; to: WorldId; leg: "out" | "in"; t: number; from: { x: number; z: number; heading: number } } | null = null;
+    /** The truck came here by plane or train, so it isn't moved to its tent when one is found. */
     let landed = false;
     let cut = { garage: -1, t: 0, from: { x: 0, z: 0, heading: 0 } };
     let toastTimer = 0;
@@ -515,7 +544,7 @@ export function Game() {
       landmarkHere = friendHere = target = null;
       // The pin was a spot in the world just left.
       setPin(null);
-      flightHere = false;
+      tripHere = null;
       forgetRopes();
       shownPrompt = STALE;
       placeOnGround(world.start.x, world.start.z, world.start.heading, 0);
@@ -724,7 +753,11 @@ export function Game() {
       // The world that was built first was a guess. If the truck is somewhere else, go
       // there before anything more is shown.
       if (store.get().world !== world.id) {
+        // The city's data first, if that's where the truck is (ADR 0022).
+        if (store.get().world === "city") await loadCityData();
+        if (cancelled) return;
         enterWorld(store.get().world);
+        if (!store.online) placeAsAsked();
         dip();
         if (opening) view.flyIn();
       }
@@ -784,11 +817,26 @@ export function Game() {
       return err;
     };
     actions.current.fly = async () => {
-      const spot = boardSpot(world.airport);
-      if (modeRef.current !== "drive" || trip || running || convoys.state || car.stuck || Math.hypot(car.x - spot.x, car.z - spot.z) > BOARD_REACH + 2) {
-        return "Pull up behind the plane first.";
+      const way = boardingWay;
+      const to = way && wayFrom(world.id, way);
+      if (!way || !to) return "Nothing goes anywhere from here.";
+      const spot =
+        way === "plane" ? world.airport && boardSpot(world.airport)
+        : way === "boat" ? world.dock && dockBoard(world.dock)
+        : way === "heli" ? world.pad && padBoard(world.pad)
+        : world.station?.board;
+      const reach = way === "plane" ? BOARD_REACH : way === "boat" ? DOCK_REACH : way === "heli" ? PAD_REACH : STATION_REACH;
+      if (!spot || modeRef.current !== "drive" || trip || running || convoys.state || car.stuck || Math.hypot(car.x - spot.x, car.z - spot.z) > reach + 2) {
+        return way === "plane" ? "Pull up behind the plane first."
+          : way === "boat" ? "Pull up out on the causeway first."
+          : way === "heli" ? "Pull up onto the helipad first."
+          : "Pull up beside the flat wagon first.";
       }
-      const to = flightFrom(world.id);
+      // The train only takes you while it's standing at the platform.
+      const wait = way === "train" ? trainWait() : 0;
+      if (wait > 0) return `The train's gone. ${trainLine(wait)}`;
+      // The city's streets and ground take a moment to fetch: start now, and they'll be in by the tunnel.
+      if (to === "city") void loadCityData();
       inputRef.current = noInput();
       // What's been driven since the last bank counts toward the fare.
       store.addMiles(unbanked);
@@ -807,12 +855,23 @@ export function Game() {
         setPeople(1);
         present("joining");
       }
-      trip = { to, leg: "out", t: 0, from: { x: car.x, z: car.z, heading: car.heading } };
+      trip = { way, to, leg: "out", t: 0, from: { x: car.x, z: car.z, heading: car.heading } };
       setPrompt(null);
       shownPrompt = "";
       setBoarding(null);
       setModeBoth("flying");
       return null;
+    };
+    /** Which way the card that's open is for: the plane or the train. */
+    let boardingWay: Way | null = null;
+    /**
+     * Seconds until the train is standing at this world's platform: 0 while it is. In the
+     * valley it comes round on the timetable; at Fourth and King one always stands there.
+     */
+    const trainWait = () => {
+      if (!world.station) return Infinity;
+      const here = atStation(world.track, time);
+      return !here || here.standing ? 0 : here.due;
     };
     actions.current.fit = (v, l) => {
       void store.equip(v, l).then((err) => {
@@ -874,9 +933,13 @@ export function Game() {
         shownPrompt = "";
         return;
       }
-      if (flightHere) {
+      if (tripHere) {
+        // While the train's out round the loop, the prompt says when it's next in, and E waits for it.
+        const to = wayFrom(world.id, tripHere.way);
+        if (tripHere.wait > 0 || !to) return;
         inputRef.current = noInput();
-        setBoarding(flightFrom(world.id));
+        boardingWay = tripHere.way;
+        setBoarding({ way: tripHere.way, to });
         return;
       }
       if (landmarkHere && !running && !convoys.state) {
@@ -1322,64 +1385,189 @@ export function Game() {
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
 
-    if (params.has("garage") && startGarage) {
-      placeOnGround(startGarage.approach.x, startGarage.approach.z, startGarage.heading + Math.PI, 0);
-    } else if (params.has("airport")) {
-      const spot = boardSpot(world.airport);
-      placeOnGround(spot.x, spot.z, spot.heading, 0);
-    } else if (at.length >= 2 && at.every(Number.isFinite)) placeOnGround(at[0], at[1], at[2] ?? 0, 0);
+    /** Puts the truck where the address asks, if it asks. Again once the city is up, which comes later (ADR 0022). */
+    placeAsAsked = () => {
+      const startGarage = view.garages[Number(params.get("garage"))];
+      if (params.has("garage") && startGarage) {
+        placeOnGround(startGarage.approach.x, startGarage.approach.z, startGarage.heading + Math.PI, 0);
+      } else if (params.has("airport") && world.airport) {
+        const spot = boardSpot(world.airport);
+        placeOnGround(spot.x, spot.z, spot.heading, 0);
+      } else if (params.has("station") && world.station) {
+        const spot = world.station.board;
+        placeOnGround(spot.x, spot.z, spot.heading, 0);
+      } else if (params.has("dock") && world.dock) {
+        const spot = dockBoard(world.dock);
+        placeOnGround(spot.x, spot.z, spot.heading, 0);
+      } else if (params.has("pad") && world.pad) {
+        const spot = padBoard(world.pad);
+        placeOnGround(spot.x, spot.z, spot.heading, 0);
+      } else if (at.length >= 2 && at.every(Number.isFinite)) placeOnGround(at[0], at[1], at[2] ?? 0, 0);
+    };
+    placeAsAsked();
 
-    // ——— The flight ———
+    // ——— The plane and the train ———
 
-    /** What the truck's wheels stand on during the film: the ramp and the hold's floor, as well as the apron. */
-    const deck: Ground = { ...ground, height: (x, z) => world.height(x, z) + deckAt(world.airport, x, z) };
+    /** What the truck's wheels stand on during the plane's film: the ramp and the hold's floor, as well as the apron. */
+    const deck: Ground = { ...ground, height: (x, z) => world.height(x, z) + (world.airport ? deckAt(world.airport, x, z) : 0) };
+    /** And during the ferry's: its car deck and ramps, as well as the causeway. Set each frame. */
+    let ferryFrame: FerryFrame | null = null;
+    const aboard: Ground = {
+      ...ground,
+      height: (x, z) => {
+        const d = world.dock;
+        return ferryFrame && d ? ferryBase(d, ferryFrame.ferry, ferryFrame.ramps, (gx, gz) => world.height(gx, gz), x, z) : world.height(x, z);
+      },
+    };
+    /** And during the train's: the flat wagon's deck and its ramp, as well as the ground. Set each frame. */
+    let wagonFrame: TrainFrame | null = null;
+    const onWagon: Ground = {
+      ...ground,
+      height: (x, z) => (wagonFrame ? wagonBase(wagonFrame.cars[wagonFrame.cars.length - 1], wagonFrame.ramp, (gx, gz) => world.height(gx, gz), x, z) : world.height(x, z)),
+    };
 
-    /** The film is over: the truck is on the apron of the other world, and is the player's again. */
-    const arrive = () => {
-      const spot = leaveSpot(world.airport);
+    /** What's said on arriving: where you are, and what the way back costs. */
+    const welcome = (way: Way) => {
+      const back = wayFrom(world.id, way);
+      if (world.id === "island" && way === "boat") return `Back on the island. The flight to the valley is ${WORLDS.valley.fare} mi, whenever you have them.`;
+      if (world.id === "island") return `The island. The flight home is ${WORLDS.valley.fare} mi, whenever you have them.`;
+      if (world.id === "city") return `San Francisco. Fourth and King, and the whole city. The train home is ${WORLDS.valley.fare} mi, whenever you have them.`;
+      if (world.id === "vegas" && way === "heli") return `Back in Las Vegas, on the canyon's rim. The ferry to the island is ${WORLDS.island.fare} mi, whenever you have them.`;
+      if (world.id === "japan") return `Japan. Fuji over the lake, the town by the harbour, the terraces and the pass. The helicopter back is ${WORLDS.vegas.fare} mi, whenever you have them.`;
+      if (world.id === "vegas") return `Las Vegas. The marina on Lake Mead, the Strip across the desert, and the canyon beyond. The ferry back is ${WORLDS.island.fare} mi, whenever you have them.`;
+      return back ? "Back in the valley." : "";
+    };
+
+    /** The film is over: the truck is on the apron, beside the platform, back on the causeway or on the pad, of the other world, and is the player's again. */
+    const arrive = (way: Way) => {
+      const spot =
+        way === "plane" && world.airport ? leaveSpot(world.airport)
+        : way === "boat" && world.dock ? dockLeave(world.dock)
+        : way === "heli" && world.pad ? padLeave(world.pad)
+        : world.station ? world.station.leave
+        : world.start;
       placeOnGround(spot.x, spot.z, spot.heading, 0);
       trip = null;
+      wagonFrame = null;
+      ferryFrame = null;
       landed = true;
       lastDistance = car.distance;
       lastPose = { x: car.x, z: car.z };
       if (cloudRef.current) cloudRef.current.style.opacity = "0";
       setModeBoth("drive");
-      say(world.id === "island" ? `The island. The flight home is ${WORLDS.valley.fare} mi, whenever you have them.` : "Back in the valley.", 8);
+      say(welcome(way), 8);
       if (netFor && store.get().name) {
         net = netFor(world.id);
         void join();
       }
     };
 
+    /** Puts the truck where the film has it, its wheels turning as if it were driven there. */
+    const pose = (x: number, z: number, heading: number, y: number, pitch: number, dt: number) => {
+      const moved = Math.hypot(x - car.x, z - car.z);
+      Object.assign(car, {
+        x, z, heading, y, pitch, roll: 0, vy: 0, side: 0, steer: 0, pitchV: 0, rollV: 0, grounded: true, groundY: y - spec.ride,
+        speed: Math.min(12, moved / Math.max(dt, 1e-3)),
+      });
+    };
+
     /**
-     * Runs the flight's film on by `dt` and says what to show. The truck goes where the
-     * film puts it; the other world is put up while the picture is lost in cloud.
+     * Runs the trip's film on by `dt` and says what to show. The truck goes where the film
+     * puts it; the other world is put up while the picture is lost in cloud, or in the
+     * tunnel's dark. Going to the city, the film waits in the dark for its streets to arrive.
      */
     const flyOn = (dt: number): Film | null => {
       if (!trip) return null;
       trip.t += dt;
-      if (trip.leg === "out" && trip.t >= DEPART.end) {
-        enterWorld(trip.to);
-        trip = { ...trip, leg: "in", t: 0 };
+      const train = trip.way === "train";
+      const boat = trip.way === "boat";
+      const byHeli = trip.way === "heli";
+      const outLength = train && world.station ? outEnd(world.station) : boat ? SAIL.end : byHeli ? LIFT.end : DEPART.end;
+      if (trip.leg === "out" && trip.t >= outLength) {
+        if (trip.to === "city" && !cityData()) {
+          // Still fetching: hold the last frame, in the dark.
+          trip.t = outLength;
+          void loadCityData();
+        } else {
+          enterWorld(trip.to);
+          trip = { ...trip, leg: "in", t: 0 };
+        }
+      }
+      const cloud = cloudRef.current;
+      if (byHeli) {
+        const p = world.pad;
+        if (!p) {
+          arrive("heli");
+          return null;
+        }
+        const heightAt = (x: number, z: number) => world.height(x, z);
+        const frame = trip.leg === "out" ? liftOff(p, trip.from, heightAt, Math.min(trip.t, outLength)) : setDown(p, heightAt, Math.min(trip.t, SET.end));
+        const tr = frame.truck;
+        if (tr) {
+          pose(tr.x, tr.z, tr.heading, tr.base + spec.ride, tr.pitch, dt);
+          // Hanging under the helicopter, its wheels droop and don't turn.
+          if (tr.hung) Object.assign(car, { roll: tr.roll, grounded: false, speed: 0 });
+        }
+        if (cloud) {
+          cloud.style.opacity = String(frame.haze);
+          cloud.style.backgroundColor = view.haze();
+        }
+        if (trip.leg === "in" && trip.t >= SET.end) arrive("heli");
+        return { way: "heli", frame, ground };
+      }
+      if (boat) {
+        const d = world.dock;
+        if (!d) {
+          arrive("boat");
+          return null;
+        }
+        const ground = (x: number, z: number) => world.height(x, z);
+        const berth = fromDock(d, 0, PIER.length + 20);
+        const water = world.waterAt(berth.x, berth.z);
+        const frame = trip.leg === "out" ? sailOut(d, trip.from, ground, water, Math.min(trip.t, outLength)) : sailIn(d, ground, water, Math.min(trip.t, LAND.end));
+        ferryFrame = frame;
+        if (frame.truck) pose(frame.truck.x, frame.truck.z, frame.truck.heading, frame.truck.base + spec.ride, frame.truck.pitch, dt);
+        if (cloud) {
+          cloud.style.opacity = String(frame.haze);
+          cloud.style.backgroundColor = view.haze();
+        }
+        if (trip.leg === "in" && trip.t >= LAND.end) arrive("boat");
+        return { way: "boat", frame, ground: aboard };
+      }
+      if (train) {
+        const st = world.station;
+        if (!st) {
+          arrive("train");
+          return null;
+        }
+        const inLength = inEnd(st);
+        const ground = (x: number, z: number) => world.height(x, z);
+        const frame = trip.leg === "out" ? trainOut(st, trip.from, ground, Math.min(trip.t, outLength)) : trainIn(st, ground, Math.min(trip.t, inLength));
+        wagonFrame = frame;
+        if (frame.truck) pose(frame.truck.x, frame.truck.z, frame.truck.heading, frame.truck.base + spec.ride, frame.truck.pitch, dt);
+        if (cloud) {
+          cloud.style.opacity = String(frame.dark);
+          cloud.style.backgroundColor = PALETTE.void;
+        }
+        if (trip.leg === "in" && trip.t >= inLength) arrive("train");
+        return { way: "train", frame, ground: onWagon };
       }
       const a = world.airport;
+      if (!a) {
+        arrive("plane");
+        return null;
+      }
       const frame = trip.leg === "out" ? departure(a, trip.from, trip.t) : arrival(a, Math.min(trip.t, ARRIVE.end));
       if (frame.truck) {
         const on = rideOnDeck(a, frame.truck, spec.wheelbase, spec.ride);
-        const moved = Math.hypot(frame.truck.x - car.x, frame.truck.z - car.z);
-        Object.assign(car, frame.truck, {
-          y: on.y, pitch: on.pitch, roll: 0, vy: 0, side: 0, steer: 0, pitchV: 0, rollV: 0, grounded: true, groundY: on.y - spec.ride,
-          // Not driven, but its wheels should turn as if it were.
-          speed: Math.min(12, moved / Math.max(dt, 1e-3)),
-        });
+        pose(frame.truck.x, frame.truck.z, frame.truck.heading, on.y, on.pitch, dt);
       }
-      const cloud = cloudRef.current;
       if (cloud) {
         cloud.style.opacity = String(frame.cloud);
         cloud.style.backgroundColor = view.haze();
       }
-      if (trip.leg === "in" && trip.t >= ARRIVE.end) arrive();
-      return { frame, ground: deck };
+      if (trip.leg === "in" && trip.t >= ARRIVE.end) arrive("plane");
+      return { way: "plane", frame, ground: deck };
     };
 
     // ——— Garages ———
@@ -1600,7 +1788,7 @@ export function Game() {
         : next.kind === "mission" ? `mission:${next.mission.id}:${next.wait > 0 ? tideLine(next.wait) : ""}`
         : next.kind === "convoy" ? `convoy:${next.lead}${next.rest}${next.act}`
         : next.kind === "landmark" ? `landmark:${next.id}`
-        : next.kind === "flight" ? `flight:${next.to}`
+        : next.kind === "trip" ? `trip:${next.way}:${next.to}:${next.wait > 0 ? trainLine(next.wait) : ""}`
         : next.kind === "stuck" ? `stuck:${next.lead}${next.rest}${next.act}`
         : next.kind === "winch" ? `winch:${next.id}${next.can}${next.pulling}`
         : `friend:${next.id}${next.asked}`;
@@ -1626,7 +1814,7 @@ export function Game() {
       if (car.stuck || winching || (winchHere && hasWinch(loadout))) {
         nearGarage = -1;
         convoyAct = null;
-        flightHere = false;
+        tripHere = null;
         landmarkHere = friendHere = null;
         if (car.stuck) {
           const lead = "Stuck on a rock";
@@ -1656,9 +1844,18 @@ export function Game() {
       const together = found < 0 && !m ? convoyPrompt() : null;
 
       const still = !running && !convoys.state && found < 0 && !m && !together && Math.abs(car.speed) < 5;
-      const board = boardSpot(world.airport);
-      flightHere = still && Math.hypot(car.x - board.x, car.z - board.z) < BOARD_REACH;
-      landmarkHere = (still && !flightHere && view.landmarks.find((l) => Math.hypot(car.x - l.x, car.z - l.z) < 7)?.kind) || null;
+      // Behind the plane's tail, beside the train's flat wagon, out on the causeway or on the helipad: what's on offer is a trip.
+      const plane = world.airport && boardSpot(world.airport);
+      const wagon = world.station?.board;
+      const quay = world.dock && dockBoard(world.dock);
+      const helipad = world.pad && padBoard(world.pad);
+      tripHere =
+        still && plane && Math.hypot(car.x - plane.x, car.z - plane.z) < BOARD_REACH ? { way: "plane", wait: 0 }
+        : still && wagon && Math.hypot(car.x - wagon.x, car.z - wagon.z) < STATION_REACH ? { way: "train", wait: trainWait() }
+        : still && quay && Math.hypot(car.x - quay.x, car.z - quay.z) < DOCK_REACH ? { way: "boat", wait: 0 }
+        : still && helipad && Math.hypot(car.x - helipad.x, car.z - helipad.z) < PAD_REACH ? { way: "heli", wait: 0 }
+        : null;
+      landmarkHere = (still && !tripHere && view.landmarks.find((l) => Math.hypot(car.x - l.x, car.z - l.z) < 7)?.kind) || null;
 
       friendHere = null;
       const cafe = view.cafe;
@@ -1677,7 +1874,7 @@ export function Game() {
         found >= 0 ? { kind: "garage", style: view.garages[found].style }
         : m ? { kind: "mission", mission: m, wait: tideWait(m) }
         : together ? together
-        : flightHere ? { kind: "flight", to: flightFrom(world.id) }
+        : tripHere && wayFrom(world.id, tripHere.way) ? { kind: "trip", way: tripHere.way, to: wayFrom(world.id, tripHere.way)!, wait: tripHere.wait }
         : landmarkHere ? { kind: "landmark", id: landmarkHere }
         : friendHere ? { kind: "friend", id: friendHere.id, name: friendHere.name, asked: askedBy.has(friendHere.id) }
         // Beside a stuck truck with no winch: at least say what it would take.
@@ -1798,7 +1995,7 @@ export function Game() {
         world.setTide(heldTide ?? ebbAt(time));
         // The map is laid over the drive, which carries on under it.
         if (m === "drive" || m === "map") {
-          moving = [...trainObstacles(view.trainCars(), world.height), ...view.remotes.obstacles()];
+          moving = [...trainObstacles(view.trainCars(), world.height), ...cableObstacles(view.cableCars()), ...view.remotes.obstacles()];
           lastPose = { x: car.x, z: car.z };
           acc += dt;
           // Held at a start line until "go": the suspension settles, the truck doesn't roll.
@@ -1974,7 +2171,7 @@ export function Game() {
   const goal = profile?.world === "valley" ? currentGoal(profile.goals, online || presence === "local", pinned) : null;
   const solo = !online && presence !== "local";
   /** Whether E does anything about what's on offer, or it's only there to be read. */
-  const pressable = prompt !== null && !(prompt.kind === "convoy" && !prompt.act) && !(prompt.kind === "mission" && prompt.wait > 0) && !(prompt.kind === "stuck" && !prompt.act) && !(prompt.kind === "winch" && (!prompt.can || prompt.pulling));
+  const pressable = prompt !== null && !(prompt.kind === "convoy" && !prompt.act) && !((prompt.kind === "mission" || prompt.kind === "trip") && prompt.wait > 0) && !(prompt.kind === "stuck" && !prompt.act) && !(prompt.kind === "winch" && (!prompt.can || prompt.pulling));
 
   return (
     <div className="relative h-[100dvh] w-full select-none overflow-hidden bg-[#efb08c]">
@@ -2190,10 +2387,16 @@ export function Game() {
             )}
             {prompt.kind === "friend" && (prompt.asked ? <>Accept {prompt.name}&apos;s friend request</> : <>Ask {prompt.name} to be friends</>)}
             {prompt.kind === "landmark" && <>Look in at {LANDMARKS[prompt.id].place}</>}
-            {prompt.kind === "flight" && (
+            {prompt.kind === "trip" && prompt.wait === 0 && (
               <>
-                Board the plane to <b className="font-semibold">{WORLDS[prompt.to].name}</b>
+                Board the {prompt.way === "boat" ? "ferry" : prompt.way === "heli" ? "helicopter" : prompt.way} to <b className="font-semibold">{WORLDS[prompt.to].name}</b>
                 <span className="text-[rgba(255,246,232,0.6)]"> · {fmtMiles(WORLDS[prompt.to].fare)} mi</span>
+              </>
+            )}
+            {prompt.kind === "trip" && prompt.wait > 0 && (
+              <>
+                The train to <b className="font-semibold">{WORLDS[prompt.to].name}</b>
+                <span className="text-[rgba(255,246,232,0.6)]"> · {trainLine(prompt.wait)}</span>
               </>
             )}
             {prompt.kind === "convoy" && (
@@ -2293,7 +2496,7 @@ export function Game() {
       {signingIn && <SignInPanel onGoogle={signInWithGoogle} onClose={() => setSigningIn(false)} />}
       {visiting && <LandmarkCard kind={visiting} onClose={() => setVisiting(null)} />}
       {boarding && profile && (
-        <FlightCard to={boarding} balance={profile.balance} saved={online} onBoard={() => actions.current.fly()} onClose={() => setBoarding(null)} />
+        <TripCard to={boarding.to} way={boarding.way} balance={profile.balance} saved={online} onBoard={() => actions.current.fly()} onClose={() => setBoarding(null)} />
       )}
       {board && (
         <Leaderboard

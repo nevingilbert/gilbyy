@@ -1,15 +1,22 @@
 import { fieldDist } from "./airport";
+import { toGame } from "./city-streets";
 import { makeRandom } from "./noise";
-import { sampleGrid, WORLD, type World, type WorldId } from "./world";
+import { GROUNDS, VEGAS, type VegasWorld } from "./vegas";
+import { JAPAN, JAPAN_GROUNDS, type JapanWorld } from "./japan";
+import { CELL, sampleGrid, WORLD, type World, type WorldId } from "./world";
 
 /**
  * The animals (ADR 0015). In the valley, deer in the meadows along the forest edges, hares
  * out on the open grass, reindeer up on the snow and ducks on the lakes. On the island,
  * crabs and gulls on the beach, wild boar and macaws where the dunes give way to the
- * jungle, and dolphins out at sea.
+ * jungle, and dolphins out at sea. In San Francisco (ADR 0022), the bison in their paddock
+ * in Golden Gate Park, sea lions in the water by Pier 39, pelicans along the shore and the
+ * wild parrots over Telegraph Hill. In Las Vegas (ADR 0023), bighorn on the canyon's walls
+ * and Red Rock's mesas, jackrabbits and roadrunners on the desert, condors in the canyon.
  *
  * Birds fly low. The chase camera is about 8.5 m over the truck looking down, so anything
- * higher than that is never on screen.
+ * higher than that is never on screen. The city's parrots fly over its rooftops; the
+ * condors circle over the canyon at the height of its rim, for those looking out from it.
  *
  * They're scenery that notices you. Each herd grazes and wanders about its home, and gets
  * out of the way of trucks and the train: the faster something comes, the sooner they
@@ -19,7 +26,11 @@ import { sampleGrid, WORLD, type World, type WorldId } from "./world";
  *
  * Pure data and functions, no three.js. Only herds near the truck are moved.
  */
-export type SpeciesId = "deer" | "hare" | "reindeer" | "duck" | "crab" | "gull" | "boar" | "macaw" | "dolphin";
+export type SpeciesId =
+  | "deer" | "hare" | "reindeer" | "duck" | "crab" | "gull" | "boar" | "macaw" | "dolphin"
+  | "bison" | "sealion" | "pelican" | "parrot"
+  | "bighorn" | "jackrabbit" | "roadrunner" | "condor"
+  | "sika" | "macaque" | "crane";
 
 /**
  * How a species gets about:
@@ -67,6 +78,8 @@ export type Species = {
   sand?: boolean;
   /** A crab digs itself into the sand when a truck comes this close. */
   hide?: number;
+  /** A bird that keeps to this height above high water, whatever's under it: the condors, over the canyon. */
+  level?: number;
 };
 
 export const SPECIES: Record<SpeciesId, Species> = {
@@ -110,6 +123,74 @@ export const SPECIES: Record<SpeciesId, Species> = {
     world: "island", way: "swim", herds: 9, size: [2, 4], apart: 400, range: 90, spread: 5,
     walk: 0, run: 6.5, calm: 0, wary: 0, graze: [0, 0], radius: 0.4, wade: 0, stride: 3, drop: 0, see: 420,
   },
+  bison: {
+    world: "city", way: "walk", herds: 1, size: [6, 9], apart: 60, range: 22, spread: 9,
+    walk: 0.8, run: 5.5, calm: 10, wary: 26, graze: [6, 18], radius: 0.8, wade: 0.5, stride: 1.5, drop: 0.45, see: 300,
+  },
+  sealion: {
+    world: "city", way: "walk", herds: 3, size: [3, 6], apart: 40, range: 30, spread: 6,
+    walk: 0.5, run: 3, calm: 6, wary: 15, graze: [4, 12], radius: 0.4, wade: 0, stride: 0.8, drop: 0.35, see: 220,
+    water: true,
+  },
+  pelican: {
+    world: "city", way: "soar", herds: 10, size: [3, 6], apart: 300, range: 120, spread: 4,
+    walk: 0, run: 8, calm: 0, wary: 0, graze: [0, 0], radius: 0.4, wade: 0, stride: 3.2, drop: 0, see: 320,
+    cruise: 5,
+  },
+  parrot: {
+    world: "city", way: "soar", herds: 2, size: [8, 14], apart: 100, range: 55, spread: 6,
+    walk: 0, run: 10, calm: 0, wary: 0, graze: [0, 0], radius: 0.2, wade: 0, stride: 1.4, drop: 0, see: 240,
+    cruise: 13,
+  },
+  // Las Vegas's (ADR 0023): bighorn on the canyon's walls and among Red Rock's mesas,
+  // jackrabbits and roadrunners out on the desert, condors circling down in the canyon.
+  bighorn: {
+    world: "vegas", way: "walk", herds: 26, size: [3, 6], apart: 170, range: 60, spread: 8,
+    walk: 0.9, run: 8, calm: 14, wary: 40, graze: [5, 14], radius: 0.4, wade: 0.4, stride: 1.2, drop: 1.2, see: 280,
+  },
+  jackrabbit: {
+    world: "vegas", way: "walk", herds: 90, size: [1, 2], apart: 90, range: 45, spread: 4,
+    walk: 0.9, run: 12, calm: 7, wary: 26, graze: [3, 9], radius: 0.2, wade: 0.15, stride: 1, drop: 0.4, see: 150,
+  },
+  roadrunner: {
+    world: "vegas", way: "walk", herds: 40, size: [1, 1], apart: 120, range: 60, spread: 2,
+    walk: 1.2, run: 8.5, calm: 8, wary: 22, graze: [2, 6], radius: 0.15, wade: 0.1, stride: 0.6, drop: 0.5, see: 140,
+  },
+  condor: {
+    world: "vegas", way: "soar", herds: 7, size: [1, 2], apart: 380, range: 140, spread: 12,
+    walk: 0, run: 9, calm: 0, wary: 0, graze: [0, 0], radius: 0.6, wade: 0, stride: 4.5, drop: 0, see: 520,
+    cruise: 70, level: 172,
+  },
+  // Japan's (ADR 0024): sika deer in the woods and meadows, macaques up the valley round the
+  // hot spring, and red-crowned cranes standing in the paddies.
+  sika: {
+    world: "japan", way: "walk", herds: 44, size: [3, 6], apart: 150, range: 60, spread: 8,
+    walk: 1, run: 9.5, calm: 13, wary: 44, graze: [4, 12], radius: 0.4, wade: 0.6, stride: 1.35, drop: 1.7, see: 270,
+  },
+  macaque: {
+    world: "japan", way: "walk", herds: 8, size: [4, 8], apart: 120, range: 45, spread: 7,
+    walk: 0.7, run: 6, calm: 9, wary: 30, graze: [5, 15], radius: 0.25, wade: 0.9, stride: 0.55, drop: 0.5, see: 200,
+  },
+  crane: {
+    world: "japan", way: "perch", herds: 12, size: [2, 4], apart: 110, range: 50, spread: 5,
+    walk: 0.3, run: 9, calm: 16, wary: 34, graze: [4, 10], radius: 0.3, wade: 0.4, stride: 0.5, drop: 1.1, see: 230,
+    cruise: 9, flight: [8, 16],
+  },
+};
+
+/**
+ * The few places in San Francisco some of its animals keep to, by longitude and latitude,
+ * and how far about them: the bison paddock in Golden Gate Park, the water off Pier 39's
+ * docks, and Telegraph Hill under Coit Tower.
+ */
+const HOMES: Partial<Record<SpeciesId, { lon: number; lat: number; r: number }>> = {
+  bison: { lon: -122.4994, lat: 37.7697, r: 45 },
+  sealion: { lon: -122.411, lat: 37.8095, r: 110 },
+  parrot: { lon: -122.4058, lat: 37.8024, r: 160 },
+};
+const homeOf = (id: SpeciesId) => {
+  const h = HOMES[id];
+  return h ? { ...toGame(h.lon, h.lat), r: h.r } : null;
 };
 
 export const SPECIES_IDS = Object.keys(SPECIES) as SpeciesId[];
@@ -196,6 +277,20 @@ function steep(world: World, x: number, z: number) {
   return Math.hypot(dx, dz) / 4;
 }
 
+/** In Las Vegas, what the ground is at a spot (vegas.ts); elsewhere, nothing. */
+function vegasGround(world: World, x: number, z: number) {
+  const v = (world as Partial<VegasWorld>).vegas;
+  if (!v || Math.abs(x) > WORLD.size / 2 || Math.abs(z) > WORLD.size / 2) return null;
+  return GROUNDS[v.ground[Math.round((z + WORLD.size / 2) / CELL) * (WORLD.segments + 1) + Math.round((x + WORLD.size / 2) / CELL)]];
+}
+
+/** In Japan, what the ground is at a spot (japan.ts); elsewhere, nothing. */
+function japanGround(world: World, x: number, z: number) {
+  const j = (world as Partial<JapanWorld>).japan;
+  if (!j || Math.abs(x) > WORLD.size / 2 || Math.abs(z) > WORLD.size / 2) return null;
+  return JAPAN_GROUNDS[j.ground[Math.round((z + WORLD.size / 2) / CELL) * (WORLD.segments + 1) + Math.round((x + WORLD.size / 2) / CELL)]];
+}
+
 /** The ground or the water, whichever is higher: where something sitting on it is. */
 const surface = (world: World, x: number, z: number) => Math.max(world.height(x, z), world.waterAt(x, z));
 
@@ -205,24 +300,30 @@ export function passable(world: World, id: SpeciesId, x: number, z: number) {
   if (Math.hypot(x, z) > world.limit - 150) return false;
   const y = world.height(x, z);
   // A sea has a tide (tide.ts), and animals reckon by high water: nothing follows the sea out to be caught when it comes back.
-  const water = world.sea ? WORLD.water : world.waterAt(x, z);
+  // Japan's sea has none, and its lake and paddies are water as well.
+  const water = world.sea && world.id !== "japan" ? WORLD.water : world.waterAt(x, z);
   const depth = water - y;
   if (sp.water) return depth > 0.8 && Math.abs(water - WORLD.water) < 0.01 && sampleGrid(world.ice, x, z) < 0.02;
   if (depth > sp.wade) return false;
   if (sp.sand && (y > 3.6 || sampleGrid(world.forest, x, z) > 0.05)) return false;
   if (steep(world, x, z) > 0.65) return false;
-  return sampleGrid(world.campDist, x, z) > 6 && sampleGrid(world.siteDist, x, z) > 26 && fieldDist(world.airport, x, z) > 30;
+  return sampleGrid(world.campDist, x, z) > 6 && sampleGrid(world.siteDist, x, z) > 26 && (world.airport ? fieldDist(world.airport, x, z) : Infinity) > 30;
 }
 
 /** Whether a herd of this species could make its home at (x, z). Stricter than `passable`, and clear of everything players drive to. */
 export function habitat(world: World, id: SpeciesId, x: number, z: number) {
   const sp = SPECIES[id];
   if (sp.world !== world.id) return false;
+  const home = homeOf(id);
+  if (home && Math.hypot(x - home.x, z - home.z) > home.r) return false;
   const at = (f: Float32Array) => sampleGrid(f, x, z);
-  // Gulls don't mind a camp; they hang about the beach in front of it.
-  const clear =
-    at(world.campDist) > (id === "gull" ? 22 : 40) && at(world.siteDist) > 45 && at(world.roadDist) > 12 && at(world.trackDist) > 12 &&
-    at(world.courseDist) > 10 && fieldDist(world.airport, x, z) > 80 && Math.hypot(x, z) < world.limit - 400;
+  // Gulls don't mind a camp; they hang about the beach in front of it. The parrots fly over
+  // the rooftops, and the bison's paddock has a road round it.
+  const clear = id === "parrot" || (
+    at(world.campDist) > (id === "gull" ? 22 : 40) && at(world.siteDist) > 45 && at(world.roadDist) > (id === "bison" ? 8 : 12) &&
+    at(world.trackDist) > 12 && at(world.courseDist) > 10 && (world.airport ? fieldDist(world.airport, x, z) : Infinity) > 80 &&
+    Math.hypot(x, z) < world.limit - 400
+  );
   if (!clear) return false;
   const y = world.height(x, z);
   const dry = world.waterAt(x, z) < y - 1;
@@ -258,6 +359,43 @@ export function habitat(world: World, id: SpeciesId, x: number, z: number) {
       }
       return true;
     }
+    case "bison":
+      return dry && slope < 0.3;
+    case "bighorn": {
+      const kind = vegasGround(world, x, z);
+      return dry && slope > 0.1 && slope < 0.55 && y > 40 && (kind === "canyon" || kind === "redrock" || kind === "rim");
+    }
+    case "jackrabbit":
+      return dry && slope < 0.3 && vegasGround(world, x, z) === "desert";
+    case "roadrunner":
+      return dry && slope < 0.25 && vegasGround(world, x, z) === "desert";
+    case "condor":
+      return vegasGround(world, x, z) === "canyon" && y < VEGAS.rim - 60;
+    case "sealion": {
+      const depth = WORLD.water - y;
+      return passable(world, id, x, z) && depth > 1 && depth < 10;
+    }
+    case "pelican": {
+      // Their whole loop out over the water, where nothing stands, and the shore in sight of it.
+      if (y > -2) return false;
+      let shore = false;
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * TAU;
+        if (world.height(x + Math.cos(a) * sp.range * 1.3, z + Math.sin(a) * sp.range * 1.3) > -0.5) return false;
+        if (world.height(x + Math.cos(a) * sp.range * 2.4, z + Math.sin(a) * sp.range * 2.4) > 0.5) shore = true;
+      }
+      return shore;
+    }
+    case "parrot":
+      return true;
+    case "sika": {
+      const kind = japanGround(world, x, z);
+      return dry && slope < 0.4 && y > 30 && at(world.snow) < 0.05 && (kind === "forest" || kind === "meadow");
+    }
+    case "macaque":
+      return dry && slope < 0.55 && y > 40 && Math.hypot(x - JAPAN.onsen.x, z - JAPAN.onsen.z) < 420;
+    case "crane":
+      return japanGround(world, x, z) === "paddy" && slope < 0.1;
   }
 }
 
@@ -312,7 +450,7 @@ function inView(world: World, id: SpeciesId) {
 }
 
 /** Which herds start in view of the camp, so the opening shot has something in it. */
-const SHOWCASE: Record<WorldId, SpeciesId[]> = { valley: ["deer"], island: ["dolphin", "gull"] };
+const SHOWCASE: Record<WorldId, SpeciesId[]> = { valley: ["deer"], island: ["dolphin", "gull"], city: [], vegas: [], japan: [] };
 
 /** Every herd in a world, at home. Deterministic, so every browser starts them in the same places. */
 export function placeHerds(world: World, seed = 20261009): Herd[] {
@@ -327,10 +465,13 @@ export function placeHerds(world: World, seed = 20261009): Herd[] {
   const span = world.limit * 2;
   for (const id of speciesIn(world.id)) {
     const sp = SPECIES[id];
+    // One that keeps to a single place is looked for there, not all over the world.
+    const home = homeOf(id);
+    const [cx, cz, across] = home ? [home.x, home.z, home.r * 2] : [0, 0, span];
     let count = herds.filter((h) => h.species === id).length;
     for (let tries = 0; tries < sp.herds * 400 && count < sp.herds; tries++) {
-      const x = (rand() - 0.5) * span;
-      const z = (rand() - 0.5) * span;
+      const x = cx + (rand() - 0.5) * across;
+      const z = cz + (rand() - 0.5) * across;
       if (!habitat(world, id, x, z) || crowded(id, x, z)) continue;
       herds.push(makeHerd(world, id, x, z, rand));
       count++;
@@ -633,7 +774,10 @@ function stepPercher(world: World, h: Herd, a: Animal, sp: Species, threats: rea
   }
 }
 
-/** A macaw on its loop along the jungle's edge: where it is is a function of the time alone. */
+/**
+ * A bird on its loop, a macaw along the jungle's edge or a pelican off the shore: where it
+ * is is a function of the time alone. Over the water it flies over the water, not the bed.
+ */
 export function soarAt(world: World, h: Herd, a: Animal, time: number) {
   const sp = SPECIES[a.species];
   const at = (t: number) => {
@@ -641,7 +785,8 @@ export function soarAt(world: World, h: Herd, a: Animal, time: number) {
     // The loop breathes in and out, so it isn't a perfect circle.
     const r = h.loop * (1 + 0.22 * Math.sin(th * 2 + h.loop)) + (a.tone - 0.5) * 4;
     const [x, z] = [h.home.x + Math.cos(th) * r, h.home.z + Math.sin(th) * r];
-    return { x, z, y: world.height(x, z) + (sp.cruise ?? 5) + 1.8 * Math.sin(th * 3 + a.tone * 6) };
+    const base = sp.level ?? surface(world, x, z) + (sp.cruise ?? 5);
+    return { x, z, y: base + 1.8 * Math.sin(th * 3 + a.tone * 6) };
   };
   const now = at(time);
   const next = at(time + 0.2);

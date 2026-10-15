@@ -1,11 +1,15 @@
 import { FIELD_CLEAR, FIELD_REACH, fieldDist, inFunnel, levelField, raiseBank, screenTrees, valleyAirfield, type Airport } from "./airport";
+import type { Dock } from "./dock";
+import type { Pad } from "./heli";
 import { planeObstacles } from "./flight";
 import { LANDMARK_BLEND, LANDMARK_CLEAR, LANDMARK_FLAT, chooseLandmarks, type Landmark } from "./landmarks";
 import { courseDistOf, planMissions, planMore, type Mission } from "./missions";
 import { makeRandom } from "./noise";
 import { PAD, rampLift, rampObstacles, rampPad } from "./ramp";
-import { buildTerrain, CAFE, CAMP, CELL, START, campPitches, level, sampleGrid, WORLD, type Pitch, type Terrain, type WorldId } from "./terrain";
-import { bridgeObstacles } from "./track";
+import { BED, besideBed, clearBed, lineFrame, mouthAt, pastEnd } from "./rail";
+import { VALLEY_STOP, valleyStation, type Station } from "./station";
+import { buildTerrain, CAFE, CAMP, CELL, FAR, ROW, START, campPitches, gridX, gridZ, level, nearest, sampleGrid, WORLD, type Path, type Pitch, type Terrain, type WorldId } from "./terrain";
+import { TRAIN_LENGTH, bridgeObstacles } from "./track";
 
 export {
   CELL, HALF, ROW, START, WORLD, LAKES, FROZEN, STOCK_WADE, SNORKEL_WADE, CAMP, CAMP_CENTRE, CAMP_GATE, CAFE,
@@ -37,22 +41,37 @@ export type Obstacle = {
   top?: number;
   /** A boulder: the one thing a truck can ride up onto and be stuck on (ADR 0021). Posts and boards only stop it. */
   boulder?: boolean;
+  /** The height of its underside, for something a truck can drive under, like a bridge's railings: below it, a truck passes. */
+  bottom?: number;
 };
-/** Pines and broadleaves grow in the valley; palms and the jungle's canopy trees on the island. */
-export type TreeKind = "pine" | "broadleaf" | "palm" | "canopy";
+/**
+ * Pines and broadleaves grow in the valley; palms and the jungle's canopy trees on the
+ * island; Monterey cypress, blue gum and pines in San Francisco, and its palms; Joshua
+ * trees in the desert round Las Vegas, palms on the Strip and pines on the canyon's rim;
+ * cherries in blossom, bamboo, cedars (the pines) and maples (the broadleaves) in Japan.
+ */
+export type TreeKind = "pine" | "broadleaf" | "palm" | "canopy" | "cypress" | "eucalyptus" | "joshua" | "sakura" | "bamboo";
 export type Tree = { x: number; y: number; z: number; scale: number; rot: number; kind: TreeKind; tone: number };
 export type Bush = { x: number; y: number; z: number; scale: number; rot: number; tone: number };
 export type Rock = { x: number; y: number; z: number; sx: number; sy: number; sz: number; rot: number; tone: number };
 
 /** What the physics needs from the world, so tests can hand it a flat plane or a ramp. */
 export type Ground = {
-  height(x: number, z: number): number;
+  /**
+   * The ground's height. Where a bridge crosses over (ADR 0022) there are two surfaces: given
+   * `above`, the height of the asker's underside, it's whichever is under it; without, the higher.
+   */
+  height(x: number, z: number, above?: number): number;
   /** Height of the water surface here; the ground is wet wherever it is below this. */
   waterAt(x: number, z: number): number;
   obstaclesNear(x: number, z: number): readonly Obstacle[];
   /** How slippery the ground is: 0 dirt and grass, 1 packed snow, 2 bare ice. */
   slipAt(x: number, z: number): number;
   limit: number;
+  /** The world's edge is a square `limit` either side of the middle, not a circle. The city's is (ADR 0022). */
+  square?: boolean;
+  /** Whether a spot is tarmac or paving, which a racing car needs under it to go fast (ADR 0023). None where it's left out. */
+  pavedAt?(x: number, z: number): boolean;
 };
 
 export type World = Ground & Terrain & {
@@ -64,8 +83,14 @@ export type World = Ground & Terrain & {
   camp: { x: number; z: number; heading: number };
   /** Where the café stands, where friends are made. */
   cafe: { x: number; z: number; rot: number };
-  /** Every world has an airstrip; a flight goes from one to another (ADR 0014). */
-  airport: Airport;
+  /** The airstrip, where there is one: a flight goes from one to another (ADR 0014). */
+  airport: Airport | null;
+  /** The railway station, where there is one, by its building: the train goes from one to the other (ADR 0022). */
+  station: Station | null;
+  /** The ferry's dock, where there is one: the island's and Lake Mead's marina (ADR 0023). */
+  dock: Dock | null;
+  /** The helicopter's pad, where there is one: on the canyon's rim in Vegas, and in Japan (ADR 0024). */
+  pad: Pad | null;
   /** True where the only water is the sea: one level sheet out to the horizon. */
   sea: boolean;
   /** How much ground the full map shows, in metres across. */
@@ -84,8 +109,12 @@ export type World = Ground & Terrain & {
   setTide(ebb: number): void;
 };
 
+/** A world with an airstrip, as the valley and the island have. */
+export type AirWorld = World & { airport: Airport };
+
 /** How wide a tree, a boulder and a bush stand, for the physics. */
-export const trunkRadius = (t: Tree) => (t.kind === "pine" ? 0.45 : t.kind === "palm" ? 0.32 : 0.55) * t.scale;
+export const trunkRadius = (t: Tree) =>
+  (t.kind === "pine" ? 0.45 : t.kind === "palm" || t.kind === "eucalyptus" || t.kind === "sakura" ? 0.32 : t.kind === "bamboo" ? 1.2 : 0.55) * t.scale;
 
 /** What stands in the way, bucketed so a lookup is a few cells. */
 export function obstacleIndex() {
@@ -111,7 +140,7 @@ export function obstacleIndex() {
 }
 
 /** The valley. Deterministic, so it looks the same on every load. */
-export function buildWorld(seed = 20261006): World {
+export function buildWorld(seed = 20261006): AirWorld {
   const rand = makeRandom(seed + 20);
   const terrain = buildTerrain(seed, rand);
   const { heights, forest, trackDist, riverDist, roadDist, siteDist, campDist } = terrain;
@@ -241,6 +270,54 @@ export function buildWorld(seed = 20261006): World {
     trees.push({ x: s.x, y: y - 0.3, z: s.z, scale: s.scale, rot: s.rot, kind: "pine", tone: 0.16 + s.tone * 0.84 });
   }
 
+  // And last, the station (ADR 0022): on the west side of the loop, where the train now
+  // stops a minute each time round, with the branch off past the platform's end out to the
+  // foot of the mountains and into a tunnel. A dirt road runs out to it from the camp.
+  const station = valleyStation(terrain.track, ground);
+  terrain.track.stop = VALLEY_STOP;
+  const line = station.line;
+  const from = line.s.findIndex((s) => s >= station.points!);
+  const to = line.s.findIndex((s) => s > station.portal + 6);
+  const branch = { xs: line.xs.slice(from, to), zs: line.zs.slice(from, to) };
+  const branchNear = nearest(branch, false, 70);
+  const bedAt = (k: number) => {
+    const i = Math.min(branch.xs.length - 2, Math.floor(branchNear.at[k]));
+    const t = branchNear.at[k] - i;
+    return line.ys[from + i] + (line.ys[from + i + 1] - line.ys[from + i]) * t - BED.under;
+  };
+  // The yard beside the train, out to the building and a little past it: room to come round
+  // behind the flat wagon to its ramp, and to back off it, at either end.
+  const ends = [lineFrame(line, station.head - TRAIN_LENGTH - 14), lineFrame(line, station.head + 16)];
+  const corners = ends.flatMap((f) => [2.5, 30].map((d) => ({ x: f.x + f.lx * station.side * d, z: f.z + f.lz * station.side * d })));
+  const yard = { x0: Math.min(...corners.map((c) => c.x)), x1: Math.max(...corners.map((c) => c.x)), z0: Math.min(...corners.map((c) => c.z)), z1: Math.max(...corners.map((c) => c.z)) };
+  const yardY = (ends[0].y + ends[1].y) / 2 - 0.4;
+  const toYard = (x: number, z: number) => Math.hypot(Math.max(yard.x0 - x, 0, x - yard.x1), Math.max(yard.z0 - z, 0, z - yard.z1));
+  const stationRoad: Path = { xs: [CAMP.x - 64, (CAMP.x - 64 + station.x) / 2, station.x], zs: [CAMP.z - 5, (CAMP.z + station.z) / 2 - 40, station.z] };
+  const roadNear = nearest(stationRoad, false, 20);
+  const fieldAt = (f: Float32Array, x: number, z: number) => sampleGrid(f, x, z);
+  reshape(
+    (x, z) => fieldAt(branchNear.dist, x, z) < 72 || toYard(x, z) < 16 + 2 * CELL || fieldAt(roadNear.dist, x, z) < 8,
+    () => {
+      const last = branch.xs.length - 1;
+      for (let k = 0; k < heights.length; k++) {
+        const d = branchNear.dist[k];
+        if (d >= FAR) continue;
+        // Not past the tunnel's mouth: the mountain over it stays whole.
+        if (branchNear.at[k] > last - 1e-4 && pastEnd(branch, gridX(k % ROW), gridZ(Math.floor(k / ROW)))) continue;
+        trackDist[k] = Math.min(trackDist[k], d);
+        // A level bed for the rails; banks either side, and a walled cutting into the mountain.
+        heights[k] = besideBed(heights[k], bedAt(k), d);
+      }
+      clearBed(heights, line, station.points!, station.portal + 2);
+      // The tunnel's face stands where the cutting's floor ends.
+      station.portal = mouthAt(line, station.portal - 40, (x, z) => sampleGrid(heights, x, z));
+      level(heights, yard, yardY, 0, 16, siteDist);
+      for (let k = 0; k < roadDist.length; k++) roadDist[k] = Math.min(roadDist[k], roadNear.dist[k]);
+    },
+    (x, z) => fieldAt(branchNear.dist, x, z) < 9 || toYard(x, z) < 3 || fieldAt(roadNear.dist, x, z) < 5,
+  );
+  terrain.roads.push(stationRoad);
+
   const solid = obstacleIndex();
   for (const t of trees) solid.add({ x: t.x, z: t.z, r: trunkRadius(t), h: Infinity });
   // A boulder's top is about its half-height above its centre, which sits partly buried.
@@ -253,11 +330,13 @@ export function buildWorld(seed = 20261006): World {
   for (const r of ramps) for (const o of rampObstacles(r, ground)) solid.add(o);
 
   return {
-    ...terrain, id: "valley", cafe: CAFE, trees, bushes, rocks, missions, landmarks, courseDist, airport,
+    ...terrain, id: "valley", cafe: CAFE, trees, bushes, rocks, missions, landmarks, courseDist, airport, station, dock: null, pad: null,
     start: START, pitches: campPitches(), camp: { x: CAMP.x, z: CAMP.z, heading: 0 },
     sea: false, mapSpan: WORLD.limit * 2.1,
     // A ramp isn't in the grid: its deck is laid over the ground for whoever asks.
     height: ramps.length ? (x, z) => ground(x, z) + rampLift(ramps, x, z) : ground, waterAt, obstaclesNear: solid.near, limit: WORLD.limit,
+    // The airstrip is the valley's only tarmac.
+    pavedAt: (x, z) => fieldDist(airport, x, z) <= 0,
     slipAt: (x, z) => Math.min(1, field(terrain.snow, x, z)) + field(terrain.ice, x, z),
     addObstacles: (list) => list.forEach(solid.add),
     setTide: () => {},

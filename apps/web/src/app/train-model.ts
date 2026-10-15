@@ -2,12 +2,12 @@ import * as THREE from "three";
 import { Kit, lambert, tone } from "./garages";
 import { PALETTE } from "./palette";
 
-export type TrainCarKind = "loco" | "boxcar" | "logs" | "tanker";
+export type TrainCarKind = "loco" | "boxcar" | "logs" | "tanker" | "coach" | "flat";
 
 /** The loco's headlight in its local space, for the caller's spotlight. */
 export const LOCO_LAMP = new THREE.Vector3(0, 3.45, 6.6);
 
-const LENGTH: Record<TrainCarKind, number> = { loco: 14, boxcar: 12, logs: 12, tanker: 11 };
+const LENGTH: Record<TrainCarKind, number> = { loco: 14, boxcar: 12, logs: 12, tanker: 11, coach: 13, flat: 12 };
 /** Top of the underframe, above rail top. */
 const DECK = 1.3;
 const WHEEL_R = 0.46;
@@ -126,6 +126,54 @@ function tanker(k: Kit) {
   }
 }
 
+/** A passenger coach in the loco's colours: a band of windows, doors at each end, a rounded roof. */
+function coach(k: Kit, windows: THREE.Material) {
+  const len = 13, body = lambert(PALETTE.locoBody), cream = lambert(PALETTE.trimCream), dark = lambert(PALETTE.doorDark);
+  const roofM = lambert(tone(PALETTE.roofTin, 0.75));
+  chassis(k, len);
+  k.box(body, 2.9, 1.2, len - 0.6, 0, DECK + 0.6, 0);
+  k.box(cream, 2.9, 1.1, len - 0.6, 0, DECK + 1.75, 0);
+  k.box(body, 2.9, 0.35, len - 0.6, 0, DECK + 2.48, 0);
+  k.add(roofM, new THREE.CylinderGeometry(1.7, 1.7, len - 0.4, 14, 1, false, -0.92, 1.84).scale(1, 0.32, 1), 0, DECK + 2.1, 0, Math.PI / 2);
+  // A band of windows down each side; the glass glows after dark, like the houses'.
+  for (const s of [1, -1]) {
+    for (let z = -len / 2 + 2.2; z <= len / 2 - 2.1; z += 1.4) k.box(windows, 0.06, 0.75, 1.0, s * 1.46, DECK + 1.8, z);
+    for (const e of [1, -1]) k.box(dark, 0.06, 1.9, 0.8, s * 1.46, DECK + 1.15, e * (len / 2 - 1.05));
+  }
+  for (const e of [1, -1]) k.box(dark, 1.2, 2.2, 0.2, 0, DECK + 1.3, e * (len / 2 - 0.25));
+}
+
+/**
+ * The flat wagon a truck rides on: a timber deck between low steel sides, wheel chocks,
+ * and a ramp at the back end that folds up like a tailgate (`setWagonRamp`).
+ */
+function flat(k: Kit, root: THREE.Group) {
+  const len = 12, dark = lambert(PALETTE.doorDark), steel = lambert(PALETTE.rail), wood = lambert(PALETTE.timber);
+  chassis(k, len);
+  k.box(wood, 2.8, 0.12, len - 0.4, 0, DECK + 0.06, 0);
+  for (let z = -len / 2 + 0.6; z < len / 2; z += 0.9) k.box(lambert(tone(PALETTE.timber, 0.82)), 2.82, 0.13, 0.06, 0, DECK + 0.06, z);
+  for (const s of [1, -1]) {
+    k.box(steel, 0.1, 0.35, len - 0.4, s * 1.42, DECK + 0.25, 0);
+    for (let z = -4.5; z <= 4.5; z += 3) k.box(dark, 0.14, 0.7, 0.14, s * 1.42, DECK + 0.4, z);
+  }
+  // A ramp hinged at the back edge of the deck (−z), in its own group so each wagon's can move.
+  const ramp = new THREE.Group();
+  ramp.name = "ramp";
+  ramp.position.set(0, DECK + 0.1, -len / 2 + 0.2);
+  const rk = new Kit();
+  rk.box(steel, 2.5, 0.1, 4.4, 0, 0, -2.2);
+  for (let z = -0.4; z > -4.4; z -= 0.5) rk.box(dark, 2.5, 0.05, 0.08, 0, 0.07, z);
+  for (const s of [1, -1]) rk.box(dark, 0.12, 0.2, 4.4, s * 1.2, 0.08, -2.2);
+  rk.build(ramp);
+  root.add(ramp);
+}
+
+/** Lowers a flat wagon's ramp (1, down to the ground behind it) or folds it up (0). */
+export function setWagonRamp(car: THREE.Object3D, t: number) {
+  const ramp = car.getObjectByName("ramp");
+  if (ramp) ramp.rotation.x = Math.PI / 2 + (-0.375 - Math.PI / 2) * Math.max(0, Math.min(1, t));
+}
+
 // Each kind is built once (per lamp material and boxcar colour) and cloned: clones share geometry and materials.
 const built = new Map<string, THREE.Group>();
 let boxcars = 0;
@@ -140,11 +188,17 @@ export function buildTrainCar(kind: TrainCarKind, lampMaterial: THREE.Material):
   let proto = built.get(key);
   if (!proto) {
     const k = new Kit();
+    const group = new THREE.Group();
     if (kind === "loco") loco(k, lampMaterial);
     else if (kind === "boxcar") boxcar(k, PALETTE.wagon[colour]);
     else if (kind === "logs") logcar(k);
+    else if (kind === "coach") coach(k, lampMaterial);
+    else if (kind === "flat") flat(k, group);
     else tanker(k);
-    built.set(key, (proto = k.build(new THREE.Group())));
+    built.set(key, (proto = k.build(group)));
   }
-  return { object: proto.clone(), length: LENGTH[kind] };
+  const object = proto.clone();
+  // A wagon's ramp starts folded up.
+  setWagonRamp(object, 0);
+  return { object, length: LENGTH[kind] };
 }

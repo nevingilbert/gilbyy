@@ -4,22 +4,33 @@ import type { Obstacle } from "./world";
 /**
  * The train: where each car is along the loop at a given moment, and when the level
  * crossings close. Pure functions of time, so the train never drifts out of step.
+ * Since ADR 0022 it stops at the station once a lap, a minute at the platform, and one
+ * truck can ride on its flat wagon at the back.
  * Also the bridges' solid parts, which keep trucks off them and out from under their ends.
  */
 export const TRAIN_SPEED = 15;
-export type TrainCarKind = "loco" | "boxcar" | "logs" | "tanker";
-/** Front to back. Lengths match the models in train-model.ts. */
+export type TrainCarKind = "loco" | "boxcar" | "logs" | "tanker" | "coach" | "flat";
+/** Front to back. Lengths match the models in train-model.ts. The flat wagon at the back carries a truck. */
 export const CONSIST: { kind: TrainCarKind; length: number }[] = [
   { kind: "loco", length: 14 },
+  { kind: "coach", length: 13 },
   { kind: "boxcar", length: 12 },
   { kind: "logs", length: 12 },
   { kind: "tanker", length: 11 },
-  { kind: "logs", length: 12 },
-  { kind: "boxcar", length: 12 },
+  { kind: "flat", length: 12 },
 ];
-const GAP = 1.2;
-const BOGIE = 1.8;
+export const GAP = 1.2;
+export const BOGIE = 1.8;
 export const TRAIN_LENGTH = CONSIST.reduce((sum, c) => sum + c.length + GAP, -GAP);
+
+/** How long the train stands at the station, and how hard it slows into it and pulls away. */
+export const DWELL = 60;
+const ACCEL = 0.5;
+const RAMP_TIME = TRAIN_SPEED / ACCEL;
+const RAMP_DIST = (TRAIN_SPEED * TRAIN_SPEED) / (2 * ACCEL);
+/** Seconds round the loop, the stop at the station included. */
+export const lapTime = (track: Track) =>
+  track.stop === undefined ? track.length / TRAIN_SPEED : (track.length - 2 * RAMP_DIST) / TRAIN_SPEED + 2 * RAMP_TIME + DWELL;
 
 /** Barriers close this far ahead of the train, and open once its tail is this far past. */
 const WARN_AHEAD = 260;
@@ -43,8 +54,49 @@ export function trackPoint(track: Track, s: number): Pose {
   };
 }
 
-/** Distance along the track of the front of the train. It starts across the lake from you. */
-export const trainHead = (track: Track, time: number) => wrap(time * TRAIN_SPEED + track.length * 0.08, track.length);
+/**
+ * Where the front of the train is along the track, and how fast it's going. Without a
+ * station it just goes round, starting across the lake from you. With one, a lap begins as
+ * it pulls away from the platform: it gathers speed, runs the loop, slows to a stop at the
+ * platform again, and stands there for DWELL seconds.
+ */
+export function trainMotion(track: Track, time: number): { head: number; speed: number } {
+  if (track.stop === undefined) return { head: wrap(time * TRAIN_SPEED + track.length * 0.08, track.length), speed: TRAIN_SPEED };
+  const lap = lapTime(track);
+  const t = wrap(time, lap);
+  const cruise = (track.length - 2 * RAMP_DIST) / TRAIN_SPEED;
+  let d: number;
+  let v: number;
+  if (t < RAMP_TIME) {
+    d = 0.5 * ACCEL * t * t;
+    v = ACCEL * t;
+  } else if (t < RAMP_TIME + cruise) {
+    d = RAMP_DIST + TRAIN_SPEED * (t - RAMP_TIME);
+    v = TRAIN_SPEED;
+  } else if (t < 2 * RAMP_TIME + cruise) {
+    const u = t - RAMP_TIME - cruise;
+    d = RAMP_DIST + TRAIN_SPEED * cruise + TRAIN_SPEED * u - 0.5 * ACCEL * u * u;
+    v = TRAIN_SPEED - ACCEL * u;
+  } else {
+    d = track.length;
+    v = 0;
+  }
+  return { head: wrap(track.stop + d, track.length), speed: v };
+}
+
+export const trainHead = (track: Track, time: number) => trainMotion(track, time).head;
+
+/**
+ * The train and the station, at `time`: whether it's standing at the platform and for how
+ * many seconds more, or how many until it's next standing there. Null without a station.
+ */
+export function atStation(track: Track, time: number): { standing: boolean; left: number; due: number } | null {
+  if (track.stop === undefined) return null;
+  const lap = lapTime(track);
+  const t = wrap(time, lap);
+  const arrive = lap - DWELL;
+  return t >= arrive ? { standing: true, left: lap - t, due: 0 } : { standing: false, left: 0, due: arrive - t };
+}
 
 export type TrainCar = Pose & { kind: TrainCarKind; yaw: number; pitch: number; length: number };
 

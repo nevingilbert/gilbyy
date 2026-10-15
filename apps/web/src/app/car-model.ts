@@ -266,6 +266,7 @@ export function buildCar(vehicle: VehicleId) {
     // Hung up on a rock, the wheels turn with the throttle and the truck doesn't.
     rolled += ((car.stuck ? car.stuck.spin : car.speed) * dt) / radius;
     glint(dt);
+    if (parts.spinner) parts.spinner.rotation.y += dt * 7;
 
     const under = wheelGround(car, ground, spec);
     wheels.forEach((w, i) => {

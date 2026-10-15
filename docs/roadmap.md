@@ -28,6 +28,22 @@ subdomains." Update the **You are here** marker as you progress.
 > the easter eggs. Merged to `main` as pull request 10, its migration on the live
 > project. And animals in both worlds (`decisions/0015`,
 > `sessions/2026-10-09-wildlife.md`), client only.
+> On 2026-10-15, on `feat/game-city-and-train` (`decisions/0022`): the valley's train
+> stops at a station and takes the truck through a tunnel to a third world, San
+> Francisco, built from public map data, with its own rig, garages, café and courses.
+> Its migration is on the live project, where the database checks pass; it's pull
+> request 24, not yet merged.
+> Later on 2026-10-15, on `feat/game-vegas` (`decisions/0023`): a dock on the island and a
+> car ferry to a fourth world, Las Vegas and the Grand Canyon, with an F1 car that needs
+> tarmac, three garages, a diner and eight courses, the Grand Prix round the Strip among
+> them. Its migration is on the live project, where the database checks pass; it's pull
+> request 25, not yet merged.
+> Later still on 2026-10-15, on `feat/game-japan` (`decisions/0024`): a helipad on the
+> canyon's rim and a heavy-lift helicopter, the truck slung under it, to a fifth world,
+> Japan: the mountain over the lake and its gate, the pagoda, the pass and the harbour
+> town, the rice terraces, the bamboo and the hot spring, with a kei truck, three garages,
+> a teahouse and eight courses. Its migration is on the live project too, applied after
+> Vegas's; it's pull request 26, not yet merged.
 > On 2026-10-10, photo mode (`decisions/0018`): P stops the world, the camera goes
 > round the truck, the shutter saves a picture. Client only; merged to `main` as pull
 > request 14 (`sessions/2026-10-10-photo-mode.md`).

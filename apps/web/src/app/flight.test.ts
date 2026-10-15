@@ -10,8 +10,8 @@ import { worldTopic } from "./net";
 import { itemKey, priceOf, soldOnlyIn } from "./shop";
 import { LocalStore } from "./store";
 import { VEHICLES } from "./vehicles";
-import { buildWorld, type World } from "./world";
-import { WORLDS, WORLD_IDS, flightFrom, isWorld } from "./worlds";
+import { buildWorld, type AirWorld } from "./world";
+import { ROUTES, WORLDS, WORLD_IDS, goesTo, isWorld, wayFrom } from "./worlds";
 
 const dir = resolve(__dirname, "../../../../supabase/migrations");
 /** Every migration, in the order they run. */
@@ -24,7 +24,7 @@ const STEP = 0.05;
 /** Every frame of a film, with its time. */
 const frames = (end: number, at: (t: number) => Frame) => Array.from({ length: Math.round(end / STEP) + 1 }, (_, i) => ({ t: i * STEP, f: at(i * STEP) }));
 
-describe.each([["valley", valley], ["island", island]] as const)("flying out of and into the %s", (_, w: World) => {
+describe.each([["valley", valley], ["island", island]] as const)("flying out of and into the %s", (_, w: AirWorld) => {
   const a = w.airport;
   const from = { ...boardSpot(a), heading: a.heading + 0.8 };
   const out = frames(DEPART.end, (t) => departure(a, from, t));
@@ -204,14 +204,29 @@ describe("the ramp and the hold", () => {
 });
 
 describe("the worlds", () => {
-  it("are the valley and the island, each a flight from the other", () => {
-    expect(WORLD_IDS).toEqual(["valley", "island"]);
-    for (const id of WORLD_IDS) {
-      expect(flightFrom(flightFrom(id))).toBe(id);
-      expect(flightFrom(id)).not.toBe(id);
-      expect(WORLDS[id].fare).toBeGreaterThan(0);
+  it("are the valley, the island a flight away, the city a train ride away, Vegas a ferry ride from the island and Japan a helicopter ride from Vegas, and every way goes back", () => {
+    expect(WORLD_IDS).toEqual(["valley", "island", "city", "vegas", "japan"]);
+    expect(wayFrom("valley", "plane")).toBe("island");
+    expect(wayFrom("island", "plane")).toBe("valley");
+    expect(wayFrom("valley", "train")).toBe("city");
+    expect(wayFrom("city", "train")).toBe("valley");
+    expect(wayFrom("island", "boat")).toBe("vegas");
+    expect(wayFrom("vegas", "boat")).toBe("island");
+    expect(wayFrom("vegas", "heli")).toBe("japan");
+    expect(wayFrom("japan", "heli")).toBe("vegas");
+    expect(wayFrom("island", "train")).toBeNull();
+    expect(wayFrom("city", "plane")).toBeNull();
+    expect(wayFrom("valley", "boat")).toBeNull();
+    expect(wayFrom("vegas", "plane")).toBeNull();
+    expect(wayFrom("island", "heli")).toBeNull();
+    expect(wayFrom("japan", "boat")).toBeNull();
+    for (const r of ROUTES) {
+      expect(goesTo(r.to, r.from)).toBe(true);
+      expect(r.to).not.toBe(r.from);
     }
+    for (const id of WORLD_IDS) expect(WORLDS[id].fare).toBeGreaterThan(0);
     expect(isWorld("island")).toBe(true);
+    expect(isWorld("city")).toBe(true);
     expect(isWorld("moon")).toBe(false);
     expect(isWorld(null)).toBe(false);
     expect(isWorld("toString")).toBe(false);
@@ -237,15 +252,31 @@ describe("the worlds and the server agree", () => {
     );
     const client = Object.fromEntries(VEHICLES.filter((v) => v.only).map((v) => [itemKey("vehicle", v.id), v.only]));
     expect(server).toEqual(client);
-    expect(client).toEqual({ "vehicle:sandfly": "island" });
+    expect(client).toEqual({ "vehicle:sandfly": "island", "vehicle:robotaxi": "city", "vehicle:slipstream": "vegas", "vehicle:kei": "japan" });
     expect(soldOnlyIn("vehicle:sandfly")).toBe("island");
+    expect(soldOnlyIn("vehicle:robotaxi")).toBe("city");
+    expect(soldOnlyIn("vehicle:slipstream")).toBe("vegas");
+    expect(soldOnlyIn("vehicle:kei")).toBe("japan");
     expect(soldOnlyIn("vehicle:duneclaw")).toBeNull();
     expect(soldOnlyIn("tyres:mud")).toBeNull();
+  });
+
+  it("on every way from one world to another", () => {
+    const server = [...migration.matchAll(/insert into public\.routes \(origin, destination, way\) values([\s\S]*?);/g)].flatMap(([, block]) =>
+      [...block.matchAll(/\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)/g)].map((m) => ({ from: m[1], to: m[2], way: m[3] })),
+    );
+    expect(server).toEqual(ROUTES);
+    // And fly() goes nowhere that isn't one of them.
+    const fly = migration.slice(migration.lastIndexOf("function public.fly("));
+    expect(fly).toContain("from public.routes r where r.origin = p.world and r.destination = p_to");
   });
 
   it("on each world's channel", () => {
     expect(worldTopic("valley")).toBe("world");
     expect(worldTopic("island")).toBe("world:island");
+    expect(worldTopic("city")).toBe("world:city");
+    expect(worldTopic("vegas")).toBe("world:vegas");
+    expect(worldTopic("japan")).toBe("world:japan");
     // The valley's policy names its channel outright; the others are built from the world's id.
     expect(migration).toContain("p_topic = 'world:' || p.world");
     expect(migration).toContain("p.world <> 'valley'");

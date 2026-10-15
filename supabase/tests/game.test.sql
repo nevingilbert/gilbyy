@@ -327,7 +327,7 @@ select public.explore('{9}', 'island');
 select pg_temp.check(public.explored() = '0002' || repeat('00', 2046), 'the island''s fog clears on the island''s map');
 select pg_temp.check(public.explored('valley') = '01000040' || repeat('00', 2043) || '80', 'and not on the valley''s');
 select pg_temp.refused($$ select public.explore('{1}', 'moon') $$, 'no such world', 'there is no map of nowhere');
-select pg_temp.check((select count(*) from public.worlds) = 2, 'anyone can read what the flights cost');
+select pg_temp.check((select count(*) from public.worlds) = 5, 'anyone can read what the flights cost');
 reset role;
 
 -- Realtime channels.
@@ -393,6 +393,77 @@ select pg_temp.refused($$ select public.call_tow() $$, 'not enough miles', 'a dr
 reset role;
 select pg_temp.check(not has_function_privilege('anon', 'public.call_tow()', 'execute') and has_function_privilege('authenticated', 'public.call_tow()', 'execute'),
   'only someone signed in can ring BBB');
+
+-- San Francisco (ADR 0022): the train goes there from the valley and nowhere else, the
+-- Robotaxi is sold only there, and both stations are places to find.
+update public.profiles set balance = 500 where id::text like '%00000000000a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.refused($$ select public.fly('city') $$, 'nothing goes from island to city', 'there is no train from the island');
+select pg_temp.check((select balance = 350 and world = 'valley' from public.fly('valley')), 'so home first, by plane');
+select pg_temp.refused($$ select public.buy('vehicle:robotaxi') $$, 'only sold in city', 'the Robotaxi is not sold in the valley');
+select pg_temp.check((select balance = 200 and world = 'city' from public.fly('city')), 'the train takes its fare and takes you to the city');
+select pg_temp.refused($$ select public.fly('island') $$, 'nothing goes from city to island', 'and there is no plane from the city');
+select pg_temp.check((select balance from public.buy('vehicle:robotaxi')) = 0, 'the Robotaxi is sold in the city');
+select pg_temp.check((select 'station:city' = any (discovered) from public.discover('station:city')), 'Fourth and King is a place to find');
+select pg_temp.check((select stations = 1 and airports = 0 and garages = 0 from public.leaderboard() where is_me),
+  'and the leaderboard counts the stations in the world you are in');
+select pg_temp.check((select stations = 0 from public.leaderboard('valley') where is_me), 'the valley''s is another');
+select pg_temp.check((select count(*) from public.routes) = 8, 'anyone can read where the planes, the train, the ferry and the helicopter go');
+reset role;
+select pg_temp.check((select count(*) filter (where crew = 1) = 4 and count(*) filter (where crew > 1) = 4 from public.missions where world = 'city'),
+  'the city has four courses to drive alone and four for friends');
+select pg_temp.check((select count(*) = 2 and sum(fare) = 300 from private.flight_log where user_id::text like '%00000000000a' and destination in ('valley', 'city')),
+  'and every trip is logged, by train as by plane');
+
+-- Las Vegas (ADR 0023): the ferry goes there from the island and nowhere else, the
+-- Slipstream is sold only there, and both docks are places to find.
+update public.profiles set balance = 900 where id::text like '%00000000000a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.refused($$ select public.fly('vegas') $$, 'nothing goes from city to vegas', 'there is no ferry from the city');
+select pg_temp.check((select balance = 750 and world = 'valley' from public.fly('valley')), 'back to the valley by train');
+select pg_temp.refused($$ select public.fly('vegas') $$, 'nothing goes from valley to vegas', 'nor from the valley');
+select pg_temp.check((select balance = 600 and world = 'island' from public.fly('island')), 'on to the island by plane');
+select pg_temp.refused($$ select public.buy('vehicle:slipstream') $$, 'only sold in vegas', 'the Slipstream is not sold on the island');
+select pg_temp.check((select 'dock:island' = any (discovered) from public.discover('dock:island')), 'the island''s dock is a place to find');
+select pg_temp.check((select balance = 450 and world = 'vegas' from public.fly('vegas')), 'the ferry takes its fare and takes you to Vegas');
+select pg_temp.refused($$ select public.fly('valley') $$, 'nothing goes from vegas to valley', 'and there is no plane from Vegas');
+select pg_temp.check((select balance from public.buy('vehicle:slipstream')) = 50, 'the Slipstream is sold in Vegas');
+select pg_temp.check((select 'dock:vegas' = any (discovered) from public.discover('dock:vegas')), 'so is the marina''s dock');
+select pg_temp.check((select docks = 1 and stations = 0 and airports = 0 from public.leaderboard() where is_me),
+  'and the leaderboard counts the docks in the world you are in');
+select pg_temp.check((select docks = 1 and airports = 0 from public.leaderboard('island') where is_me), 'the island''s is another');
+select pg_temp.refused($$ select public.complete_mission('grand-prix', 30) $$, 'too fast', 'a lap quicker than any car could is refused');
+select pg_temp.refused($$ select public.complete_mission('lombard', 60) $$, 'another world', 'a city course cannot be claimed from Vegas');
+reset role;
+select pg_temp.check((select count(*) filter (where crew = 1) = 4 and count(*) filter (where crew > 1) = 4 from public.missions where world = 'vegas'),
+  'Vegas has four courses to drive alone and four for friends');
+select pg_temp.check((select count(*) = 1 and sum(fare) = 150 from private.flight_log where user_id::text like '%00000000000a' and destination = 'vegas'),
+  'the ferry''s trips are logged too');
+
+-- Japan (ADR 0024): the helicopter goes there from Vegas and nowhere else, the Kei Truck is
+-- sold only there, and both helipads are places to find.
+update public.profiles set balance = 500 where id::text like '%00000000000a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.refused($$ select public.buy('vehicle:kei') $$, 'only sold in japan', 'the Kei Truck is not sold in Vegas');
+select pg_temp.check((select 'helipad:vegas' = any (discovered) from public.discover('helipad:vegas')), 'the rim''s helipad is a place to find');
+select pg_temp.check((select balance = 350 and world = 'japan' from public.fly('japan')), 'the helicopter takes its fare and takes you to Japan');
+select pg_temp.refused($$ select public.fly('island') $$, 'nothing goes from japan to island', 'and there is no ferry from Japan');
+select pg_temp.check((select balance from public.buy('vehicle:kei')) = 150, 'the Kei Truck is sold in Japan');
+select pg_temp.check((select 'helipad:japan' = any (discovered) from public.discover('helipad:japan')), 'so is Japan''s helipad');
+select pg_temp.check((select helipads = 1 and docks = 0 and airports = 0 from public.leaderboard() where is_me),
+  'and the leaderboard counts the helipads in the world you are in');
+select pg_temp.check((select helipads = 1 and docks = 1 from public.leaderboard('vegas') where is_me), 'Vegas''s is another, beside its dock');
+select pg_temp.refused($$ select public.complete_mission('the-pass', 10) $$, 'too fast', 'a run down the pass quicker than any truck could is refused');
+select pg_temp.refused($$ select public.complete_mission('grand-prix', 60) $$, 'another world', 'a Vegas course cannot be claimed from Japan');
+select pg_temp.check((select balance = 0 and world = 'vegas' from public.fly('vegas')), 'and the helicopter goes back, for the same fare');
+reset role;
+select pg_temp.check((select count(*) filter (where crew = 1) = 4 and count(*) filter (where crew > 1) = 4 from public.missions where world = 'japan'),
+  'Japan has four courses to drive alone and four for friends');
+select pg_temp.check((select count(*) = 1 and sum(fare) = 150 from private.flight_log where user_id::text like '%00000000000a' and destination = 'japan'),
+  'the helicopter''s trips are logged too');
 
 -- Only the game's own functions can be called, and only when signed in.
 select pg_temp.check(not has_function_privilege('anon', 'public.me()', 'execute'), 'signed-out visitors cannot call the game''s functions');

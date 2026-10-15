@@ -98,10 +98,11 @@ const length = (start: Pt, pts: Pt[]) =>
 
 /**
  * No rig averages this many metres a second round a course, so a quicker claim is refused.
- * A tenth more than the quickest rig's top speed (the Sandfly's 24.5): flags have width,
- * and a good line through them is a little shorter than the one measured.
+ * A tenth more than the quickest rig's top speed (the Slipstream's 31 on tarmac, ADR 0023;
+ * it was the Sandfly's 24.5 and 27 before): flags have width, and a good line through them
+ * is a little shorter than the one measured.
  */
-export const TOO_QUICK = 27;
+export const TOO_QUICK = 34;
 const secondsFor = (metres: number) => Math.floor(metres / TOO_QUICK);
 /**
  * Three fifths of the line through the flags, in miles. The odometer counts every metre
