@@ -87,6 +87,15 @@ unhurried exploration in a classic 4x4.
   carry no names. The canyon is coloured band over band by height, river to rim, and
   buttes stand off its bench. The ferry over is a short film like the flight: a
   double-ended boat in blue and white with a yellow funnel, a stone causeway at each end.
+- A fifth place, Japan, in spring (ADR 0024): not from a map, its famous views together on
+  one island under the same sky. Green where the others are gold or sand: meadow, cedar
+  and pine, cherry in blossom, bamboo, azaleas in flower; the mountain's snow over it all,
+  its steep ground dark mossy rock and its top bare ash. The terraces are flooded, each a
+  level pale mirror, young rice standing up through them. Vermilion is spent only on the
+  gate in the lake, the pagoda and the parasols at the teahouse; the town is dark timber,
+  pale plaster and grey tile, its paper screens warm at night, and otherwise dark. Calm:
+  steam drifts off the hot spring, the boats ride a slow swell. The helicopter is the one
+  loud colour, orange and white, and it carries the truck slung under it on a cable.
 - A photo mode (ADR 0018): P stops the world, the camera goes round the truck, and the
   shutter keeps the picture, with everyone's name over their truck and no other HUD.
   On screen only those names, a shutter, "back" and one line of how-to. Not while on a course. Pictures aren't collected, counted or listed.
@@ -101,11 +110,11 @@ unhurried exploration in a classic 4x4.
   winch or a tow truck gets it off. Mud and deep water that hold a truck are still out.
 - Weather. Rain and lightning are the strongest candidates to add next; the city's fog
   bank (ADR 0022) is the only weather so far.
-- More than four maps. There is the valley (with a snowy plateau in the north), since
+- More than five maps. There is the valley (with a snowy plateau in the north), since
   2026-10-09 an island a flight away (ADR 0014), since 2026-10-15 San Francisco a train
-  ride away (ADR 0022), and Las Vegas and the Grand Canyon a ferry ride from the island
-  (ADR 0023); and eleven rigs, each inspired by a real one. Japan, by helicopter from
-  Vegas, is asked for.
+  ride away (ADR 0022), Las Vegas and the Grand Canyon a ferry ride from the island
+  (ADR 0023), and Japan a helicopter ride from Vegas (ADR 0024); and twelve rigs, each
+  inspired by a real one.
 - Scope in general. It is a shipped commercial game; this is a hobby page.
 
 ## Where the current build sits

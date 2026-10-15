@@ -4,10 +4,10 @@ import { PALETTE } from "./palette";
 
 export type GarageStyle =
   | "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack" | "outpost" | "lodge"
-  | "victorian" | "pier" | "airfield" | "speedshop" | "pitgarage" | "tradingpost";
+  | "victorian" | "pier" | "airfield" | "speedshop" | "pitgarage" | "tradingpost" | "passworks" | "harbour" | "kura";
 export const GARAGE_STYLES: readonly GarageStyle[] = [
   "workshop", "barn", "bunker", "quonset", "cabin", "container", "hangar", "ranch", "shack", "outpost", "lodge", "victorian", "pier", "airfield",
-  "speedshop", "pitgarage", "tradingpost",
+  "speedshop", "pitgarage", "tradingpost", "passworks", "harbour", "kura",
 ];
 
 export type Circle = { x: number; z: number; r: number };
@@ -960,6 +960,120 @@ const tradingpost: Build = (root, k, glass) => {
   return { setDoor: doors, colliders: ring(props, -W / 2, W / 2, -F, F), ...entry(F, 11) };
 };
 
+// --- Japan's (ADR 0024). ---
+
+/** A gable roof of grey tiles: rows of half-round ribs down each slope over a dark sheet, a heavy ridge. */
+export function tiledRoof(k: Kit, w: number, d: number, eaves: number, rise: number, over = 0.7) {
+  const tile = lambert(PALETTE.japan.tile), rib = lambert(tone(PALETTE.japan.tile, 0.8));
+  const prof = [[w / 2 + over, eaves], [0, eaves + rise], [-w / 2 - over, eaves]];
+  roof(k, tile, prof, d + 2 * over, 0.22, 0.05);
+  const slope = Math.hypot(w / 2 + over, rise);
+  const a = Math.atan2(rise, w / 2 + over);
+  for (const s of [1, -1]) {
+    for (let z = -d / 2 - over + 0.3; z <= d / 2 + over - 0.2; z += 0.45) {
+      k.box(rib, slope, 0.09, 0.12, (s * (w / 2 + over)) / 2, eaves + rise / 2 + 0.16, z, 0, 0, -s * a);
+    }
+  }
+  k.box(rib, 0.5, 0.4, d + 2 * over + 0.2, 0, eaves + rise + 0.18, 0);
+}
+
+/**
+ * The workshop at the foot of the pass: dark cedar boards, a tiled gable roof, a steel door
+ * that rolls up, a blue curtain over a side door, and a vending machine glowing by it.
+ */
+const passworks: Build = (root, k, glass) => {
+  const W = 12, D = 10, H = 4.4, DW = 4.4, DH = 3.6, F = D / 2;
+  const cedar = lambert(PALETTE.japan.cedarWall), batten = lambert(tone(PALETTE.japan.cedarWall, 0.75));
+  shell(k, cedar, W, D, H, DW, DH);
+  const gable = [[W / 2, H], [0, H + 2.2], [-W / 2, H]];
+  k.add(cedar, prism(gable, D), 0, 0, 0);
+  for (let x = -W / 2 + 0.25; x < W / 2; x += 0.5) {
+    if (Math.abs(x) > DW / 2 + 0.1) k.box(batten, 0.07, H, 0.05, x, H / 2, F + 0.02);
+    k.box(batten, 0.07, H, 0.05, x, H / 2, -F - 0.02);
+  }
+  const rk = k.at(0, 0, 0, Math.PI / 2);
+  tiledRoof(rk, D, W, H, 2.2);
+  // The side door's curtain, and the vending machine: a lit front in a white box.
+  k.box(lambert(PALETTE.japan.noren), 1.4, 0.9, 0.05, -W / 2 + 1.5, 2.3, F + 0.08);
+  k.box(lambert(PALETTE.doorDark), 1.2, 2.2, 0.06, -W / 2 + 1.5, 1.1, F + 0.04);
+  const vm = k.at(W / 2 + 0.8, 0, F - 0.8);
+  vm.box(lambert(PALETTE.japan.plaster), 1.1, 1.9, 0.8, 0, 0.95, 0);
+  vm.box(glass, 0.9, 1.0, 0.05, 0, 1.25, 0.41);
+  pane(k.at(W / 4 + 1.6, 2.4, F + 0.02), glass, 1.4, 1.0, PALETTE.japan.timber);
+  const door = part(root, 0, DH, F - 0.3, (dk) => {
+    dk.box(lambert(PALETTE.corrugated), DW, DH, 0.08, 0, -DH / 2, 0);
+    for (let y = 0.3; y < DH; y += 0.3) dk.box(lambert(tone(PALETTE.corrugated, 0.82)), DW, 0.05, 0.1, 0, -y, 0.02);
+  });
+  const props = [{ x: W / 2 + 0.8, z: F - 0.8, r: 0.7 }];
+  return { setDoor: (t) => (door.scale.y = 1 - 0.95 * t), colliders: ring(props, -W / 2, W / 2, -F, F), ...entry(F, 11) };
+};
+
+/**
+ * The shed on the harbour: corrugated walls in blue, a shallow roof, a big door that slides
+ * aside, and fishing floats and nets piled by it.
+ */
+const harbourShed: Build = (root, k, glass) => {
+  const W = 16, D = 14, H = 5.6, DW = 6, DH = 4.6, F = D / 2;
+  const blue = lambert(PALETTE.japan.shedBlue), rib = lambert(tone(PALETTE.japan.shedBlue, 0.8));
+  shell(k, blue, W, D, H, DW, DH);
+  const gable = [[W / 2, H], [0, H + 1.6], [-W / 2, H]];
+  k.add(blue, prism(gable, D), 0, 0, 0);
+  roof(k, lambert(PALETTE.roofTin), gable, D + 0.6, 0.15, 0.4);
+  for (let x = -W / 2 + 0.3; x < W / 2; x += 0.6) {
+    if (Math.abs(x) > DW / 2 + 0.2) k.box(rib, 0.06, H, 0.08, x, H / 2, F + 0.03);
+    k.box(rib, 0.06, H, 0.08, x, H / 2, -F - 0.03);
+  }
+  for (const s of [1, -1]) for (const z of [-4, 0, 4]) pane(k.at(s * (W / 2 + 0.06), 3.6, z, (s * Math.PI) / 2), glass, 1.2, 0.8);
+  // Floats in a heap, nets over a rail, two crates.
+  const float = lambert(PALETTE.ferry.buoy);
+  for (let i = 0; i < 9; i++) k.add(float, new THREE.SphereGeometry(0.28, 8, 6), W / 2 + 1.0 + (i % 3) * 0.5, 0.28 + Math.floor(i / 3) * 0.42, F - 1.2 + (i % 2) * 0.3);
+  k.box(lambert(PALETTE.japan.noren), 0.06, 1.6, 3.4, -W / 2 - 0.9, 1.6, F - 2.5);
+  k.box(lambert(PALETTE.doorDark), 0.12, 0.12, 3.6, -W / 2 - 0.9, 2.45, F - 2.5);
+  crate(k, -W / 2 - 1.2, 0, -2, 1.0);
+  crate(k, -W / 2 - 1.1, 1.0, -2.1, 0.8, 0.3);
+  const door = part(root, 0, 0, F + 0.18, (dk) => {
+    dk.box(blue, DW + 0.2, DH + 0.2, 0.1, 0, (DH + 0.2) / 2, 0);
+    for (let x = -DW / 2; x <= DW / 2; x += 0.6) dk.box(rib, 0.06, DH + 0.2, 0.12, x, (DH + 0.2) / 2, 0.02);
+  });
+  k.box(lambert(PALETTE.doorDark), W, 0.2, 0.2, 0, DH + 0.35, F + 0.2);
+  const props = [{ x: W / 2 + 1.5, z: F - 1, r: 1.0 }, { x: -W / 2 - 1.1, z: -2, r: 0.9 }];
+  return { setDoor: (t) => (door.position.x = -t * (DW + 0.4)), colliders: ring(props, -W / 2, W / 2, -F, F), ...entry(F, 13) };
+};
+
+/**
+ * A kura, a storehouse at the top of the terraces: thick white plaster walls on a black
+ * base laid in a diamond pattern, a heavy tiled roof, small shuttered windows, and heavy
+ * timber doors that swing open.
+ */
+const kura: Build = (root, k, glass) => {
+  const W = 11, D = 9, H = 5.4, DW = 3.8, DH = 3.4, F = D / 2;
+  const plaster = lambert(PALETTE.japan.plaster), black = lambert(PALETTE.japan.gateBlack), wood = lambert(PALETTE.japan.timber);
+  shell(k, plaster, W, D, H, DW, DH, 0.4);
+  const gable = [[W / 2, H], [0, H + 2.4], [-W / 2, H]];
+  k.add(plaster, prism(gable, D), 0, 0, 0);
+  const rk = k.at(0, 0, 0, Math.PI / 2);
+  tiledRoof(rk, D, W, H + 0.1, 2.4, 0.9);
+  // The black base, and its diamond grid of white lines.
+  for (const s of [1, -1]) k.box(black, W + 0.1, 1.4, 0.05, 0, 0.7, s * (F + 0.02));
+  for (const s of [1, -1]) k.box(black, 0.05, 1.4, D + 0.1, s * (W / 2 + 0.02), 0.7, 0);
+  for (let x = -W / 2 + 0.4; x < W / 2; x += 0.8) {
+    if (Math.abs(x) < DW / 2 + 0.3) continue;
+    k.box(plaster, 0.06, 1.6, 0.07, x, 0.7, F + 0.05, 0, 0, Math.PI / 4);
+    k.box(plaster, 0.06, 1.6, 0.07, x, 0.7, F + 0.05, 0, 0, -Math.PI / 4);
+  }
+  // Small windows high up under heavy shutters.
+  for (const s of [1, -1]) {
+    pane(k.at(s * 3.6, 4.0, F + 0.21), glass, 0.8, 0.7, PALETTE.japan.gateBlack);
+    k.box(black, 1.0, 0.9, 0.12, s * 3.6 + s * 0.95, 4.0, F + 0.26);
+  }
+  const leaf = (dk: Kit, s: number) => {
+    dk.box(wood, DW / 2, DH, 0.16, (s * DW) / 4, DH / 2, 0);
+    for (let y = 0.5; y < DH; y += 0.9) dk.box(black, DW / 2 - 0.1, 0.1, 0.18, (s * DW) / 4, y, 0.02);
+  };
+  const doors = swingDoors(root, DW, F + 0.25, leaf, 1.6);
+  return { setDoor: doors, colliders: ring([], -W / 2, W / 2, -F, F), ...entry(F + 0.2, 11) };
+};
+
 const BUILDERS: Record<GarageStyle, Build> = {
   workshop, barn, bunker, quonset, cabin, container: containers, hangar, ranch,
   shack: hut({ wall: PALETTE.bamboo, roof: PALETTE.thatch, boards: true }),
@@ -967,6 +1081,7 @@ const BUILDERS: Record<GarageStyle, Build> = {
   lodge: hut({ wall: PALETTE.logWood, roof: PALETTE.jungleThatch, boards: false }),
   victorian, pier: pierShed, airfield,
   speedshop, pitgarage, tradingpost,
+  passworks, harbour: harbourShed, kura,
 };
 
 /** A garage the car can drive into. `windowMaterial` is shared and owned by the caller; it glows at night. */

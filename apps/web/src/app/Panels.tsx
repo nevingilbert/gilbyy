@@ -170,9 +170,14 @@ const TRIPS: Partial<Record<`${Way}:${WorldId}`, { title: string; blurb: string 
     blurb: "Across the water to the marina on Lake Mead: the desert, the Strip lit up at night, Red Rock, and the Grand Canyon down to the river.",
   },
   "boat:island": { title: "The ferry back to the island", blurb: "Back over the water to the dock on the island's beach." },
+  "heli:japan": {
+    title: "The helicopter to Japan",
+    blurb: "Out over the canyon and away to an island under a snow-capped mountain: a lake, cherry in blossom, a pagoda, rice terraces, a harbour town and a pass to drive.",
+  },
+  "heli:vegas": { title: "The helicopter back to Vegas", blurb: "Back to the pad on the canyon's rim, the Strip across the desert." },
 };
-const AT: Record<Way, string> = { plane: "At the airstrip", train: "At the station", boat: "At the dock" };
-const ABOARD: Record<Way, string> = { plane: "", train: ", on the flat wagon at the back", boat: ", on the car deck" };
+const AT: Record<Way, string> = { plane: "At the airstrip", train: "At the station", boat: "At the dock", heli: "On the helipad" };
+const ABOARD: Record<Way, string> = { plane: "", train: ", on the flat wagon at the back", boat: ", on the car deck", heli: ", slung on a cable underneath" };
 
 /**
  * At the plane's tail or beside the train's flat wagon: what the trip costs, and a button

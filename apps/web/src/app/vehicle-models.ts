@@ -1130,7 +1130,62 @@ function slipstream(r: Rig) {
   });
 }
 
-const BUILDERS: Record<VehicleId, (r: Rig) => void> = { ridgeback, bluff, mule, overlander, prairie, highland, summit, duneclaw, sandfly, robotaxi, slipstream };
+/**
+ * A kei truck (ADR 0024), the little farm truck of Japan's back roads: the cab sits right
+ * over the front wheels, its front flat and upright and nearly all glass, a long flat bed
+ * with low sides behind it, and a pipe guard over the back window. Sold only in Japan.
+ */
+function kei(r: Rig) {
+  const { F, roof } = r;
+  const sill = -0.4, belt = 0.18, side = 0.72, zf = F - 0.08, cab = 0.18, back = -F + 0.04, bedTop = 0.24, floor = -0.06;
+  // The cab: a box over the front wheels, its arch cut, the glasshouse lofted onto it.
+  r.slab(r.paint, [[zf, sill], [zf, belt], [cab, belt], [cab, sill]], -side, side, "round");
+  r.liners(sill, 0.36, [r.axles[1]]);
+  const a: Sec = { y: belt - 0.02, w: side - 0.02, z0: cab + 0.01, z1: zf - 0.01 };
+  const b: Sec = { y: roof, w: side - 0.07, z0: cab + 0.03, z1: zf - 0.16 };
+  r.add(r.paint, loft(a, b));
+  r.sideGlass(a, b, belt + 0.05, roof - 0.08, 0.06, 0.3);
+  r.endGlass(a, b, belt + 0.05, roof - 0.07, 0.06, 1);
+  r.endGlass(a, b, belt + 0.12, roof - 0.12, 0.28, -1);
+  r.wipers(a, b, belt + 0.07, [-0.25, 0.25], 0.42);
+  r.box(r.dark, 2 * side - 0.1, 0.02, b.z1 - b.z0 - 0.1, 0, roof + 0.005, (b.z0 + b.z1) / 2);
+  // The face: square lamps at its corners, a black band between them, a black bumper.
+  const ly = -0.04;
+  r.both((s) => {
+    r.lampBox(r.lamp, 0.2, 0.14, s * 0.5, ly, zf);
+    r.box(lambert(PALETTE.hazardYellow), 0.08, 0.06, 0.02, s * 0.5, ly - 0.14, zf + 0.012);
+  });
+  r.box(r.black, 0.62, 0.08, 0.02, 0, ly, zf + 0.012);
+  r.beams.low.set(0, ly, zf + 0.06);
+  r.box(r.black, 2 * side + 0.04, 0.14, 0.12, 0, -0.33, F - 0.06);
+  // The doors, their handles, mirrors out at the front corners.
+  r.seam(side, [[zf - 0.16, sill + 0.06], [zf - 0.16, belt - 0.01]]);
+  r.seam(side, [[cab + 0.05, sill + 0.06], [cab + 0.05, belt - 0.01]]);
+  r.both((s) => r.box(r.black, 0.02, 0.03, 0.1, s * (side + 0.01), 0.06, cab + 0.18));
+  r.mirrors(a.w, belt + 0.12, zf - 0.12);
+  // The bed, its sides hinged down at the floor, and the guard over the back window.
+  bed(r, { front: cab - 0.05, back, top: bedTop, floor, sill, side, style: "round", inset: 0.36 });
+  r.seam(side, [[cab - 0.08, floor + 0.03], [back + 0.06, floor + 0.03]]);
+  const gz = cab - 0.1, gt = roof + 0.04;
+  r.both((s) => r.add(r.black, tube(0.03, [s * (side - 0.06), bedTop, gz], [s * (side - 0.06), gt, gz], 0.02)));
+  r.add(r.black, tube(0.03, [-(side - 0.06), gt, gz], [side - 0.06, gt, gz], 0.03));
+  for (const x of [-0.3, 0, 0.3]) r.add(r.black, tube(0.015, [x, bedTop, gz], [x, gt, gz]));
+  // Two crates of greens, and the tail lamps on the bed's back corners.
+  const crate = lambert(PALETTE.japan.shedBlue), greens = lambert(PALETTE.japan.meadow[0]);
+  for (const [x, z] of [[-0.3, -0.5], [0.25, -1.1]]) {
+    r.k.box(crate, 0.5, 0.3, 0.4, x, floor + 0.17, z, 0, 0.1);
+    r.k.box(greens, 0.44, 0.06, 0.34, x, floor + 0.33, z, 0, 0.1);
+  }
+  r.both((s) => r.lampBox(r.tail, 0.1, 0.16, s * (side - 0.08), 0.02, back, -1));
+  r.box(r.black, 2 * side, 0.1, 0.1, 0, -0.36, -F + 0.06);
+
+  r.snorkel(a, b, side, belt);
+  r.fogLamps(0.42, -0.3, F - 0.01, 0.06);
+  r.lightBar(1.1, roof + 0.1, b.z1 - 0.12, roof);
+  r.ditchLights(a, b, belt);
+}
+
+const BUILDERS: Record<VehicleId, (r: Rig) => void> = { ridgeback, bluff, mule, overlander, prairie, highland, summit, duneclaw, sandfly, robotaxi, slipstream, kei };
 
 /** One rig's body, painted with `materials.paint` (the caller recolours it) and lit with `materials.lamp`. */
 export function buildVehicleBody(v: Vehicle, materials: { paint: THREE.Material; lamp: THREE.Material }): BodyParts {

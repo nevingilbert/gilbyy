@@ -20,7 +20,7 @@ export type AirportModel = {
 };
 
 /** Paving lies on level ground a few centimetres thick, so each layer is nudged toward the camera to sit cleanly on the one below. */
-const paved = (color: string, layer: number) =>
+export const paved = (color: string, layer: number) =>
   new THREE.MeshLambertMaterial({ color, flatShading: true, polygonOffset: true, polygonOffsetFactor: -2 * layer, polygonOffsetUnits: -2 * layer });
 
 const lit = (color: string) => new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.3, flatShading: true });

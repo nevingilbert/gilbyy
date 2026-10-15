@@ -386,11 +386,14 @@ export class SupabaseStore implements Store {
     if (!data) ({ data } = await this.sb.rpc("leaderboard"));
     type Row = {
       id: string; name: string; lifetime: number; is_me: boolean; garages: number; cafes: number;
-      airports?: number; stations?: number; docks?: number; eggs?: number; goals: string[] | null;
+      airports?: number; stations?: number; docks?: number; helipads?: number; eggs?: number; goals: string[] | null;
     };
     return (data ?? []).map((r: Row) => ({
       id: r.id, name: r.name, lifetime: Number(r.lifetime), me: r.is_me, world,
-      found: { garage: r.garages ?? 0, cafe: r.cafes ?? 0, airport: r.airports ?? 0, station: r.stations ?? 0, dock: r.docks ?? 0, egg: r.eggs ?? 0 },
+      found: {
+        garage: r.garages ?? 0, cafe: r.cafes ?? 0, airport: r.airports ?? 0, station: r.stations ?? 0, dock: r.docks ?? 0,
+        helipad: r.helipads ?? 0, egg: r.eggs ?? 0,
+      },
       goals: r.goals ?? [],
     }));
   }
