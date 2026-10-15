@@ -4,7 +4,7 @@ import { boardSpot, leaveSpot, planeObstacles, standPose } from "./flight";
 import { ISLAND, buildIsland, buildWorldOf, islandFire, makeIsland } from "./island";
 import { makeCar, noInput, step } from "./physics";
 import { STOCK_LOADOUT, specFor } from "./shop";
-import { buildWorld, CELL, HALF, ROW, WORLD, type World } from "./world";
+import { buildWorld, CELL, HALF, ROW, WORLD, type AirWorld, type World } from "./world";
 
 const valley = buildWorld();
 const island = buildIsland();
@@ -12,7 +12,7 @@ const zoneOf = (w: World, x: number, z: number) => w.zone[Math.round((z + HALF) 
 const apart = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
 
 /** Points all over the paving of a world's airstrip. */
-function paving(w: World) {
+function paving(w: AirWorld) {
   const out: { x: number; z: number }[] = [];
   for (let z = 0; z <= RUNWAY.length; z += 10) for (const x of [-RUNWAY.half, 0, RUNWAY.half]) out.push(fromField(w.airport, x, z));
   for (let z = -APRON.back; z <= APRON.front; z += 8) for (let x = -APRON.half; x <= APRON.half; x += 8) out.push(fromField(w.airport, x, z));

@@ -1,4 +1,5 @@
 import { findField, inFunnel, levelField } from "./airport";
+import { buildCity } from "./city";
 import { LINE_UP_BACK } from "./convoy";
 import { planeObstacles } from "./flight";
 import { courseDistOf, courseLength, courseLimits, gatesAlong, type Mission } from "./missions";
@@ -7,7 +8,7 @@ import {
   CAMP_PITCHES, FAR, ROW, SITE_BLEND, SITE_FLAT, SNORKEL_WADE, STOCK_WADE, WORLD,
   flood, gridX, gridZ, level, nearest, sampleGrid, type Path, type Pitch, type Site, type SiteStyle, type Track,
 } from "./terrain";
-import { buildWorld, obstacleIndex, trunkRadius, type Bush, type Rock, type Tree, type World, type WorldId } from "./world";
+import { buildWorld, obstacleIndex, trunkRadius, type AirWorld, type Bush, type Rock, type Tree, type World, type WorldId } from "./world";
 
 /**
  * The island a plane takes you to (ADR 0014): sea all round instead of mountains, a beach
@@ -207,7 +208,7 @@ function sandbarCourse(bar: ReturnType<typeof sandbarOf>, ground: (x: number, z:
 }
 
 /** The island. Deterministic, like the valley. */
-export function buildIsland(seed = 20261009): World {
+export function buildIsland(seed = 20261009): AirWorld {
   const rand = makeRandom(seed + 20);
   const shape = makeIsland(seed);
   const heights = new Float32Array(ROW * ROW);
@@ -405,7 +406,7 @@ export function buildIsland(seed = 20261009): World {
     heights, water, forest, trackDist, riverDist, roadDist, siteDist, campDist, zone,
     snow: new Float32Array(ROW * ROW), ice: new Float32Array(ROW * ROW),
     track: NO_TRACK, rivers: [], roads: tracks, sites,
-    trees, bushes, rocks, missions, landmarks: [], courseDist, airport,
+    trees, bushes, rocks, missions, landmarks: [], courseDist, airport, station: null,
     cafe, start, pitches: camp.pitches, camp: { ...camp.middle, heading: camp.heading },
     sea: true, mapSpan: (ISLAND.shore + 420) * 2,
     height: ground, waterAt: () => sea, obstaclesNear: solid.near, limit: WORLD.limit,
@@ -548,4 +549,4 @@ export function islandFire(world: World) {
 }
 
 /** The ground of one world or the other, built from nothing. About a third of a second. */
-export const buildWorldOf = (id: WorldId): World => (id === "island" ? buildIsland() : buildWorld());
+export const buildWorldOf = (id: WorldId): World => (id === "island" ? buildIsland() : id === "city" ? buildCity() : buildWorld());

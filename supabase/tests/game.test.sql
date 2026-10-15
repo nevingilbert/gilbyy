@@ -327,7 +327,7 @@ select public.explore('{9}', 'island');
 select pg_temp.check(public.explored() = '0002' || repeat('00', 2046), 'the island''s fog clears on the island''s map');
 select pg_temp.check(public.explored('valley') = '01000040' || repeat('00', 2043) || '80', 'and not on the valley''s');
 select pg_temp.refused($$ select public.explore('{1}', 'moon') $$, 'no such world', 'there is no map of nowhere');
-select pg_temp.check((select count(*) from public.worlds) = 2, 'anyone can read what the flights cost');
+select pg_temp.check((select count(*) from public.worlds) = 3, 'anyone can read what the flights cost');
 reset role;
 
 -- Realtime channels.
@@ -393,6 +393,28 @@ select pg_temp.refused($$ select public.call_tow() $$, 'not enough miles', 'a dr
 reset role;
 select pg_temp.check(not has_function_privilege('anon', 'public.call_tow()', 'execute') and has_function_privilege('authenticated', 'public.call_tow()', 'execute'),
   'only someone signed in can ring BBB');
+
+-- San Francisco (ADR 0022): the train goes there from the valley and nowhere else, the
+-- Robotaxi is sold only there, and both stations are places to find.
+update public.profiles set balance = 500 where id::text like '%00000000000a';
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.refused($$ select public.fly('city') $$, 'nothing goes from island to city', 'there is no train from the island');
+select pg_temp.check((select balance = 350 and world = 'valley' from public.fly('valley')), 'so home first, by plane');
+select pg_temp.refused($$ select public.buy('vehicle:robotaxi') $$, 'only sold in city', 'the Robotaxi is not sold in the valley');
+select pg_temp.check((select balance = 200 and world = 'city' from public.fly('city')), 'the train takes its fare and takes you to the city');
+select pg_temp.refused($$ select public.fly('island') $$, 'nothing goes from city to island', 'and there is no plane from the city');
+select pg_temp.check((select balance from public.buy('vehicle:robotaxi')) = 0, 'the Robotaxi is sold in the city');
+select pg_temp.check((select 'station:city' = any (discovered) from public.discover('station:city')), 'Fourth and King is a place to find');
+select pg_temp.check((select stations = 1 and airports = 0 and garages = 0 from public.leaderboard() where is_me),
+  'and the leaderboard counts the stations in the world you are in');
+select pg_temp.check((select stations = 0 from public.leaderboard('valley') where is_me), 'the valley''s is another');
+select pg_temp.check((select count(*) from public.routes) = 4, 'anyone can read where the planes and the train go');
+reset role;
+select pg_temp.check((select count(*) filter (where crew = 1) = 4 and count(*) filter (where crew > 1) = 4 from public.missions where world = 'city'),
+  'the city has four courses to drive alone and four for friends');
+select pg_temp.check((select count(*) = 2 and sum(fare) = 300 from private.flight_log where user_id::text like '%00000000000a' and destination <> 'island'),
+  'and every trip is logged, by train as by plane');
 
 -- Only the game's own functions can be called, and only when signed in.
 select pg_temp.check(not has_function_privilege('anon', 'public.me()', 'execute'), 'signed-out visitors cannot call the game''s functions');

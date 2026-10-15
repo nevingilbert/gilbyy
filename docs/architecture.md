@@ -94,7 +94,7 @@ Pure modules, no three.js, all unit-tested:
   roll chase the four wheels. Rocks under the tyres' clearance are bumps under the
   wheels. Sideways slip decays fast on dirt, slowly on snow and very slowly on ice,
   scaled by the tyres' snow grip.
-- `vehicles.ts` (the eight rigs, and the Sandfly, which only the island's garage sells)
+- `vehicles.ts` (the eight rigs, the Sandfly, which only the island's garages sell, and the Robotaxi, only the city's)
   and `shop.ts` (parts, prices, and `specFor()`, which turns a rig and its loadout into
   a `CarSpec`).
 - The second world and the way to it (`decisions/0014-airports-and-the-island.md`):
@@ -118,6 +118,27 @@ Pure modules, no three.js, all unit-tested:
     a time: the plane's pose, its ramp and wheels, where the truck is, the camera, and
     how much is lost in cloud. Also the plane's measurements, which the model shares,
     and the parked plane's colliders.
+- The third world and the train to it (`decisions/0022-san-francisco-and-the-train.md`):
+  - `worlds.ts` also says what goes where (`ROUTES`): the plane between the valley and
+    the island, the train between the valley and the city.
+  - `track.ts`'s `trainMotion()` is the valley's timetable: round the loop at speed,
+    braking into the station, a minute there (`DWELL`), and away again. `atStation()` is
+    what the platform is told.
+  - `rail.ts` is a line of rail that goes somewhere and stops, and the cars of a train on
+    one; it also lays a line's bed into the height grid (`besideBed`, `clearBed`) and
+    finds where the cutting's floor ends for a tunnel's face (`mouthAt`). `station.ts`
+    builds the two stations from their lines, and `rail-trip.ts` is the trip as a film,
+    pure like the flight's.
+  - `city.ts`'s `buildCity()` returns the same `World` shape again, from `city-data.ts`:
+    heights, water and streets baked from public map data by
+    `apps/web/scripts/bake-city.mjs` (Node, no dependencies), about 415 KB, loaded with
+    `import()` only when the city is wanted (`loadCityData()` in `city-streets.ts`). The
+    street map becomes a 2048-square kerb-distance texture the terrain's shader paints
+    from; buildings are lots along the street fronts (`city-buildings.ts`), their walls
+    one 2 m distance field the physics asks about; the bridges are decks
+    (`city-bridges.ts`) with their own heights, so `World.height(x, z, above)` takes the
+    height a truck is at and answers with the surface under it. `cable-car.ts` is the
+    Powell–Hyde line's timetable; the cars are solid like the train's.
 - `wildlife.ts`: the animals (`decisions/0015-wildlife.md`). `SPECIES` says which world
   each kind lives in and how it behaves, `habitat()` where a herd can make its home,
   `placeHerds()` puts every herd down from a fixed seed (the first ones in front of the
@@ -251,6 +272,11 @@ for sign-in (Google only), and Realtime for the shared valley. See
   `supabase db query --linked -f`, and `supabase migration repair --status applied
   20261010180000` recorded it. `supabase db push --include-all` would record the
   Cartier chains file too and change nothing else.
+- `20261015120000_city_and_train.sql` adds the city to `worlds` (150 miles, like the
+  flights), a `routes` table that `fly()` now checks so it only goes where the plane or
+  the train does, the Robotaxi in `shop_items` (sold only in the city), the city's eight
+  courses, its places and both stations (a new kind of place), and a `stations` column
+  on `leaderboard()` (ADR 0022). Not yet applied to the live project.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
@@ -410,6 +436,8 @@ that repo's problem, not this one's.
   means a custom SMTP sender, which is a new service and so a decision for the owner
   under the free-tier rule.
 - **Vercel Hobby:** 100 GB bandwidth/month, 100 GB-hr serverless. Realistic for hobby; watch images.
+  San Francisco's baked data is about 415 KB more, already compressed, fetched only by
+  players who go there or reload there (ADR 0022).
 - **Sentry free:** 5k errors/month.
 - **GitHub Actions:** 2k minutes/month on private; unlimited on public.
 - **CodeRabbit:** unlimited reviews on public repos; limited on private.

@@ -8,7 +8,7 @@ import { foundLine } from "./places";
 import type { Standing } from "./store";
 import type { WorldId } from "./terrain";
 import { STARTERS, type VehicleId } from "./vehicles";
-import { WORLDS } from "./worlds";
+import { WORLDS, type Way } from "./worlds";
 
 const panel =
   "pointer-events-auto rounded-2xl border border-white/10 bg-[rgba(24,20,17,0.8)] p-5 text-[rgba(255,246,232,0.86)] shadow-2xl backdrop-blur-md";
@@ -156,26 +156,35 @@ export function LandmarkCard({ kind, onClose }: { kind: LandmarkKind; onClose: (
   );
 }
 
-const FLIGHTS: Record<WorldId, { title: string; blurb: string }> = {
-  island: { title: "Fly to the island", blurb: "Sea all round, a beach inside it, dunes behind the beach and jungle in the middle." },
-  valley: { title: "Fly back to the valley", blurb: "The lakes, the rivers, the railway and the snow, as you left them." },
+const TRIPS: Record<`${Way}:${WorldId}`, { title: string; blurb: string }> = {
+  "plane:island": { title: "Fly to the island", blurb: "Sea all round, a beach inside it, dunes behind the beach and jungle in the middle." },
+  "plane:valley": { title: "Fly back to the valley", blurb: "The lakes, the rivers, the railway and the snow, as you left them." },
+  "plane:city": { title: "Fly to San Francisco", blurb: "" },
+  "train:city": {
+    title: "The train to San Francisco",
+    blurb: "Through the mountains in the dark and out under Potrero Hill, in to Fourth and King. The whole city, its hills, the two bridges, and the fog.",
+  },
+  "train:valley": { title: "The train back to the valley", blurb: "Back through the tunnel to the station in the valley, the camp a short drive east." },
+  "train:island": { title: "The train to the island", blurb: "" },
 };
 
 /**
- * At the plane's tail: what the flight costs, and a button to pay it. A fare is a lot of
- * miles and the way back costs the same, so it asks before it takes them (ADR 0014).
+ * At the plane's tail or beside the train's flat wagon: what the trip costs, and a button
+ * to pay it. A fare is a lot of miles and the way back costs the same, so it asks before
+ * it takes them (ADR 0014, 0022).
  */
-export function FlightCard({
-  to, balance, saved, onBoard, onClose,
+export function TripCard({
+  to, way, balance, saved, onBoard, onClose,
 }: {
   to: WorldId;
+  way: Way;
   balance: number;
   /** Signed in. Otherwise nothing is kept, and that includes where you are. */
   saved: boolean;
   onBoard: () => Promise<string | null>;
   onClose: () => void;
 }) {
-  const { title, blurb } = FLIGHTS[to];
+  const { title, blurb } = TRIPS[`${way}:${to}`];
   const fare = WORLDS[to].fare;
   const short = Math.max(0, fare - balance);
   const [busy, setBusy] = useState(false);
@@ -202,9 +211,9 @@ export function FlightCard({
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm" onClick={onClose}>
       <div role="dialog" aria-label={title} className={`${panel} w-full max-w-sm`} onClick={(e) => e.stopPropagation()}>
-        <p className="text-xs uppercase tracking-[0.18em] text-[rgba(255,246,232,0.5)]">At the airstrip</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-[rgba(255,246,232,0.5)]">{way === "plane" ? "At the airstrip" : "At the station"}</p>
         <h2 className="mt-2 text-xl font-semibold tracking-tight">{title}</h2>
-        <p className="mt-1 text-sm text-[rgba(255,246,232,0.6)]">{blurb} Your truck comes with you.</p>
+        <p className="mt-1 text-sm text-[rgba(255,246,232,0.6)]">{blurb} Your truck comes with you{way === "train" ? ", on the flat wagon at the back" : ""}.</p>
         <p className="mt-3 text-sm tabular-nums text-[rgba(255,246,232,0.86)]">
           {fmtMiles(fare)} mi each way. You have {fmtMiles(balance)} mi
           {short > 0 ? <span className="text-[rgba(255,246,232,0.6)]">, so {fmtMiles(Math.ceil(short * 10) / 10)} more to go.</span> : "."}

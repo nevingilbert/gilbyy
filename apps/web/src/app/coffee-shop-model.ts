@@ -49,7 +49,7 @@ function cup(k: Kit) {
  * A small roadside café, front facing +z. Origin at ground level in the middle of the building, which is 12 m by 9 m;
  * in front of it a flagged patio (to z ≈ 10) and then a gravel lot (to z = 25), both left free of colliders.
  */
-export function buildCoffeeShop(windows: THREE.Material, glow: THREE.Material): {
+export function buildCoffeeShop(windows: THREE.Material, glow: THREE.Material, lot = true): {
   object: THREE.Group;
   colliders: Circle[];
   /** The meeting spot in local space: the patio/parking area in front of the shop where players gather. */
@@ -143,10 +143,10 @@ export function buildCoffeeShop(windows: THREE.Material, glow: THREE.Material): 
   }
   k.box(dark, 0.06, 0.12, 0.06, 0, 2.58, F + 3.9);
 
-  // Gravel lot, with timber wheel stops facing the patio.
+  // Gravel lot, with timber wheel stops facing the patio. On a city square there is none (ADR 0022).
   const lz0 = PATIO_END, lw = 24;
-  k.box(lambert(PALETTE.dirt[1]), lw, 0.3, LOT_END - lz0, 0, -0.13, (lz0 + LOT_END) / 2);
-  for (let x = -7.5; x <= 7.5; x += 3) k.box(wood, 1.6, 0.14, 0.22, x, 0.09, lz0 + 1.0);
+  if (lot) k.box(lambert(PALETTE.dirt[1]), lw, 0.3, LOT_END - lz0, 0, -0.13, (lz0 + LOT_END) / 2);
+  if (lot) for (let x = -7.5; x <= 7.5; x += 3) k.box(wood, 1.6, 0.14, 0.22, x, 0.09, lz0 + 1.0);
 
   // Out the side and back: a propane tank on blocks, coffee sacks on a pallet.
   const tank = lambert(PALETTE.barrierWhite);
@@ -170,5 +170,5 @@ export function buildCoffeeShop(windows: THREE.Material, glow: THREE.Material): 
     F,
   );
   // Centred so the circle just clears the front wall's colliders and spans patio and lot.
-  return { object: k.build(object), colliders, meet: { x: 0, z: F + 11.5, r: 11 } };
+  return { object: k.build(object), colliders, meet: lot ? { x: 0, z: F + 11.5, r: 11 } : { x: 0, z: F + 8, r: 8 } };
 }

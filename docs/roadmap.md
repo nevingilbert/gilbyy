@@ -28,6 +28,11 @@ subdomains." Update the **You are here** marker as you progress.
 > the easter eggs. Merged to `main` as pull request 10, its migration on the live
 > project. And animals in both worlds (`decisions/0015`,
 > `sessions/2026-10-09-wildlife.md`), client only.
+> On 2026-10-15, on `feat/game-city-and-train` (`decisions/0022`): the valley's train
+> stops at a station and takes the truck through a tunnel to a third world, San
+> Francisco, built from public map data, with its own rig, garages, café and courses.
+> Its migration is written but not yet on the live project. Asked for next: Vegas and
+> the Grand Canyon by boat from the island, then Japan by helicopter from Vegas.
 > On 2026-10-10, photo mode (`decisions/0018`): P stops the world, the camera goes
 > round the truck, the shutter saves a picture. Client only; merged to `main` as pull
 > request 14 (`sessions/2026-10-10-photo-mode.md`).

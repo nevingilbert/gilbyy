@@ -18,6 +18,9 @@ const WALLS: Record<SiteStyle, { wall: string; floor: string }> = {
   shack: { wall: PALETTE.bamboo, floor: PALETTE.wetSand },
   outpost: { wall: PALETTE.driftwood, floor: PALETTE.wetSand },
   lodge: { wall: PALETTE.logWood, floor: PALETTE.timber },
+  victorian: { wall: PALETTE.city.houses[1], floor: PALETTE.timber },
+  pier: { wall: PALETTE.city.shed[0], floor: PALETTE.concrete },
+  airfield: { wall: PALETTE.city.stucco[1], floor: PALETTE.concrete },
 };
 
 export const GARAGE_NAMES: Record<SiteStyle, string> = {
@@ -32,6 +35,9 @@ export const GARAGE_NAMES: Record<SiteStyle, string> = {
   shack: "The Beach Shack",
   outpost: "The Dune Outpost",
   lodge: "The Jungle Lodge",
+  victorian: "The Mission Victorian",
+  pier: "Pier 35",
+  airfield: "The Crissy Field Hangar",
 };
 
 export function buildShowroom() {

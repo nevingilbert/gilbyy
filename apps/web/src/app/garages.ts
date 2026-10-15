@@ -2,8 +2,12 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { PALETTE } from "./palette";
 
-export type GarageStyle = "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack" | "outpost" | "lodge";
-export const GARAGE_STYLES: readonly GarageStyle[] = ["workshop", "barn", "bunker", "quonset", "cabin", "container", "hangar", "ranch", "shack", "outpost", "lodge"];
+export type GarageStyle =
+  | "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack" | "outpost" | "lodge"
+  | "victorian" | "pier" | "airfield";
+export const GARAGE_STYLES: readonly GarageStyle[] = [
+  "workshop", "barn", "bunker", "quonset", "cabin", "container", "hangar", "ranch", "shack", "outpost", "lodge", "victorian", "pier", "airfield",
+];
 
 export type Circle = { x: number; z: number; r: number };
 
@@ -708,11 +712,159 @@ const hut = (look: Hut): Build => (root, k, glass) => {
   return { setDoor: (t) => (door.scale.y = 1 - 0.95 * t), colliders: ring(props, -W / 2, W / 2, -F, F), ...entry(F, 9.5) };
 };
 
+// --- The city's (ADR 0022). ---
+
+/**
+ * A Mission Victorian: three storeys on a narrow lot, its garage under a three-sided bay
+ * window, a bracketed cornice and a false front against the sky.
+ */
+const victorian: Build = (root, k, glass) => {
+  const W = 8.6, D = 12, H1 = 3.9, H = 11, DW = 3.8, DH = 3.4, F = D / 2;
+  const paint = lambert(PALETTE.city.houses[1]), trim = lambert(PALETTE.city.trim[0]), accent = lambert(PALETTE.city.houses[9]);
+  const dark = lambert(PALETTE.doorDark);
+  // The walls: the garage storey with its door, and the house above.
+  shell(k, paint, W, D, H1, DW, DH);
+  k.box(paint, W, H - H1, D, 0, (H + H1) / 2, 0);
+  // Siding: a thin rail every 0.45 m up the front, either side of the bay.
+  for (let y = H1 + 0.3; y < H - 0.3; y += 0.45) for (const s of [1, -1]) k.box(lambert(tone(PALETTE.city.houses[1], 0.92)), 1.9, 0.05, 0.05, s * (W / 2 - 0.95), y, F + 0.02);
+  // The bay: three faces, its front parallel to the street, its sides angled back to the wall.
+  const BW = 3.4, BO = 0.95;
+  const bay = k.at(0, 0, F);
+  bay.box(paint, BW, H - H1 - 0.6, BO, 0, (H + H1 - 0.6) / 2, BO / 2);
+  for (const s of [1, -1]) bay.box(paint, Math.hypot(BO, 0.7), H - H1 - 0.6, 0.2, s * (BW / 2 + 0.3), (H + H1 - 0.6) / 2, BO / 2, 0, s * Math.atan2(BO, 0.7));
+  for (const y of [H1 + 1.5, H1 + 4.4]) {
+    pane(bay.at(0, y, BO + 0.01), glass, 1.4, 1.9, PALETTE.city.trim[0]);
+    for (const s of [1, -1]) pane(bay.at(s * (BW / 2 + 0.33), y, BO / 2 + 0.05, s * 0.95), glass, 0.45, 1.9, PALETTE.city.trim[0]);
+    // A tall window either side of the bay.
+    for (const s of [1, -1]) pane(k.at(s * 3.25, y, F + 0.02), glass, 0.9, 1.9, PALETTE.city.trim[0]);
+  }
+  bay.box(trim, BW + 0.8, 0.25, BO + 0.3, 0, H1 + 0.1, BO / 2);
+  bay.box(trim, BW + 0.8, 0.3, BO + 0.3, 0, H - 0.6, BO / 2);
+  // The cornice on its brackets, and the false front over it.
+  k.box(trim, W + 0.4, 0.45, 0.7, 0, H + 0.15, F + 0.3);
+  for (let x = -W / 2 + 0.3; x <= W / 2 - 0.2; x += 0.9) k.box(accent, 0.18, 0.5, 0.45, x, H - 0.2, F + 0.22);
+  k.box(paint, W, 1.1, 0.25, 0, H + 0.9, F - 0.1);
+  k.box(trim, W + 0.2, 0.2, 0.4, 0, H + 1.5, F - 0.05);
+  k.box(lambert(PALETTE.city.roof), W - 0.2, 0.2, D - 0.6, 0, H + 0.1, -0.2);
+  // Trim round the garage door, and a lamp beside it.
+  for (const s of [1, -1]) k.box(trim, 0.22, DH + 0.2, 0.1, s * (DW / 2 + 0.11), DH / 2 + 0.1, F + 0.05);
+  k.box(trim, DW + 0.66, 0.22, 0.1, 0, DH + 0.11, F + 0.05);
+  k.box(dark, 0.08, 0.08, 0.3, DW / 2 + 0.75, 2.6, F + 0.15);
+  k.box(glass, 0.2, 0.28, 0.2, DW / 2 + 0.75, 2.42, F + 0.3);
+  // A wooden door in panels that rolls up under the lintel.
+  const door = part(root, 0, DH, F - 0.3, (dk) => {
+    dk.box(lambert(PALETTE.city.trim[1]), DW, DH, 0.08, 0, -DH / 2, 0);
+    for (let y = 0.4; y < DH; y += 0.85) for (const x of [-1.2, 0, 1.2]) dk.box(lambert(tone(PALETTE.city.trim[1], 0.86)), 1.0, 0.6, 0.1, x, -y - 0.2, 0.02);
+  });
+  return { setDoor: (t) => (door.scale.y = 1 - 0.95 * t), colliders: ring([], -W / 2, W / 2, -F, F), ...entry(F, 9) };
+};
+
+/**
+ * A pier shed on the Embarcadero: an arched, pilastered front in pale stucco, a sign over
+ * the door, and the long corrugated shed running out over the water behind it.
+ */
+const pierShed: Build = (root, k, glass) => {
+  const W = 18, D = 22, H = 9.5, DW = 5.2, DH = 4.6, F = D / 2, RISE = 2.2;
+  const front = lambert(PALETTE.city.adobe), trim = lambert(PALETTE.city.trim[0]), shed = lambert(PALETTE.city.shed[0]);
+  const rib = lambert(tone(PALETTE.city.shed[0], 0.8)), green = lambert(PALETTE.shipping[3]);
+  // The shed: low walls, a shallow gable along its length.
+  shell(k, shed, W, D, H - 2.5, DW, DH, 0.25);
+  const gable = [[W / 2, H - 2.5], [0, H - 2.5 + RISE], [-W / 2, H - 2.5]];
+  k.add(shed, prism(gable, D), 0, 0, 0);
+  roof(k, lambert(PALETTE.roofTin), gable, D + 0.6, 0.16, 0.4);
+  for (let z = -F + 0.4; z < F - 1; z += 0.6) for (const s of [1, -1]) k.box(rib, 0.06, H - 2.5, 0.1, s * (W / 2 + 0.01), (H - 2.5) / 2, z);
+  // The front: a tall wall with the door in its middle, an arched window over the door.
+  const fz = F + 0.3;
+  for (const s of [1, -1]) k.box(front, (W - DW) / 2, H, 0.6, (s * (W + DW)) / 4, H / 2, fz);
+  k.box(front, DW, H - DH - 2.6, 0.6, 0, H - (H - DH - 2.6) / 2, fz);
+  const arch = new THREE.Shape();
+  arch.moveTo(-DW / 2, 0).lineTo(DW / 2, 0).lineTo(DW / 2, 0.4).absarc(0, 0.4, DW / 2, 0, Math.PI, false).lineTo(-DW / 2, 0);
+  const hole = new THREE.Path();
+  hole.moveTo(-DW / 2 + 0.3, 0.3).lineTo(DW / 2 - 0.3, 0.3).absarc(0, 0.4, DW / 2 - 0.3, 0, Math.PI, false).lineTo(-DW / 2 + 0.3, 0.3);
+  arch.holes.push(hole);
+  k.add(front, prism(arch, 0.6), 0, DH, fz);
+  const fan = new THREE.Shape();
+  fan.moveTo(-DW / 2 + 0.3, 0.3).lineTo(DW / 2 - 0.3, 0.3).absarc(0, 0.4, DW / 2 - 0.3, 0, Math.PI, false);
+  k.add(glass, prism(fan, 0.1), 0, DH, fz);
+  // Pilasters at the corners and beside the door, a cornice, and the sign board.
+  for (const x of [-W / 2 + 0.4, W / 2 - 0.4, -DW / 2 - 0.5, DW / 2 + 0.5]) k.box(trim, 0.8, H, 0.8, x, H / 2, fz + 0.1);
+  k.box(trim, W + 0.6, 0.5, 1.0, 0, H, fz);
+  k.box(lambert(PALETTE.city.ochre), 6.2, 1.3, 0.12, 0, H - 1.2, fz + 0.38);
+  k.box(trim, 5.8, 0.95, 0.14, 0, H - 1.2, fz + 0.42);
+  for (const s of [1, -1]) pane(k.at(s * 5.8, 4.8, fz + 0.31), glass, 1.6, 2.6, PALETTE.city.trim[0]);
+  // Bollards along the front, out of the way of the door.
+  for (const x of [-7.2, -5.2, 5.2, 7.2]) k.cyl(lambert(PALETTE.doorDark), 0.25, 0.7, x, 0.35, fz + 2.2, 0, 0, 8);
+  drum(k, -W / 2 - 0.8, F - 2.5, PALETTE.shipping[1]);
+  drum(k, -W / 2 - 0.9, F - 3.3, PALETTE.shipping[0]);
+  // A steel door that rolls up out of sight.
+  const door = part(root, 0, DH, F - 0.05, (dk) => {
+    dk.box(green, DW, DH, 0.08, 0, -DH / 2, 0);
+    for (let y = 0.3; y < DH; y += 0.35) dk.box(lambert(tone(PALETTE.shipping[3], 0.75)), DW, 0.05, 0.1, 0, -y, 0.02);
+  });
+  const props = [-7.2, -5.2, 5.2, 7.2].map((x) => ({ x, z: fz + 2.2, r: 0.3 }));
+  props.push({ x: -W / 2 - 0.85, z: F - 2.9, r: 0.8 });
+  return { setDoor: (t) => (door.scale.y = 1 - 0.95 * t), colliders: ring(props, -W / 2, W / 2, -F, fz + 0.4), ...entry(fz + 0.3, 14) };
+};
+
+/**
+ * One of Crissy Field's old Army airfield hangars: stucco walls, a curved roof, a parapet
+ * stepped like a mission's over the big sliding doors, and a roundel on the front.
+ */
+const airfield: Build = (root, k, glass) => {
+  const W = 18, D = 16, H = 5.6, DW = 8, DH = 5, F = D / 2, RISE = 3.2;
+  const wall = lambert(PALETTE.city.stucco[1]), trim = lambert(PALETTE.city.trim[1]), roofM = lambert(PALETTE.city.roof);
+  shell(k, wall, W, D, H, DW, DH, 0.3);
+  // A curved roof: a shallow arch across the width, along the length.
+  const arc = new THREE.Shape();
+  const R = (RISE * RISE + (W / 2) ** 2) / (2 * RISE);
+  const a0 = Math.asin(W / 2 / R);
+  arc.moveTo(W / 2, 0);
+  arc.absarc(0, RISE - R, R, Math.PI / 2 - a0, Math.PI / 2 + a0, false);
+  arc.lineTo(-W / 2, 0);
+  k.add(wall, prism(arc, D), 0, H, 0);
+  const shellRoof = new THREE.Shape();
+  shellRoof.moveTo(W / 2 + 0.4, -0.1);
+  shellRoof.absarc(0, RISE - R, R + 0.2, Math.PI / 2 - a0 - 0.02, Math.PI / 2 + a0 + 0.02, false);
+  shellRoof.lineTo(-W / 2 - 0.4, -0.1);
+  shellRoof.absarc(0, RISE - R, R, Math.PI / 2 + a0, Math.PI / 2 - a0, true);
+  k.add(roofM, prism(shellRoof, D + 0.8), 0, H, 0);
+  // The parapet over the doors, stepped up in the middle.
+  const steps = [[W / 2, H], [W / 2, H + 1.4], [3.2, H + 1.4], [3.2, H + RISE + 0.9], [-3.2, H + RISE + 0.9], [-3.2, H + 1.4], [-W / 2, H + 1.4], [-W / 2, H]];
+  k.add(wall, prism(steps, 0.5), 0, 0, F + 0.05);
+  k.box(trim, 6.8, 0.3, 0.7, 0, H + RISE + 1.0, F + 0.05);
+  for (const s of [1, -1]) k.box(trim, W / 2 - 3.2 + 0.2, 0.25, 0.7, s * (W / 4 + 1.6), H + 1.5, F + 0.05);
+  // The roundel: a disc of blue, a ring of white, a red middle.
+  const rd = k.at(0, H + 2.2, F + 0.32);
+  rd.cyl(lambert(PALETTE.jetStripe), 1.1, 0.1, 0, 0, 0, Math.PI / 2, 0, 18);
+  rd.cyl(lambert(PALETTE.barrierWhite), 0.75, 0.12, 0, 0, 0.01, Math.PI / 2, 0, 18);
+  rd.cyl(lambert(PALETTE.barrierRed), 0.35, 0.14, 0, 0, 0.02, Math.PI / 2, 0, 14);
+  // Windows down the sides, buttresses between them.
+  for (const s of [1, -1]) {
+    for (const z of [-4.5, -1.5, 1.5, 4.5]) pane(k.at(s * (W / 2 + 0.16), 3.4, z, (s * Math.PI) / 2), glass, 1.4, 1.6, PALETTE.city.trim[1]);
+    for (const z of [-6, -3, 0, 3, 6]) k.box(trim, 0.5, H, 0.6, s * (W / 2 + 0.2), H / 2, z);
+  }
+  // Big leaves on a track, sliding apart.
+  const paint = lambert(PALETTE.city.trim[1]), panel = lambert(tone(PALETTE.city.trim[1], 0.82));
+  const [lw, lh] = [DW / 2 + 0.06, DH + 0.15];
+  const leaves = [1, -1].map((s) => ({
+    s,
+    g: part(root, 0, 0, F + (s > 0 ? 0.2 : 0.36), (dk) => {
+      dk.box(paint, lw, lh, 0.08, 0, lh / 2, 0);
+      for (let x = -lw / 2 + 0.5; x < lw / 2; x += 1.0) for (let y = 0.6; y < lh; y += 1.25) dk.box(panel, 0.8, 1.0, 0.1, x, y, 0.01);
+      pane(dk.at(0, lh - 1.0, 0.05), glass, lw - 0.6, 0.6, PALETTE.city.trim[1]);
+    }),
+  }));
+  k.box(lambert(PALETTE.doorDark), W + 0.3, 0.24, 0.24, 0, DH + 0.3, F + 0.32);
+  const setDoor = (t: number) => leaves.forEach(({ g, s }) => (g.position.x = s * (DW / 4 + (t * DW) / 2)));
+  return { setDoor, colliders: ring([], -W / 2 - 0.3, W / 2 + 0.3, -F, F), ...entry(F, 12) };
+};
+
 const BUILDERS: Record<GarageStyle, Build> = {
   workshop, barn, bunker, quonset, cabin, container: containers, hangar, ranch,
   shack: hut({ wall: PALETTE.bamboo, roof: PALETTE.thatch, boards: true }),
   outpost: hut({ wall: PALETTE.driftwood, roof: [PALETTE.roofTin, PALETTE.corrugated], boards: false }),
   lodge: hut({ wall: PALETTE.logWood, roof: PALETTE.jungleThatch, boards: false }),
+  victorian, pier: pierShed, airfield,
 };
 
 /** A garage the car can drive into. `windowMaterial` is shared and owned by the caller; it glows at night. */

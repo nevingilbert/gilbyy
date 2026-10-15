@@ -271,16 +271,25 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
 
   collide(car, ground, spec);
 
-  // The valley wall is the real boundary; this just stops anyone tunnelling past it.
-  const r = Math.hypot(car.x, car.z);
-  if (r > ground.limit) {
-    car.x *= ground.limit / r;
-    car.z *= ground.limit / r;
+  // The valley wall and the sea are the real boundary; this just stops anyone tunnelling past it.
+  if (outside(ground, car.x, car.z)) {
+    if (ground.square) {
+      car.x = Math.max(-ground.limit, Math.min(ground.limit, car.x));
+      car.z = Math.max(-ground.limit, Math.min(ground.limit, car.z));
+    } else {
+      const r = Math.hypot(car.x, car.z);
+      car.x *= ground.limit / r;
+      car.z *= ground.limit / r;
+    }
     car.speed *= 0.5;
     car.side *= 0.5;
   }
   return car;
 }
+
+/** Whether a spot is past the edge of the world: a circle round the middle, or the city's square. */
+export const outside = (ground: Pick<Ground, "limit" | "square">, x: number, z: number) =>
+  ground.square ? Math.max(Math.abs(x), Math.abs(z)) > ground.limit : Math.hypot(x, z) > ground.limit;
 
 /**
  * The car to draw `t` of the way from one step to the next (0 is `a`, 1 is `b`), written
@@ -318,6 +327,8 @@ function collide(car: Car, ground: Ground, spec: CarSpec) {
       if (o.h <= spec.clearance) continue;
       // Over the top of it: on a ramp's deck, or in the air off its lip.
       if (o.top !== undefined && car.y - spec.ride > o.top) continue;
+      // Under it: on the ground beneath a bridge.
+      if (o.bottom !== undefined && car.y < o.bottom) continue;
       const dx = cx - o.x;
       const dz = cz - o.z;
       const d = Math.hypot(dx, dz);
@@ -357,7 +368,7 @@ function perchOn(car: Car, rock: Obstacle, ground: Ground, spec: CarSpec): Stuck
   const slide = along - spec.wheelbase * 0.28;
   const x = car.x + fx * slide;
   const z = car.z + fz * slide;
-  if (ground.waterAt(x, z) > ground.height(x, z) || Math.hypot(x, z) > ground.limit) return null;
+  if (ground.waterAt(x, z) > ground.height(x, z) || outside(ground, x, z)) return null;
   const offset = spec.wheelbase * 0.46;
   for (const end of [1, -1]) {
     const cx = x + fx * offset * end;

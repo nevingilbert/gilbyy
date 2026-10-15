@@ -3,6 +3,7 @@ import { cellAt, cellCentre } from "./fog";
 import { PALETTE } from "./palette";
 import { PIN_HEAD, PIN_STEM, onMini } from "./pin";
 import { placesOf } from "./places";
+import { kerbAt, type CityWorld } from "./city";
 import { HALF, WORLD, sampleGrid, type Mission, type World } from "./world";
 
 /**
@@ -16,8 +17,16 @@ import { HALF, WORLD, sampleGrid, type Mission, type World } from "./world";
  * remembered too. The player's pin (pin.ts) is drawn over the fog: it is theirs, and
  * shows nothing under it.
  */
-const SIZE = 512;
-const PX = SIZE / WORLD.size;
+/**
+ * The sheet: 512 px for the valley and the island; the city's is finer, 1536 px, so its
+ * streets come out as streets (ADR 0022).
+ */
+const sheetOf = (world: World) => {
+  const size = world.square ? 1536 : 512;
+  const px = size / WORLD.size;
+  return { size, px, toPx: (v: number) => (v + HALF) * px };
+};
+type Sheet = ReturnType<typeof sheetOf>;
 /** How far around the truck the fog clears, in metres. */
 const SIGHT = 170;
 
@@ -28,12 +37,12 @@ const rgb = (hex: string): RGB => {
 };
 const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
-const toPx = (v: number) => (v + HALF) * PX;
 /** Erase masks for clearing the fog, not colours: only their alpha matters. */
 const ERASE = "rgba(0,0,0,1)";
 const KEEP = "rgba(0,0,0,0)";
 
-function paintBase(world: World) {
+function paintBase(world: World, sheet: Sheet) {
+  const { size: SIZE, px: PX, toPx } = sheet;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
   const g = canvas.getContext("2d")!;
@@ -48,6 +57,9 @@ function paintBase(world: World) {
   const deep = rgb(C.waterDeep);
   const ice = rgb(C.ice);
   const sand = rgb(C.sand);
+  const lawn = rgb(PALETTE.city.lawn[0]);
+  const road = rgb(C.paperShade);
+  const city = (world as Partial<CityWorld>).city ?? null;
   const step = 1 / PX;
   const heights = new Float32Array(SIZE * SIZE);
   for (let py = 0; py < SIZE; py++) {
@@ -72,7 +84,14 @@ function paintBase(world: World) {
       const depth = sampleGrid(world.water, x, z) - h;
       if (sampleGrid(world.ice, x, z) > 0.5) c = mix(c, ice, 0.85);
       else if (depth > 0) c = mix(water, deep, Math.min(1, depth / 12));
-      else if (h > 190 || sampleGrid(world.snow, x, z) > 0.6) c = mix(c, snow, 0.7);
+      else if (city) {
+        // The city's streets, and its parks: woods, lawns, beaches.
+        const park = city.parks[Math.round((z + HALF) / 10) * 601 + Math.round((x + HALF) / 10)];
+        if (park === 1) c = mix(c, forest, 0.6);
+        else if (park === 2) c = mix(c, lawn, 0.45);
+        else if (park === 4) c = mix(c, sand, 0.7);
+        if (kerbAt(city.kerb, x, z) < 0) c = mix(c, road, 0.75);
+      } else if (h > 190 || sampleGrid(world.snow, x, z) > 0.6) c = mix(c, snow, 0.7);
       else if (Math.hypot(dx, dz) > 0.75) c = mix(c, rock, 0.6);
       else if (sampleGrid(world.forest, x, z) > 0.6) c = mix(c, forest, 0.55);
       const k = (py * SIZE + px) * 4;
@@ -108,17 +127,42 @@ function paintBase(world: World) {
 
   // The airstrip: its runway and apron, on the sheet like anything else, so under the fog until you've been.
   const a = world.airport;
-  const corner = (lx: number, lz: number) => {
-    const p = fromField(a, lx, lz);
-    return [toPx(p.x), toPx(p.z)] as const;
-  };
-  g.fillStyle = C.runway;
-  for (const [x0, x1, z0, z1] of [[-RUNWAY.half, RUNWAY.half, 0, RUNWAY.length], [-APRON.half, APRON.half, -APRON.back, APRON.front]]) {
+  if (a) {
+    const corner = (lx: number, lz: number) => {
+      const p = fromField(a, lx, lz);
+      return [toPx(p.x), toPx(p.z)] as const;
+    };
+    g.fillStyle = C.runway;
+    for (const [x0, x1, z0, z1] of [[-RUNWAY.half, RUNWAY.half, 0, RUNWAY.length], [-APRON.half, APRON.half, -APRON.back, APRON.front]]) {
+      g.beginPath();
+      g.moveTo(...corner(x0, z0));
+      for (const [lx, lz] of [[x1, z0], [x1, z1], [x0, z1]]) g.lineTo(...corner(lx, lz));
+      g.closePath();
+      g.fill();
+    }
+  }
+
+  // A station's line out to its tunnel, dashed like the railway (ADR 0022); and the city's bridges.
+  const st = world.station;
+  if (st) {
+    g.strokeStyle = C.track;
+    g.lineWidth = 1.5;
+    g.setLineDash([3, 2]);
     g.beginPath();
-    g.moveTo(...corner(x0, z0));
-    for (const [lx, lz] of [[x1, z0], [x1, z1], [x0, z1]]) g.lineTo(...corner(lx, lz));
-    g.closePath();
-    g.fill();
+    st.line.xs.forEach((x, i) => {
+      if (st.line.s[i] > st.portal + 2) return;
+      if (i) g.lineTo(toPx(x), toPx(st.line.zs[i]));
+      else g.moveTo(toPx(x), toPx(st.line.zs[i]));
+    });
+    g.stroke();
+    g.setLineDash([]);
+  }
+  for (const d of city?.decks ?? []) {
+    g.strokeStyle = C.track;
+    g.lineWidth = Math.max(1.5, d.half * 2 * PX);
+    g.beginPath();
+    d.xs.forEach((x, i) => (i ? g.lineTo(toPx(x), toPx(d.zs[i])) : g.moveTo(toPx(x), toPx(d.zs[i]))));
+    g.stroke();
   }
 
   // The camp's roads.
@@ -218,6 +262,28 @@ function drawGarage(g: CanvasRenderingContext2D, x: number, y: number, s: number
   g.fillRect(x - s * 0.45, y + s * 0.05, s * 0.9, s * 0.75);
 }
 
+/** A station: a little train's front, seen head on, two lamps and the rails under it (ADR 0022). */
+function drawStation(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  g.fillStyle = PALETTE.map.garage;
+  g.beginPath();
+  g.moveTo(x - s * 0.8, y + s * 0.6);
+  g.lineTo(x - s * 0.8, y - s * 0.55);
+  g.quadraticCurveTo(x - s * 0.8, y - s, x, y - s);
+  g.quadraticCurveTo(x + s * 0.8, y - s, x + s * 0.8, y - s * 0.55);
+  g.lineTo(x + s * 0.8, y + s * 0.6);
+  g.closePath();
+  g.fill();
+  g.fillStyle = PALETTE.map.paper;
+  g.fillRect(x - s * 0.55, y - s * 0.65, s * 1.1, s * 0.5);
+  for (const sx of [-0.45, 0.45]) {
+    g.beginPath();
+    g.arc(x + sx * s, y + s * 0.25, s * 0.14, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = PALETTE.map.garage;
+  g.fillRect(x - s * 0.95, y + s * 0.8, s * 1.9, s * 0.16);
+}
+
 /** A little plane seen from above, nose the way the runway runs. */
 function drawPlane(g: CanvasRenderingContext2D, x: number, y: number, heading: number, s: number) {
   g.save();
@@ -282,7 +348,9 @@ export type Spot = { x: number; z: number; heading: number };
 export type Extras = { train?: Spot; players?: (Spot & { friend: boolean; stuck?: boolean })[]; pin?: { x: number; z: number } | null };
 
 export function createMap(world: World, onFound: (key: string) => void = () => {}, onExplored: (cell: number) => void = () => {}) {
-  const base = paintBase(world);
+  const sheet = sheetOf(world);
+  const { size: SIZE, px: PX, toPx } = sheet;
+  const base = paintBase(world, sheet);
   const fog = document.createElement("canvas");
   fog.width = fog.height = SIZE;
   const f = fog.getContext("2d", { willReadFrequently: true })!;
@@ -333,7 +401,8 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
       if (!found.has(p.key)) continue;
       if (p.kind === "cafe") drawCafe(g, ...place(p.x, p.z), icon * 0.9);
       else if (p.kind === "garage") drawGarage(g, ...place(p.x, p.z), icon);
-      else drawPlane(g, ...place(p.x, p.z), world.airport.heading, icon * 1.15);
+      else if (p.kind === "station") drawStation(g, ...place(p.x, p.z), icon);
+      else if (world.airport) drawPlane(g, ...place(p.x, p.z), world.airport.heading, icon * 1.15);
     }
     for (const m of seenMissions) drawFlag(g, ...place(m.start.x, m.start.z), icon);
     if (extras.train) drawDot(g, ...place(extras.train.x, extras.train.z), icon * 0.55, PALETTE.map.train);

@@ -3,15 +3,26 @@ import { DAY_LENGTH, START_HOUR, hourAt, skyAt } from "./daylight";
 import { makeCar, noInput, step, type Car } from "./physics";
 import { STOCK_LOADOUT, specFor } from "./shop";
 import {
-  ABUTMENT_HALF, CONSIST, DECK_UNDERSIDE, GUARD_LENGTH, TRAIN_LENGTH, TRAIN_SPEED,
+  ABUTMENT_HALF, CONSIST, DECK_UNDERSIDE, DWELL, GUARD_LENGTH, TRAIN_LENGTH, TRAIN_SPEED, atStation, lapTime, trainMotion,
   bridgeEnds, crossingClosed, trackFrame, trackPoint, trainCars, trainHead, trainObstacles, trestleLegs,
 } from "./track";
 import { buildWorld } from "./world";
 
 const world = buildWorld();
 const { track } = world;
-/** Seconds of game time at which the front of the train is at distance `s`. */
-const when = (s: number) => (s - trainHead(track, 0) + track.length * 10) % track.length / TRAIN_SPEED;
+/** Seconds of game time, in the first lap, at which the front of the train is at distance `s`. */
+const when = (s: number) => {
+  let best = 0;
+  let off = Infinity;
+  for (let t = 0; t < lapTime(track); t += 0.05) {
+    const d = Math.abs((((trainHead(track, t) - s) % track.length) + track.length * 1.5) % track.length - track.length / 2);
+    if (d < off) {
+      off = d;
+      best = t;
+    }
+  }
+  return best;
+};
 
 describe("the train", () => {
   it("keeps every car on the rails, nose to tail", () => {
@@ -27,8 +38,36 @@ describe("the train", () => {
   });
 
   it("goes all the way round and comes back", () => {
-    const lap = track.length / TRAIN_SPEED;
+    const lap = lapTime(track);
     expect(trainHead(track, 50 + lap)).toBeCloseTo(trainHead(track, 50), 3);
+    // A lap is the loop at speed, the slowing and the pulling away, and the minute at the platform.
+    expect(lap).toBeGreaterThan(track.length / TRAIN_SPEED + DWELL);
+    expect(lap).toBeLessThan(track.length / TRAIN_SPEED + DWELL + 60);
+  });
+
+  it("stands at the station a minute each lap, then pulls away (ADR 0022)", () => {
+    const lap = lapTime(track);
+    let standing = 0;
+    for (let t = 0.25; t < lap; t += 0.5) {
+      const m = trainMotion(track, t);
+      if (m.speed === 0) {
+        standing += 0.5;
+        expect(m.head).toBeCloseTo(track.stop!, 6);
+      }
+      expect(m.speed).toBeLessThanOrEqual(TRAIN_SPEED + 1e-9);
+    }
+    expect(standing).toBeCloseTo(DWELL, 0);
+    // Never a jump: it moves no further in a step than its top speed allows.
+    for (let t = 0; t < lap; t += 0.25) {
+      const d = (((trainHead(track, t + 0.25) - trainHead(track, t)) % track.length) + track.length) % track.length;
+      expect(d).toBeLessThanOrEqual(TRAIN_SPEED * 0.25 + 1e-6);
+    }
+    // What the platform is told: in now, or how long until it is.
+    const in_ = lap - DWELL / 2;
+    expect(atStation(track, in_)).toMatchObject({ standing: true });
+    expect(atStation(track, in_)!.left).toBeCloseTo(DWELL / 2, 3);
+    expect(atStation(track, 10)).toMatchObject({ standing: false });
+    expect(atStation(track, 10)!.due).toBeCloseTo(lap - DWELL - 10, 3);
   });
 
   it("closes a crossing before it arrives and opens it after it has gone", () => {

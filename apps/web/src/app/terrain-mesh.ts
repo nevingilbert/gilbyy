@@ -3,6 +3,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { makeNoise2D, smoothstep } from "./noise";
 import { PALETTE } from "./palette";
 import { rampLift } from "./ramp";
+import { CROOKED_KERB, inCrooked, kerbAt, type CityWorld } from "./city";
 import { CELL, ROW, WORLD, gridX, gridZ, sampleGrid, type World } from "./world";
 
 const colour = (hex: string) => new THREE.Color(hex);
@@ -10,7 +11,9 @@ const colour = (hex: string) => new THREE.Color(hex);
 export type Surface =
   | "lakebed" | "shore" | "rock" | "snow" | "drift" | "ice" | "floor" | "grass" | "dirt"
   // The island's.
-  | "seabed" | "wetsand" | "beach" | "sand" | "scrub" | "jungle";
+  | "seabed" | "wetsand" | "beach" | "sand" | "scrub" | "jungle"
+  // The city's (ADR 0022): its streets and pavements, its yards, lawns, dry hills and woods.
+  | "paved" | "yard" | "lawn" | "dryhill" | "cityfloor";
 
 /**
  * What the ground is made of at a point, and a 0–1 tone for variation within it.
@@ -19,6 +22,28 @@ export type Surface =
 export function makeSurface(world: World) {
   const patch = makeNoise2D(41);
   const fine = makeNoise2D(42);
+  const city = (world as Partial<CityWorld>).city;
+  if (city) {
+    const KINDS: (Surface | null)[] = [null, "cityfloor", "lawn", "dryhill", "beach", "paved"];
+    return (x: number, y: number, z: number, ny: number): [Surface, number] => {
+      const big = patch(x / 110, z / 110);
+      const small = fine(x / 24, z / 24);
+      const tone = Math.max(0, Math.min(1, (big * 0.7 + small * 0.3 + 1) / 2));
+      if (y < -0.6) return ["seabed", Math.min(1, -y / 16)];
+      const water = sampleGrid(world.water, x, z);
+      if (water > WORLD.water + 0.05 && y < water - 0.8) return ["lakebed", tone];
+      if (y < WORLD.water + 0.7 + small * 0.2) return ["wetsand", tone];
+      // Lombard's crooked block: earth in the beds, and no tall grass to come up through its lane.
+      if (inCrooked(city.crooked, x, z)) return ["yard", tone];
+      // The garages stand on paved aprons, out on the pier as well; the campground is earth.
+      if (kerbAt(city.kerb, x, z) < 1.8 || sampleGrid(world.siteDist, x, z) < 10) return ["paved", tone];
+      if (sampleGrid(world.campDist, x, z) < 1) return ["dirt", tone];
+      const park = KINDS[city.parks[Math.round((z + WORLD.size / 2) / CELL) * ROW + Math.round((x + WORLD.size / 2) / CELL)]];
+      if (park === "dryhill" && ny < 0.8) return ["rock", tone];
+      if (park) return [park, tone];
+      return ["yard", tone];
+    };
+  }
   if (world.id === "island") {
     return (x: number, y: number, z: number, ny: number): [Surface, number] => {
       const big = patch(x / 110, z / 110);
@@ -79,7 +104,7 @@ const CHUNK = 50;
  * into rock and off-screen chunks are culled. Normals come from the whole grid, so the
  * chunks meet without seams. Triangulated exactly like sampleGrid.
  */
-export function buildTerrainMesh(world: World, surface: SurfaceAt) {
+export function buildTerrainMesh(world: World, surface: SurfaceAt, streets: THREE.Texture | null = null) {
   const H = world.heights;
   const palette: Record<Surface, THREE.Color[]> = {
     grass: PALETTE.grass.map(colour),
@@ -97,6 +122,11 @@ export function buildTerrainMesh(world: World, surface: SurfaceAt) {
     sand: PALETTE.dune.map(colour),
     scrub: PALETTE.scrub.map(colour),
     jungle: PALETTE.jungleFloor.map(colour),
+    paved: [colour(PALETTE.city.pavement), colour(PALETTE.city.kerb)],
+    yard: PALETTE.city.yard.map(colour),
+    lawn: PALETTE.city.lawn.map(colour),
+    dryhill: PALETTE.city.dryHill.map(colour),
+    cityfloor: PALETTE.city.floor.map(colour),
   };
   const material = new THREE.MeshLambertMaterial({ vertexColors: true });
   // Where the tide (tide.ts) has left the seabed bare, it's wet sand, like the strip above
@@ -104,22 +134,51 @@ export function buildTerrainMesh(world: World, surface: SurfaceAt) {
   const sea = { value: WORLD.water as number };
   if (world.sea) {
     const wet = { value: colour(PALETTE.wetSand) };
+    // The city's streets are painted on from its street map: asphalt, the kerb, the pavement (ADR 0022).
+    const kerbs = streets ? { value: streets } : null;
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uSea = sea;
       shader.uniforms.uWet = wet;
       shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nvarying float vShoreY;")
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvShoreY = position.y;");
+        .replace("#include <common>", "#include <common>\nvarying float vShoreY;\nvarying vec2 vGroundXZ;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvShoreY = position.y;\nvGroundXZ = position.xz;");
+      let streetsGlsl = "";
+      if (kerbs) {
+        const crooked = (world as Partial<CityWorld>).city?.crooked;
+        shader.uniforms.uKerb = kerbs;
+        shader.uniforms.uAsphalt = { value: colour(PALETTE.city.asphalt) };
+        shader.uniforms.uWorn = { value: colour(PALETTE.city.asphaltWorn) };
+        shader.uniforms.uPavement = { value: colour(PALETTE.city.pavement) };
+        shader.uniforms.uKerbStone = { value: colour(PALETTE.city.kerb) };
+        // Lombard's crooked block is left unpainted, a garden: its brick lane is a mesh of its
+        // own, finer than the street map can draw (city-model.ts).
+        shader.uniforms.uCrooked = { value: new THREE.Vector4(crooked?.x ?? 0, crooked?.z ?? 0, crooked?.dx ?? 1, crooked?.dz ?? 0) };
+        shader.uniforms.uCrookedLength = { value: crooked?.length ?? -100 };
+        streetsGlsl = `
+          float kerbD = texture2D(uKerb, (vGroundXZ + ${(WORLD.size / 2).toFixed(1)}) / ${WORLD.size.toFixed(1)}).r * 255.0 / 8.0 - 16.0;
+          vec2 crook = vGroundXZ - uCrooked.xy;
+          float along = dot(crook, uCrooked.zw);
+          float paint = 1.0 - step(${CROOKED_KERB.toFixed(1)}, along) * step(along, uCrookedLength - ${CROOKED_KERB.toFixed(1)}) * step(abs(crook.x * uCrooked.w - crook.y * uCrooked.z), 11.0);
+          float onRoad = (1.0 - smoothstep(-0.1, 0.06, kerbD)) * paint;
+          float onWalk = smoothstep(-0.1, 0.06, kerbD) * (1.0 - smoothstep(1.45, 1.7, kerbD)) * paint;
+          float wear = 0.5 + 0.5 * sin(vGroundXZ.x * 0.21 + sin(vGroundXZ.y * 0.17) * 2.0);
+          diffuseColor.rgb = mix(diffuseColor.rgb, uPavement, onWalk);
+          diffuseColor.rgb = mix(diffuseColor.rgb, mix(uAsphalt, uWorn, wear * 0.5), onRoad);
+          diffuseColor.rgb = mix(diffuseColor.rgb, uKerbStone, (1.0 - smoothstep(0.0, 0.22, abs(kerbD - 0.08))) * 0.85 * paint);`;
+      }
       shader.fragmentShader = shader.fragmentShader
-        .replace("#include <common>", "#include <common>\nuniform float uSea;\nuniform vec3 uWet;\nvarying float vShoreY;")
+        .replace(
+          "#include <common>",
+          `#include <common>\nuniform float uSea;\nuniform vec3 uWet;\nvarying float vShoreY;\nvarying vec2 vGroundXZ;${kerbs ? "\nuniform sampler2D uKerb;\nuniform vec3 uAsphalt;\nuniform vec3 uWorn;\nuniform vec3 uPavement;\nuniform vec3 uKerbStone;\nuniform vec4 uCrooked;\nuniform float uCrookedLength;" : ""}`,
+        )
         .replace(
           "#include <color_fragment>",
           `#include <color_fragment>
           float bare = smoothstep(uSea - 0.3, uSea + 0.05, vShoreY) * (1.0 - smoothstep(-0.6, -0.3, vShoreY));
-          diffuseColor.rgb = mix(diffuseColor.rgb, uWet, bare);`,
+          diffuseColor.rgb = mix(diffuseColor.rgb, uWet, bare);${streetsGlsl}`,
         );
     };
-    material.customProgramCacheKey = () => "shore";
+    material.customProgramCacheKey = () => (kerbs ? "shore-streets" : "shore");
   }
   const group = new THREE.Group();
   const c = new THREE.Color();
@@ -180,9 +239,11 @@ export function buildWaterMesh(world: World) {
     const far = WORLD.size * 1.5;
     chunks.set(0, [-far, WORLD.water, -far, -far, WORLD.water, far, far, WORLD.water, -far, far, WORLD.water, -far, -far, WORLD.water, far, far, WORLD.water, far]);
   }
-  for (let j = 0; !world.sea && j < WORLD.segments; j++) {
+  // A sea world's lakes stand above the sea, each at its own level: the city's are (ADR 0022).
+  for (let j = 0; j < WORLD.segments; j++) {
     for (let i = 0; i < WORLD.segments; i++) {
       const ks = [j * ROW + i, j * ROW + i + 1, (j + 1) * ROW + i, (j + 1) * ROW + i + 1];
+      if (world.sea && !ks.some((k) => W[k] > WORLD.water + 0.05)) continue;
       if (!ks.some((k) => H[k] < W[k] - 0.02)) continue;
       const [k00, k10, k01, k11] = ks;
       const x0 = gridX(i), x1 = gridX(i + 1), z0 = gridZ(j), z1 = gridZ(j + 1);
@@ -226,6 +287,14 @@ export function buildWaterMesh(world: World) {
     const mesh = new THREE.Mesh(geo, material);
     mesh.receiveShadow = true;
     group.add(mesh);
+  }
+  // Out past the ground's edge the sea has nothing under it: a bed there, as deep as the
+  // seabed at the edge, keeps the open sea one colour out to the horizon.
+  if (world.sea) {
+    const far = WORLD.size * 1.5;
+    const deep = Math.min(...[0, WORLD.segments].flatMap((j) => [0, WORLD.segments].map((i) => H[j * ROW + i])), WORLD.water - 4);
+    const bed = new THREE.PlaneGeometry(far * 2, far * 2).rotateX(-Math.PI / 2).translate(0, deep - 0.05, 0);
+    group.add(new THREE.Mesh(bed, new THREE.MeshLambertMaterial({ color: PALETTE.seabed[PALETTE.seabed.length - 1] })));
   }
   return {
     object: group,
@@ -301,6 +370,10 @@ export function buildGrass(world: World, surface: SurfaceAt) {
     jungle: { share: 0.8, tones: PALETTE.fern.map(colour) },
     scrub: { share: 0.28, tones: PALETTE.scrub.map(colour) },
     // The beach and the dunes are bare sand.
+    // The city's watered lawns are cut short; its dry hills are long golden grass.
+    lawn: { share: 0.35, tones: PALETTE.city.lawn.map(colour) },
+    dryhill: { share: 1, tones: PALETTE.city.dryHill.map(colour) },
+    cityfloor: { share: 0.25, tones: PALETTE.city.floor.map(colour) },
   };
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();

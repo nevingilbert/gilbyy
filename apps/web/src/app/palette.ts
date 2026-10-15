@@ -229,6 +229,95 @@ export const PALETTE = {
     dolphinBack: "#6e7d8c",
     dolphinBelly: "#d9dee2",
     eye: "#1c1a1a",
+    bisonCoat: "#4f3828",
+    bisonMane: "#3a2a1f",
+    horn: "#2b2622",
+    sealionCoat: "#6a5240",
+    sealionWet: "#3f3128",
+    pelicanBody: "#8d877f",
+    pelicanWing: "#5c564f",
+    pelicanHead: "#f1ead9",
+    pelicanCrown: "#e3c25a",
+    pelicanBill: "#c49a62",
+    parrotGreen: "#3f9a46",
+    parrotRed: "#c8392f",
+  },
+
+  /**
+   * San Francisco (ADR 0022): pastel row houses climbing dry golden hills, white stucco
+   * terraces out in the avenues, grey towers downtown, an orange bridge in the haze. The
+   * same sky and the same haze, so it reads as the same game somewhere else.
+   */
+  city: {
+    /** The streets: asphalt, the pavements either side, and the kerb between. */
+    asphalt: "#5f5c5e",
+    asphaltWorn: "#6c6866",
+    pavement: "#bdb5a8",
+    kerb: "#d9d2c4",
+    /** Back yards and the ground between the buildings. */
+    yard: ["#a39a86", "#8f956f", "#9b9380"],
+    /** The watered lawns: Golden Gate Park, the squares, the Marina Green. */
+    lawn: ["#7d9b4a", "#88a653", "#6f8f42"],
+    /** The dry hills in autumn: Twin Peaks, Bernal, the headlands. */
+    dryHill: ["#d4a85e", "#c99a52", "#ddb46c"],
+    /** Under the Presidio's cypress and eucalyptus. */
+    floor: ["#5f6a3c", "#6b7444"],
+    /** The trees: Monterey cypress, nearly black-green, and blue gum, grey-green over pale bark. */
+    cypress: ["#1f3d2c", "#24452f", "#1a3628", "#2c4a33"],
+    gum: ["#6f8a76", "#7d9580", "#62806d", "#8a9e86"],
+    gumBark: "#cfc4b0",
+    /** The fog that comes in through the Golden Gate of an afternoon. */
+    marineFog: "#e9e6e2",
+    /** The cable cars: maroon below, cream above, a dark roof, varnished wood, and the slot between the rails. */
+    cableMaroon: "#7a2230",
+    cableCream: "#efe2c2",
+    cableRoof: "#4a4446",
+    cableWood: "#9a6a3e",
+    cableSlot: "#2a2726",
+    /** Lombard's crooked block: red brick underfoot, hydrangeas and roses in the beds. */
+    lombardBrick: "#9a4b3a",
+    flowers: ["#7f9bd1", "#e59ab8", "#c4558d", "#d8604c", "#a98fd0", "#f2ece2"],
+    /** Painted Victorians and Edwardians. */
+    houses: ["#e9b7b0", "#a8c7d8", "#efd9a0", "#b9d1a9", "#e8e1d0", "#cdb7d6", "#f2c79a", "#9fb7c9", "#e6e0d4", "#d9a4a0"],
+    /** The Painted Ladies on Alamo Square, one colour each, left to right. */
+    ladies: ["#e8c2a8", "#a9c8b2", "#d9a8b8", "#f0dca2", "#b5c4dd", "#e3b493", "#c9b5d8"],
+    /** The avenues' and the Marina's stucco. */
+    stucco: ["#efe8da", "#e8dcc4", "#f2e2cf", "#dfe3dc", "#efd8c6", "#e6d7c9"],
+    /** Downtown: concrete, granite and glass. */
+    tower: ["#cfc9bf", "#a9aab0", "#8d98a6", "#dad3c4", "#b3a99a", "#7f8a96"],
+    /** Brick and painted timber: SoMa's lofts, the Presidio's barracks, Chinatown. */
+    brick: ["#a5553f", "#93503c", "#b46a4e", "#c9b49a"],
+    /** Corrugated sheds by the bay. */
+    shed: ["#9a9c98", "#8a8e8c", "#b0a690"],
+    /** Trim: white and cream cornices, and a deep accent on the houses' edges. */
+    trim: ["#f4efe6", "#efe4cc"],
+    roof: "#6d6762",
+    glass: "#3a4a58",
+    /** The Golden Gate's International Orange, and the Bay Bridge's grey and its new span's white. */
+    bridgeOrange: "#c4462f",
+    bridgeGrey: "#a8acae",
+    bridgeWhite: "#e9e6df",
+    /** The Transamerica Pyramid's white quartz, Salesforce Tower's pale glass, 555 California's dark granite. */
+    quartz: "#ece6da",
+    paleGlass: "#b9c3c8",
+    granite: "#4a4448",
+    /** Coit Tower's and City Hall's stone, and City Hall's gilded dome. */
+    stone: "#e2dccd",
+    gilt: "#c9a54a",
+    domeLead: "#7f9a92",
+    /** Terracotta roofs, adobe walls: Mission Dolores, the Palace of Fine Arts. */
+    terracotta: "#b8663f",
+    adobe: "#efe4cf",
+    ochre: "#c99a6a",
+    /** Chinatown's gate: green tiles, red posts. */
+    jade: "#3f7a5a",
+    lacquer: "#b33a2e",
+    /** Caltrain's silver coaches, with a red stripe. */
+    coach: "#c7c9c9",
+    coachStripe: "#b33a2e",
+    /** Sutro Tower's red and white. */
+    mastRed: "#c2412f",
+    mastWhite: "#eeeae2",
   },
 
   // Airstrips and the plane.

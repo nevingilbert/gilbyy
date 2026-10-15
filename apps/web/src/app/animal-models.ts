@@ -344,7 +344,99 @@ function dolphin(): Body {
   return { gait: "swim", size: 1, parts: [{ joint: "body", geometry, at: [0, 0, 0] }] };
 }
 
-const BODIES: Record<SpeciesId, () => Body> = { deer, hare, reindeer, duck, crab, gull, boar, macaw, dolphin };
+/** An American bison, of the herd in Golden Gate Park: dark brown, a great shaggy hump and beard, short curved horns. */
+function bison(): Body {
+  const body = merge(
+    lump([0.42, 0.48, 0.78], [0, 1.0, -0.2], A.bisonCoat),
+    lump([0.5, 0.62, 0.52], [0, 1.18, 0.34], A.bisonMane),
+    stick(0.03, [0, 1.05, -0.95], [0, 0.6, -1.05], A.bisonCoat, 0.015),
+  );
+  const head = merge(
+    lump([0.24, 0.3, 0.3], [0, -0.12, 0.16], A.bisonMane),
+    lump([0.15, 0.17, 0.15], [0, -0.26, 0.4], A.bisonCoat),
+    lump([0.11, 0.2, 0.1], [0, -0.42, 0.2], A.bisonMane),
+    ...pair((s) => stick(0.035, [s * 0.19, 0.04, 0.14], [s * 0.3, 0.16, 0.2], A.horn, 0.012)),
+    ...pair((s) => lump([0.025, 0.025, 0.025], [s * 0.17, -0.06, 0.33], A.eye)),
+  );
+  const fore = () => merge(lump([0.13, 0.26, 0.16], [0, -0.1, 0], A.bisonMane), stick(0.06, [0, -0.74, 0], [0, -0.2, 0], A.bisonCoat, 0.08));
+  const hind = () => merge(lump([0.14, 0.24, 0.18], [0, -0.08, 0], A.bisonCoat), stick(0.055, [0, -0.74, 0], [0, -0.1, 0], A.bisonCoat, 0.07));
+  return {
+    gait: "hoof",
+    size: 1,
+    parts: [
+      { joint: "body", geometry: body, at: [0, 0, 0] },
+      { joint: "head", geometry: head, at: [0, 1.05, 0.82] },
+      ...legs([0.22, 0.74, 0.42], [0.22, 0.74, -0.62], fore, hind),
+    ],
+  };
+}
+
+/** A California sea lion in the water off Pier 39: a sleek brown back awash, the head up, flippers out. */
+function sealion(): Body {
+  const body = merge(
+    lump([0.27, 0.2, 0.85], [0, 0, -0.1], A.sealionCoat),
+    lump([0.18, 0.17, 0.25], [0, 0.12, 0.6], A.sealionCoat),
+    ...pair((s) => block([0.36, 0.04, 0.16], [s * 0.32, -0.06, 0.28], A.sealionWet, [0, -s * 0.4, -s * 0.2])),
+    ...pair((s) => block([0.22, 0.03, 0.14], [s * 0.12, -0.04, -0.98], A.sealionWet, [0, s * 0.5, 0])),
+  );
+  const head = merge(
+    lump([0.12, 0.12, 0.16], [0, 0.14, 0.08], A.sealionCoat),
+    lump([0.07, 0.06, 0.09], [0, 0.1, 0.22], A.sealionWet),
+    ...pair((s) => lump([0.02, 0.02, 0.02], [s * 0.08, 0.18, 0.15], A.eye)),
+  );
+  return {
+    gait: "swim",
+    size: 1,
+    parts: [
+      { joint: "body", geometry: body, at: [0, 0, 0] },
+      { joint: "head", geometry: head, at: [0, 0.2, 0.68] },
+    ],
+  };
+}
+
+/** A brown pelican: grey-brown, a white head with a yellow crown, a long bill, broad wings. */
+function pelican(): Body {
+  const body = merge(
+    lump([0.17, 0.16, 0.42], [0, 0, 0], A.pelicanBody),
+    block([0.14, 0.04, 0.16], [0, 0.02, -0.46], A.pelicanWing),
+  );
+  const head = merge(
+    stick(0.05, [0, 0, 0], [0, 0.12, 0.12], A.pelicanHead, 0.045),
+    lump([0.07, 0.07, 0.09], [0, 0.14, 0.15], A.pelicanHead),
+    lump([0.04, 0.02, 0.05], [0, 0.2, 0.13], A.pelicanCrown),
+    block([0.05, 0.04, 0.34], [0, 0.11, 0.38], A.pelicanBill, [0.12, 0, 0]),
+    ...pair((s) => lump([0.014, 0.014, 0.014], [s * 0.055, 0.16, 0.19], A.eye)),
+  );
+  return {
+    gait: "wing",
+    size: 1.3,
+    parts: [
+      { joint: "body", geometry: body, at: [0, 0, 0] },
+      { joint: "head", geometry: head, at: [0, 0.06, 0.38] },
+      ...wings([0.12, 0.04, 0.05], [{ span: 0.5, chord: 0.3, hex: A.pelicanBody }, { span: 0.45, chord: 0.22, hex: A.pelicanWing }]),
+    ],
+  };
+}
+
+/** A cherry-headed conure, of Telegraph Hill's wild flock: green, a red head, a long tail. */
+function parrot(): Body {
+  const body = merge(
+    lump([0.06, 0.06, 0.15], [0, 0, 0], A.parrotGreen),
+    lump([0.055, 0.055, 0.06], [0, 0.035, 0.13], A.parrotRed),
+    spike(0.025, 0.05, [0, 0.025, 0.19], A.macawFace, 4),
+    block([0.05, 0.015, 0.28], [0, -0.01, -0.24], A.parrotGreen),
+  );
+  return {
+    gait: "wing",
+    size: 1.6,
+    parts: [
+      { joint: "body", geometry: body, at: [0, 0, 0] },
+      ...wings([0.05, 0.02, 0.01], [{ span: 0.12, chord: 0.13, hex: A.parrotGreen }, { span: 0.12, chord: 0.1, hex: A.parrotGreen }]),
+    ],
+  };
+}
+
+const BODIES: Record<SpeciesId, () => Body> = { deer, hare, reindeer, duck, crab, gull, boar, macaw, dolphin, bison, sealion, pelican, parrot };
 
 /** Only some deer are stags; every reindeer has antlers. */
 const antlered = (a: Animal) => a.species !== "deer" || a.tone < 0.35;

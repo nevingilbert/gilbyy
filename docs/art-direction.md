@@ -65,6 +65,17 @@ unhurried exploration in a classic 4x4.
   leaves is the same wet sand as the strip above it. At low water a spit of it runs out
   from the beach by the camp and hooks round under the evening sun; at high water it's
   a pale shoal with flags standing in the sea. No surf, no foam, nothing on the HUD.
+- A third place, a real one (ADR 0022): San Francisco from the public map, under the same
+  sky. Pastel Victorians climbing dry golden hills, white stucco out in the avenues,
+  brick in SoMa, grey towers downtown, an orange bridge, and Monterey cypress and blue
+  gum where the valley has autumn trees. Its air is clearer than the valley's haze, a
+  third as thick, so the skyline carries across the city from Twin Peaks; the warmth is
+  the same. Its fog is the one weather in the game: soft, lit, unshaded banks that roll
+  in through the Golden Gate in the late afternoon and burn off by late morning, low
+  enough that the bridge's towers stand out of them. Landmarks are made to be known at a
+  glance from the truck, not detailed: a silhouette and its colour are enough. The cable
+  cars and Lombard's crooked block are the two pieces drawn closest; nothing else in the
+  city is worth going near for detail.
 - A photo mode (ADR 0018): P stops the world, the camera goes round the truck, and the
   shutter keeps the picture, with everyone's name over their truck and no other HUD.
   On screen only those names, a shutter, "back" and one line of how-to. Not while on a course. Pictures aren't collected, counted or listed.
@@ -77,10 +88,11 @@ unhurried exploration in a classic 4x4.
   things to photograph is not). Winching came in on 2026-10-10 (ADR 0021), in the
   smallest form that keeps the idea: a truck can be hung up on a boulder, and a friend's
   winch or a tow truck gets it off. Mud and deep water that hold a truck are still out.
-- Weather. Rain, lightning and fog banks are the strongest candidates to add next.
-- More than two maps. There is the valley (with a snowy plateau in the north) and,
-  since 2026-10-09, an island a flight away (ADR 0014), and nine rigs, each inspired by
-  a real off-roader.
+- Weather. Rain and lightning are the strongest candidates to add next; the city's fog
+  bank (ADR 0022) is the only weather so far.
+- More than three maps. There is the valley (with a snowy plateau in the north), since
+  2026-10-09 an island a flight away (ADR 0014), and since 2026-10-15 San Francisco a
+  train ride away (ADR 0022); and ten rigs, each inspired by a real one.
 - Scope in general. It is a shipped commercial game; this is a hobby page.
 
 ## Where the current build sits

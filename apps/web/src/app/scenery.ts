@@ -86,6 +86,32 @@ function canopyGeometry(): Parts {
   return { trunk: painted(trunk, colour(PALETTE.trunk)), crown: mergeGeometries(layers.map((l) => painted(l, WHITE))) };
 }
 
+/** A Monterey cypress: a short, leaning trunk under a broad, flat-topped crown in tiers, swept by the wind off the sea. */
+function cypressGeometry(): Parts {
+  const trunk = new THREE.CylinderGeometry(0.22, 0.42, 3.4, 6).rotateZ(-0.2).translate(0.32, 1.6, 0);
+  const tiers = [
+    [2.6, 0.36, 0.7, 3.7, 0],
+    [2.2, 0.4, -1.0, 4.3, 0.6],
+    [1.9, 0.42, 1.6, 4.7, -0.5],
+    [1.6, 0.45, 0.4, 5.3, 0.2],
+  ].map(([r, flat, x, y, z]) => new THREE.IcosahedronGeometry(r, 0).scale(1.3, flat, 1).translate(x, y, z));
+  return { trunk: painted(trunk, colour(PALETTE.trunk)), crown: mergeGeometries(tiers.map((t) => painted(t, WHITE))) };
+}
+
+/** A blue gum: a tall, pale, slender trunk, forked near the top, and ragged clumps of leaves up there. */
+function eucalyptusGeometry(): Parts {
+  const bark = colour(PALETTE.city.gumBark);
+  const trunk = new THREE.CylinderGeometry(0.15, 0.3, 7.4, 5).translate(0, 3.7, 0);
+  const fork = new THREE.CylinderGeometry(0.08, 0.13, 3.2, 5).rotateZ(0.42).translate(-0.62, 7.9, 0);
+  const clumps = [
+    [1.5, 0.2, 9.6, 0],
+    [1.2, -1.4, 8.7, 0.5],
+    [1.1, 1.1, 8.1, -0.6],
+    [0.9, -0.3, 7.1, 1.0],
+  ].map(([r, x, y, z]) => new THREE.IcosahedronGeometry(r, 0).scale(1, 1.3, 1).translate(x, y, z));
+  return { trunk: mergeGeometries([painted(trunk, bark), painted(fork, bark)]), crown: mergeGeometries(clumps.map((k) => painted(k, WHITE))) };
+}
+
 /** A lumpy boulder: an icosahedron with its corners pushed about. */
 function boulderGeometry(seed: number) {
   const geo = mergeVertices(new THREE.IcosahedronGeometry(1, 1).deleteAttribute("normal").deleteAttribute("uv"));
@@ -136,6 +162,7 @@ export function tiled<T extends { x: number; z: number }>(
 /** `snowAt` is how snowy it is at a spot, 0–1: pines there are frosted. */
 const TREE_GEOMETRY: Record<TreeKind, () => THREE.BufferGeometry | Parts> = {
   pine: pineGeometry, broadleaf: broadleafGeometry, palm: palmGeometry, canopy: canopyGeometry,
+  cypress: cypressGeometry, eucalyptus: eucalyptusGeometry,
 };
 
 export function buildTrees(trees: Tree[], snowAt: (x: number, z: number) => number = () => 0) {
@@ -147,12 +174,16 @@ export function buildTrees(trees: Tree[], snowAt: (x: number, z: number) => numb
   const frond = PALETTE.palmFrond.map(colour);
   const canopy = PALETTE.canopy.map(colour);
   const flame = PALETTE.flameTree.map(colour);
+  const cypress = PALETTE.city.cypress.map(colour);
+  const gum = PALETTE.city.gum.map(colour);
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
   const place = (t: Tree, m: THREE.Matrix4, c: THREE.Color) => {
     q.setFromAxisAngle(up, t.rot);
     m.compose(new THREE.Vector3(t.x, t.y, t.z), q, new THREE.Vector3(t.scale, t.scale * (0.9 + t.tone * 0.3), t.scale));
     if (t.kind === "broadleaf") c.copy(pick(leaf, t.tone));
+    else if (t.kind === "cypress") c.copy(pick(cypress, t.tone));
+    else if (t.kind === "eucalyptus") c.copy(pick(gum, t.tone));
     else if (t.kind === "palm") c.copy(pick(frond, t.tone));
     // One jungle tree in thirty is in flower.
     else if (t.kind === "canopy") c.copy(t.tone < 0.035 ? pick(flame, t.tone / 0.035) : pick(canopy, (t.tone - 0.035) / 0.965));

@@ -18,13 +18,13 @@ function run(world: World, herd: Herd, seconds: number, threats: (t: number) => 
 }
 
 describe("where the animals live", () => {
-  const herds = { valley: placeHerds(valley), island: placeHerds(island) };
+  const herds: Partial<Record<World["id"], Herd[]>> = { valley: placeHerds(valley), island: placeHerds(island) };
 
   it("gives each world its own animals", () => {
     expect(speciesIn("valley")).toEqual(["deer", "hare", "reindeer", "duck"]);
     expect(speciesIn("island")).toEqual(["crab", "gull", "boar", "macaw", "dolphin"]);
     for (const world of [valley, island]) {
-      const mine = herds[world.id];
+      const mine = herds[world.id]!;
       expect(mine.every((h) => SPECIES[h.species].world === world.id)).toBe(true);
       // Each kind finds room for most of its herds.
       for (const id of speciesIn(world.id)) expect(mine.filter((h) => h.species === id).length).toBeGreaterThan(SPECIES[id].herds * 0.8);
@@ -33,13 +33,13 @@ describe("where the animals live", () => {
 
   it("starts them in the same places every time", () => {
     const again = placeHerds(valley);
-    expect(again.map((h) => h.home)).toEqual(herds.valley.map((h) => h.home));
-    expect(again[5].animals.map((a) => [a.x, a.z, a.tone])).toEqual(herds.valley[5].animals.map((a) => [a.x, a.z, a.tone]));
+    expect(again.map((h) => h.home)).toEqual(herds.valley!.map((h) => h.home));
+    expect(again[5].animals.map((a) => [a.x, a.z, a.tone])).toEqual(herds.valley![5].animals.map((a) => [a.x, a.z, a.tone]));
   });
 
   it("puts every herd where its kind lives, clear of everything players drive to", () => {
     for (const world of [valley, island]) {
-      for (const h of herds[world.id]) {
+      for (const h of herds[world.id]!) {
         const { x, z } = h.home;
         expect(habitat(world, h.species, x, z)).toBe(true);
         expect(sampleGrid(world.siteDist, x, z)).toBeGreaterThan(45);
@@ -51,7 +51,7 @@ describe("where the animals live", () => {
           for (const a of h.animals) expect(passable(world, h.species, a.x, a.z)).toBe(true);
       }
     }
-    const at = (world: World, id: SpeciesId) => herds[world.id].filter((h) => h.species === id).map((h) => h.home);
+    const at = (world: World, id: SpeciesId) => herds[world.id]!.filter((h) => h.species === id).map((h) => h.home);
     for (const p of at(valley, "reindeer")) expect(sampleGrid(valley.snow, p.x, p.z)).toBeGreaterThan(0.8);
     for (const p of at(valley, "deer")) expect(sampleGrid(valley.snow, p.x, p.z)).toBeLessThan(0.1);
     for (const p of at(valley, "duck")) {
@@ -64,7 +64,7 @@ describe("where the animals live", () => {
 
   it("has something in front of the camp for the opening shot", () => {
     const inFront = (world: World, id: SpeciesId, within: number) =>
-      herds[world.id].some((h) => {
+      herds[world.id]!.some((h) => {
         if (h.species !== id) return false;
         const [dx, dz] = [h.home.x - world.camp.x, h.home.z - world.camp.z];
         return Math.hypot(dx, dz) < within && dx * Math.sin(world.camp.heading) + dz * Math.cos(world.camp.heading) > 0;

@@ -12,9 +12,13 @@ persists and everyone shares the valley: you spawn at a 30-tent campground, make
 by meeting at the café, chat with friends nearby (ADR 0007), and drive a convoy course
 together (ADR 0010) or race each other (ADR 0011). Over the river, hidden, is an
 airstrip: 150 miles buys a flight, truck and all, to an island of beach, dunes and
-jungle, and 150 more buys the flight home (ADR 0014). Both places have animals that keep
-out of your way: deer, hares, reindeer and ducks in the valley; crabs, gulls, boar,
-macaws and dolphins on the island (ADR 0015). The island's sea has a tide, and when it's
+jungle, and 150 more buys the flight home (ADR 0014). On the valley's west side the
+train now stops at a station: 150 miles rides it, truck and all, out through a tunnel in
+the mountains to San Francisco, the whole city from the real map with its bridges, hills,
+cable cars and fog, and 150 more rides it home (ADR 0022). Every place has animals that
+keep out of your way: deer, hares, reindeer and ducks in the valley; crabs, gulls, boar,
+macaws and dolphins on the island (ADR 0015); bison, sea lions, pelicans and parrots in
+the city. The island's sea has a tide, and when it's
 out a sandbar shows off the camp, with a course along it (ADR 0020). Press P and the
 world stops while you take the camera round the truck for a picture (ADR 0018). Signed
 in, a boulder rammed too fast can leave a truck hung up on it: then it's a reload back to
@@ -56,7 +60,7 @@ apps, you are in the wrong repo.
     - `tow.ts`: BBB's tow truck, which a stuck driver can ring for miles: its fee, how
       long it takes, the line it drives in on, and where it is at each moment of its
       visit and of the film of it leaving the garage.
-    - `vehicles.ts` (the eight rigs, and the Sandfly, sold only on the island), `shop.ts` (parts, prices, `specFor`),
+    - `vehicles.ts` (the eight rigs, the Sandfly, sold only on the island, and the Robotaxi, only in San Francisco), `shop.ts` (parts, prices, `specFor`),
       `missions.ts` and `mission-run.ts` (courses and runs), `goals.ts` (first-time
       guidance: the compass mark leads to a garage, then the café), `achievements.ts`
       (those two steps as achievements, ADR 0009).
@@ -66,14 +70,19 @@ apps, you are in the wrong repo.
       laid over the ground for whoever asks how high the ground is (ADR 0019).
     - `name-tags.ts`: keeps the name tags over other players' trucks off one another;
       a further truck's tag is lifted above a nearer one's.
-    - `track.ts` (train, crossings, and the bridges' guards, abutments and legs), `daylight.ts`
-      (time of day), `noise.ts`.
+    - `track.ts` (train, its timetable and its minute at the station, crossings, and the
+      bridges' guards, abutments and legs), `daylight.ts` (time of day), `noise.ts`.
+    - `rail.ts`: lines of rail that go somewhere and stop, rather than round (the valley's
+      branch, the city's line): where each car of a train is on one, and the bed and
+      cutting a line is laid in. `station.ts`: the two stations, each described by the
+      line a train leaves on (ADR 0022). `rail-trip.ts`: the train trip as a film, like
+      the flight's.
     - `places.ts`: things to find, world by world (garages, the café, the airstrip, the
-      easter eggs), and how they're counted (ADR 0008, ADR 0016).
+      station, the easter eggs), and how they're counted (ADR 0008, ADR 0016, ADR 0022).
     - `landmarks.ts`: the four easter-egg buildings, what each card says and links to,
       and where they stand (ADR 0012).
-    - `worlds.ts`: the worlds there are (the valley and the island) and what the flight
-      to each costs (ADR 0014).
+    - `worlds.ts`: the worlds there are (the valley, the island and San Francisco), what
+      the trip to each costs, and what goes where: the plane, the train (ADR 0014, 0022).
     - `airport.ts`: an airstrip's runway and apron in "field space", where the valley's
       is hidden (`valleyAirfield`), and the bank and screen of pines that hide it.
     - `island.ts`: the island as the same `World` shape as the valley: sea, beach, dunes,
@@ -81,6 +90,16 @@ apps, you are in the wrong repo.
       courses, and the sandbar off the camp that the tide covers (ADR 0020).
     - `tide.ts`: the island's tide, how far out the sea is at a given time, and how long
       until it's next out far enough for the sandbar's course (ADR 0020).
+    - `city.ts`: San Francisco as the same `World` shape (ADR 0022): its ground, parks
+      and districts, the campground on Rob Hill, the café, the garages, the railway into
+      Fourth and King, its buildings and landmarks, Lombard's crooked lane, and its
+      courses. It's built from `city-data.ts`, which `apps/web/scripts/bake-city.mjs`
+      generates from the public map data and is fetched only when the city is wanted
+      (`loadCityData` in `city-streets.ts`, which also has the street graph). With it:
+      `city-places.ts` (parks, districts, landmarks by name or by longitude and latitude),
+      `city-buildings.ts` (lots along the streets, and their walls as one distance field),
+      `city-bridges.ts` (the two bridges as decks you drive on), and `cable-car.ts` (the
+      Powell–Hyde line and its cars' timetable).
     - `flight.ts`: the flight as a film, each frame a pure function of the airstrip and
       the time (the plane, its ramp, the truck, the camera), and the plane's measurements.
     - `wildlife.ts`: the animals of each world, where their herds live, and how they
@@ -109,6 +128,11 @@ apps, you are in the wrong repo.
       garage interior).
     - Flying: `airport-model.ts` (runway, lights, terminal), `plane-model.ts` (the jet and
       its ramp).
+    - The train trip: `station-model.ts` (platforms, buildings, the branch's points and the
+      tunnels' mouths, and the film's train).
+    - San Francisco: `city-model.ts` (the buildings, the street map as a texture, the
+      bridges, Lombard's lane, the fog, the closure at the edge), `city-landmarks.ts`,
+      `cable-car-model.ts`.
     - Missions: `mission-models.ts`, and `ramp-model.ts` (the jump, built from the same
       surface the physics drives on).
     - Animals: `animal-models.ts`, one instanced mesh per moving part of each species.
@@ -160,13 +184,13 @@ This project has a hard "no spending money" constraint except for the gilbyy.com
 - Don't commit `.env` or any secret. Use `.env.local` (gitignored).
 - Don't add a paid service without explicit confirmation.
 - Don't add links, menus, or navigation to the other apps. gilbyy.com is a game, not a launcher. The four easter-egg cards (ADR 0012) are the only links out; don't put those buildings on the map or the compass, or pay for finding them. They are counted, as "easter eggs found", once you've looked inside (ADR 0016).
-- Don't let the client write progress directly. Every change to miles, purchases and friendships goes through a checked `security definer` function in `supabase/migrations/`; keep prices and mission payouts in sync with `shop.ts`/`missions.ts`/`island.ts`, and how many can drive a convoy with `CONVOY_MAX` (`shop.test.ts` enforces both). Only the publishable key ever reaches the browser.
+- Don't let the client write progress directly. Every change to miles, purchases and friendships goes through a checked `security definer` function in `supabase/migrations/`; keep prices and mission payouts in sync with `shop.ts`/`missions.ts`/`island.ts`/`city.ts`, and how many can drive a convoy with `CONVOY_MAX` (`shop.test.ts` enforces both). Only the publishable key ever reaches the browser.
 - Don't move what's already in the valley when adding a course. New courses are planned after the older ones, the easter eggs and the airstrip (`planMore()` in `missions.ts`), and `courses.test.ts` pins where those are (ADR 0019).
-- Don't let the client say which world it's in. A flight goes through `fly()`, which takes the fare; the fares live in `worlds.ts` and `public.worlds`, and what's sold in one world only in `vehicles.ts` and `shop_items.world` (`flight.test.ts` holds both together). A course is paid only in the world it's in (`missions.world`, `decisions/0018-honest-crews.md`). The valley's airstrip is hidden: don't put it on the compass (a player's own pin, which can go anywhere, is theirs to put there). It is counted ("0/1 airport found"), so players know to look for one, and goes on the map once found (ADR 0016).
+- Don't let the client say which world it's in. A flight or a train ride goes through `fly()`, which takes the fare and only goes where a plane or the train does; the fares live in `worlds.ts` and `public.worlds`, the ways between worlds in `worlds.ts`'s `ROUTES` and `public.routes`, and what's sold in one world only in `vehicles.ts` and `shop_items.world` (`flight.test.ts` holds all three together). A course is paid only in the world it's in (`missions.world`, `decisions/0018-honest-crews.md`). The valley's airstrip is hidden: don't put it on the compass (a player's own pin, which can go anywhere, is theirs to put there). It is counted ("0/1 airport found"), so players know to look for one, and goes on the map once found (ADR 0016).
 - Don't make sign-in required. Single player with no account must keep working, and say clearly that nothing is saved.
 - Don't reach for a game engine, a physics engine, react-three-fiber or a post-processing stack. three.js is the one rendering dependency (ADR 0005); the physics is ours and stays a pure, tested function. Anything more needs its own ADR.
 - Don't put hex literals in render code. Colours go in `src/app/palette.ts`.
-- Don't add pressure. Miles are the one currency, missions are optional and never fail beyond giving up (they pay far better than plain driving, ADR 0017), and the leaderboard is you and your friends only (ADR 0007). Two to ten friends can drive a convoy together (ADR 0010) or race (ADR 0011, 0019), but every finisher is paid the same, winning pays nothing extra, and race results are a line on screen that isn't stored or ranked anywhere. The jump is the same: its time in the air is a line on screen, there is no bar to clear, and it pays the same however long it was (ADR 0019). Keep it that way unless a new ADR says otherwise. The leaderboard also says how many garages and cafés each of you has found (ADR 0008); finding them pays nothing and must stay that way. The same goes for the achievements beside each name (ADR 0009). Animals are scenery: they can't be hit, hunted, counted or collected, and they aren't on the map (ADR 0015). Photos likewise: photo mode keeps a picture on the player's own device and nowhere else, and isn't open during a course (ADR 0018). The tide decides when the sandbar's course can be started and nothing else: it never ends a run that's begun, nothing on screen counts it down, the sandbar is never too deep to wade home over, and high water never floods anything on the beach (ADR 0020). The game is meant to be calm; see `docs/art-direction.md`.
+- Don't add pressure. Miles are the one currency, missions are optional and never fail beyond giving up (they pay far better than plain driving, ADR 0017), and the leaderboard is you and your friends only (ADR 0007). Two to ten friends can drive a convoy together (ADR 0010) or race (ADR 0011, 0019), but every finisher is paid the same, winning pays nothing extra, and race results are a line on screen that isn't stored or ranked anywhere. The jump is the same: its time in the air is a line on screen, there is no bar to clear, and it pays the same however long it was (ADR 0019). Keep it that way unless a new ADR says otherwise. The leaderboard also says how many garages and cafés each of you has found (ADR 0008); finding them pays nothing and must stay that way. The same goes for the achievements beside each name (ADR 0009). Animals are scenery: they can't be hit, hunted, counted or collected, and they aren't on the map (ADR 0015). Photos likewise: photo mode keeps a picture on the player's own device and nowhere else, and isn't open during a course (ADR 0018). The city's cable cars are traffic, not a ride, and its landmarks are scenery: they don't count as found or link anywhere (ADR 0022). The tide decides when the sandbar's course can be started and nothing else: it never ends a run that's begun, nothing on screen counts it down, the sandbar is never too deep to wade home over, and high water never floods anything on the beach (ADR 0020). The game is meant to be calm; see `docs/art-direction.md`.
 - Don't give a stuck truck any way out but the three it has (ADR 0021): a reload back to the tent, another driver's winch, or a tow from BBB, which costs miles through `call_tow()`. No button back to the tent, no self-recovery with your own winch, nothing paid or counted for a rescue, and never in single player, where nothing is saved and nobody could come. What catches a truck has to be something its driver could see: a boulder, hit square and fast, and only a boulder (`Obstacle.boulder`), never a post or a board. Not water, until there's a way to see how deep it is. The tow's fee lives in `tow.ts` and in `call_tow()`; `tow.test.ts` holds the two together.
 - Don't spend the Realtime budget carelessly. Supabase's free plan counts every broadcast once per receiver; poses go through `PoseGate` in `net.ts` for that reason. Presence is stricter still: Realtime closes a client's channel after five presence updates in thirty seconds, so announcements go through `PresenceBudget`, and nothing that changes often goes in presence. See the free-tier notes in `docs/architecture.md`.
 - Don't judge frame rate from headless screenshots. Headless Chromium renders WebGL in software at ~3 fps; screenshots are fine for looks, nothing else.
@@ -210,5 +234,6 @@ The app is one static page. The game is 3D on three.js (since 2026-10-06), and s
 - since 2026-10-10 (ADR 0021): a truck that rams a boulder a little too tall for its tyres at 20 mph or more is hung up on it; a winch from the garage (10 mi) pulls another driver off; and BBB tows for 5 mi, with a film of the tow truck leaving the nearest garage, its distance counting down, and the truck driving in to winch you off. Not in single player. `20261010200000_winch.sql` is on the live project, where every check in `game.test.sql` passes. Pull request 21. Played across two tabs with `?net=local`; not yet signed in. See `docs/sessions/2026-10-10-stuck-winch-and-bbb.md`.
 - since 2026-10-10: Cartier chains, a third thing on the garage's Winter tab: snow chains in gold set with stones that twinkle and throw star glints, for 10,000 miles. The owner's number; they grip exactly like the 30-mile steel ones and are only for show. `20261010090000_cartier_chains.sql` is on the live project; not yet bought signed in.
 - since 2026-10-10: a pin. Click (or tap) the open map to put one down, anywhere, fog or not; the compass mark turns into it and leads there, and the minimap shows it, as a bead on its rim while it's further off than the minimap reaches. Clicking the pin takes it up; so does getting there, or flying. One at a time, not saved, and the game never sets one for you. Clicking off the sheet closes the map. Client only; no migration. Merged to `main` as pull request 22.
+- since 2026-10-15 (ADR 0022), on the branch `feat/game-city-and-train`: the valley's train stops a minute each lap at a new station on the west side, and for 150 miles each way carries the truck through a tunnel in the mountains to San Francisco: the whole city from the Census Bureau's and the USGS's public map data, at 1:2.5 across, with its streets, about 30,000 buildings, both bridges, two dozen landmarks, Lombard's crooked block, cable cars on the Powell–Hyde line, the fog through the Golden Gate, and bison, sea lions, pelicans and parrots. It has the Robotaxi (200 mi, sold only there), three garages, a café in North Beach, a campground on Rob Hill and eight courses. `20261015120000_city_and_train.sql` (the city, a routes table `fly()` checks, the Robotaxi, the courses, the stations as found places) is written but not yet on the live project, and `game.test.sql` has not been run against it. Next asked for: Vegas and the Grand Canyon by boat from the island, then Japan by helicopter from Vegas.
 
 The online half is connected (2026-10-07): the Supabase project `gilbyy` has every migration in `supabase/migrations/` (the convoy and race ones since 2026-10-08), Google sign-in works, and the whole list (name, tent, seeing each other, friending at the café, chat, leaderboard, a purchase and a mission payout that persist) was played from two browsers. It was merged to `main` the same day, so gilbyy.com offers sign-in. The convoy and the race were merged to `main` and went live on 2026-10-08; the database tests pass against the live project, but neither has been played signed in from two accounts yet. A tab left hidden for five minutes, or untouched for fifteen, gives its tent back and takes one again on return. Sign-in is Google only; the email-link option was removed because Supabase's built-in mailer only reaches members of the Supabase org. Real-device frame rate is still unmeasured. See `docs/roadmap.md`, and always check `docs/sessions/` for the most recent checkpoint before starting.

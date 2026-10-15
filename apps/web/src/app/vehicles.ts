@@ -3,14 +3,15 @@
  * but named for itself: the real names are trademarks.
  *
  * Starters are free; you pick one when you first arrive. The rest cost miles at a
- * garage, and one of them only at the garage on the island (ADR 0014). Pure data: shapes
+ * garage, two of them only in their own worlds: the Sandfly on the island (ADR 0014), the
+ * Robotaxi in San Francisco (ADR 0022). Pure data: shapes
  * for car-model.ts and vehicle-models.ts, handling for the physics (combined with the
  * fitted tyres in shop.ts).
  */
 import type { PALETTE } from "./palette";
 import type { WorldId } from "./terrain";
 
-export type VehicleId = "ridgeback" | "bluff" | "mule" | "overlander" | "prairie" | "highland" | "summit" | "duneclaw" | "sandfly";
+export type VehicleId = "ridgeback" | "bluff" | "mule" | "overlander" | "prairie" | "highland" | "summit" | "duneclaw" | "sandfly" | "robotaxi";
 
 export type Vehicle = {
   id: VehicleId;
@@ -102,6 +103,13 @@ export const VEHICLES: Vehicle[] = [
     price: 150, starter: false, length: 3.5, width: 1.86, height: 1.6, wheelbase: 2.45, track: 1.56,
     wheelRadius: 0.4, ride: 0.92, travel: 0.5, accel: 7.6, maxSpeed: 24.5, grip: 1.16, clearance: 0.6, wade: 0.95, factoryPaint: "coral",
     only: "island",
+  },
+  // Inspired by the electric crossovers San Francisco's robotaxi fleets run: quick, quiet, low, a scanner on the roof.
+  {
+    id: "robotaxi", name: "Robotaxi", blurb: "Electric city crossover with a scanner spinning on its roof. Quick off the line, low to the road. Sold only in San Francisco.",
+    price: 200, starter: false, length: 4.68, width: 1.96, height: 1.57, wheelbase: 2.99, track: 1.64,
+    wheelRadius: 0.37, ride: 0.9, travel: 0.24, accel: 7.4, maxSpeed: 21, grip: 1.04, clearance: 0.35, wade: 0.95, factoryPaint: "pearlWhite",
+    only: "city",
   },
 ];
 
