@@ -3,15 +3,16 @@
  * but named for itself: the real names are trademarks.
  *
  * Starters are free; you pick one when you first arrive. The rest cost miles at a
- * garage, two of them only in their own worlds: the Sandfly on the island (ADR 0014), the
- * Robotaxi in San Francisco (ADR 0022). Pure data: shapes
- * for car-model.ts and vehicle-models.ts, handling for the physics (combined with the
- * fitted tyres in shop.ts).
+ * garage, three of them only in their own worlds: the Sandfly on the island (ADR 0014), the
+ * Robotaxi in San Francisco (ADR 0022), the Slipstream in Las Vegas (ADR 0023). Pure data:
+ * shapes for car-model.ts and vehicle-models.ts, handling for the physics (combined with
+ * the fitted tyres in shop.ts).
  */
 import type { PALETTE } from "./palette";
 import type { WorldId } from "./terrain";
 
-export type VehicleId = "ridgeback" | "bluff" | "mule" | "overlander" | "prairie" | "highland" | "summit" | "duneclaw" | "sandfly" | "robotaxi";
+export type VehicleId =
+  | "ridgeback" | "bluff" | "mule" | "overlander" | "prairie" | "highland" | "summit" | "duneclaw" | "sandfly" | "robotaxi" | "slipstream";
 
 export type Vehicle = {
   id: VehicleId;
@@ -46,6 +47,11 @@ export type Vehicle = {
   factoryPaint: keyof typeof PALETTE.paint;
   /** The one world whose garages sell it. Once bought it's yours anywhere. */
   only?: WorldId;
+  /**
+   * How much it needs tarmac under it, 0 to 1: a racing car is at its top speed only on a
+   * paved road, and crawls everywhere else (physics.ts). The off-roaders don't care.
+   */
+  road?: number;
 };
 
 export const VEHICLES: Vehicle[] = [
@@ -110,6 +116,13 @@ export const VEHICLES: Vehicle[] = [
     price: 200, starter: false, length: 4.68, width: 1.96, height: 1.57, wheelbase: 2.99, track: 1.64,
     wheelRadius: 0.37, ride: 0.9, travel: 0.24, accel: 7.4, maxSpeed: 21, grip: 1.04, clearance: 0.35, wade: 0.95, factoryPaint: "pearlWhite",
     only: "city",
+  },
+  // Inspired by a Formula 1 car: open wheels, wings front and back, the driver under a halo.
+  {
+    id: "slipstream", name: "Slipstream", blurb: "Open-wheel racing car. The quickest thing there is on tarmac, and hopeless off it. Sold only in Las Vegas.",
+    price: 400, starter: false, length: 5.3, width: 1.98, height: 0.98, wheelbase: 3.5, track: 1.62,
+    wheelRadius: 0.36, ride: 0.52, travel: 0.1, accel: 9.6, maxSpeed: 31, grip: 1.0, clearance: 0.16, wade: 0.95, factoryPaint: "racingRed",
+    only: "vegas", road: 1,
   },
 ];
 

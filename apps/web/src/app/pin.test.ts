@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildIsland } from "./island";
 import { PIN_GRAB, PIN_HEAD, PIN_REACH, PIN_STEM, markFor, onMini, onPin, pinAt, reached } from "./pin";
+import { buildVegas } from "./vegas";
 import { buildWorld } from "./world";
 
 describe("the pin", () => {
-  it("lands under the click, on either world's sheet", () => {
-    for (const world of [buildWorld(), buildIsland()]) {
+  it("lands under the click, on any world's sheet", () => {
+    for (const world of [buildWorld(), buildIsland(), buildVegas()]) {
       const span = world.mapSpan;
       expect(pinAt(0.5, 0.5, span)).toEqual({ x: 0, z: 0 });
       // The sheet is north-up: its left edge is west (−x) and its top edge north (−z).
@@ -20,7 +21,8 @@ describe("the pin", () => {
       expect(p.x).toBeCloseTo(world.camp.x, 6);
       expect(p.z).toBeCloseTo(world.camp.z, 6);
     }
-  });
+    // Three worlds built from nothing: longer than the default with every other test file running.
+  }, 30000);
 
   it("is taken up by a click on it, from its point to its head, and moved by a click elsewhere", () => {
     const span = 6000;

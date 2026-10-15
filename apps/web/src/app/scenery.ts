@@ -112,6 +112,42 @@ function eucalyptusGeometry(): Parts {
   return { trunk: mergeGeometries([painted(trunk, bark), painted(fork, bark)]), crown: mergeGeometries(clumps.map((k) => painted(k, WHITE))) };
 }
 
+/**
+ * A Joshua tree (ADR 0023): a shaggy trunk that forks, and forks again, into crooked arms,
+ * each ending in a spiky ball of leaves.
+ */
+function joshuaGeometry(): Parts {
+  const bark = colour(PALETTE.vegas.joshuaTrunk);
+  const limbs: THREE.BufferGeometry[] = [];
+  const heads: THREE.BufferGeometry[] = [];
+  /** A limb from `a` along `dir` (tilted from upright by `lean`, turned by `turn`), `len` long, `r` thick. */
+  const limb = (a: THREE.Vector3, lean: number, turn: number, len: number, r: number) => {
+    const dir = new THREE.Vector3(Math.sin(lean) * Math.cos(turn), Math.cos(lean), Math.sin(lean) * Math.sin(turn));
+    const seg = new THREE.CylinderGeometry(r * 0.8, r, len + 0.1, 5);
+    seg.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+    const mid = a.clone().addScaledVector(dir, len / 2);
+    limbs.push(painted(seg.translate(mid.x, mid.y, mid.z), bark));
+    return a.clone().addScaledVector(dir, len);
+  };
+  const head = (at: THREE.Vector3) => {
+    heads.push(painted(new THREE.IcosahedronGeometry(0.42, 0).translate(at.x, at.y + 0.1, at.z), WHITE));
+    for (let i = 0; i < 7; i++) {
+      const spike = new THREE.ConeGeometry(0.1, 0.9, 3).translate(0, 0.45, 0);
+      spike.applyQuaternion(new THREE.Quaternion().setFromEuler(new THREE.Euler(((i % 3) - 1) * 0.9, (i / 7) * Math.PI * 2, 0.9 + (i % 2) * 0.5)));
+      heads.push(painted(spike.translate(at.x, at.y + 0.1, at.z), WHITE));
+    }
+  };
+  const fork = limb(new THREE.Vector3(0, 0, 0), 0.05, 0, 2.6, 0.3);
+  for (const [lean, turn, len, again] of [[0.7, 0.3, 1.6, true], [0.6, 2.5, 1.9, false], [0.9, 4.4, 1.3, true]] as const) {
+    const end = limb(fork, lean, turn, len, 0.18);
+    if (again) {
+      head(limb(end, 0.3, turn + 0.9, 0.9, 0.12));
+      head(limb(end, 0.5, turn - 0.8, 0.8, 0.12));
+    } else head(end);
+  }
+  return { trunk: mergeGeometries(limbs), crown: mergeGeometries(heads) };
+}
+
 /** A lumpy boulder: an icosahedron with its corners pushed about. */
 function boulderGeometry(seed: number) {
   const geo = mergeVertices(new THREE.IcosahedronGeometry(1, 1).deleteAttribute("normal").deleteAttribute("uv"));
@@ -162,7 +198,7 @@ export function tiled<T extends { x: number; z: number }>(
 /** `snowAt` is how snowy it is at a spot, 0–1: pines there are frosted. */
 const TREE_GEOMETRY: Record<TreeKind, () => THREE.BufferGeometry | Parts> = {
   pine: pineGeometry, broadleaf: broadleafGeometry, palm: palmGeometry, canopy: canopyGeometry,
-  cypress: cypressGeometry, eucalyptus: eucalyptusGeometry,
+  cypress: cypressGeometry, eucalyptus: eucalyptusGeometry, joshua: joshuaGeometry,
 };
 
 export function buildTrees(trees: Tree[], snowAt: (x: number, z: number) => number = () => 0) {
@@ -176,6 +212,7 @@ export function buildTrees(trees: Tree[], snowAt: (x: number, z: number) => numb
   const flame = PALETTE.flameTree.map(colour);
   const cypress = PALETTE.city.cypress.map(colour);
   const gum = PALETTE.city.gum.map(colour);
+  const joshua = PALETTE.vegas.joshua.map(colour);
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
   const place = (t: Tree, m: THREE.Matrix4, c: THREE.Color) => {
@@ -184,6 +221,7 @@ export function buildTrees(trees: Tree[], snowAt: (x: number, z: number) => numb
     if (t.kind === "broadleaf") c.copy(pick(leaf, t.tone));
     else if (t.kind === "cypress") c.copy(pick(cypress, t.tone));
     else if (t.kind === "eucalyptus") c.copy(pick(gum, t.tone));
+    else if (t.kind === "joshua") c.copy(pick(joshua, t.tone));
     else if (t.kind === "palm") c.copy(pick(frond, t.tone));
     // One jungle tree in thirty is in flower.
     else if (t.kind === "canopy") c.copy(t.tone < 0.035 ? pick(flame, t.tone / 0.035) : pick(canopy, (t.tone - 0.035) / 0.965));

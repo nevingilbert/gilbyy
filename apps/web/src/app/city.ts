@@ -109,11 +109,13 @@ function fillPolygon(pts: Pt[], n: number, size: number, cell: (i: number, j: nu
 }
 
 /** The kerb map: every texel's distance to the nearest kerb, from every street but the bridges' decks (they're drawn as decks). */
-export function kerbMap(streets: Street[]) {
+export const kerbMap = (streets: Street[]) => kerbMapOf(streets.filter((s) => s.cls !== 4).map((s) => ({ xs: s.xs, zs: s.zs, half: STREET_WIDTH[s.cls] / 2 })));
+
+/** A kerb map of any roads, each a line and half its paved width: Vegas's too (ADR 0023). */
+export function kerbMapOf(roads: { xs: ArrayLike<number>; zs: ArrayLike<number>; half: number }[]) {
   const out = new Uint8Array(KERB_N * KERB_N).fill(255);
-  for (const s of streets) {
-    if (s.cls === 4) continue;
-    const half = STREET_WIDTH[s.cls] / 2;
+  for (const s of roads) {
+    const half = s.half;
     const reach = half + 6;
     for (let k = 1; k < s.xs.length; k++) {
       const ax = s.xs[k - 1];
@@ -153,7 +155,7 @@ export function kerbAt(kerb: Uint8Array, x: number, z: number) {
 }
 
 /** Thirty pitches in three rows of ten round `centre`, facing `heading`, and where the fire is. */
-function campAt(centre: Pt, heading: number): { pitches: Pitch[]; fire: Pt } {
+export function campAt(centre: Pt, heading: number): { pitches: Pitch[]; fire: Pt } {
   const fx = Math.sin(heading);
   const fz = Math.cos(heading);
   // Local x is across the rows, local z the way they face.
@@ -710,7 +712,7 @@ export function buildCity(seed = 20261015): CityWorld {
     heights, water, forest, trackDist, riverDist: new Float32Array(ROW * ROW).fill(FAR), roadDist, siteDist, campDist, zone,
     snow: new Float32Array(ROW * ROW), ice: new Float32Array(ROW * ROW),
     track: { xs: [], zs: [], ys: [], s: [], length: 0, bridges: [], crossings: [] }, rivers: [], roads: [], sites,
-    trees, bushes, rocks, missions, landmarks: [], courseDist, airport: null, station: cityStation(rail.line, rail.portal),
+    trees, bushes, rocks, missions, landmarks: [], courseDist, airport: null, station: cityStation(rail.line, rail.portal), dock: null,
     cafe, start, pitches: camp.pitches, camp: { ...rob, heading: campHeading },
     sea: true, mapSpan: CITY_LIMIT * 2.05, square: true,
     height, waterAt: (x, z) => sampleGrid(water, x, z),
@@ -721,6 +723,8 @@ export function buildCity(seed = 20261015): CityWorld {
       return wall.length || rails.length ? [...near, ...wall, ...rails] : near;
     },
     limit: CITY_LIMIT,
+    // The streets and their pavements, and the garages' aprons.
+    pavedAt: (x, z) => kerbAt(kerb, x, z) < 1.6 || sampleGrid(siteDist, x, z) < 10,
     slipAt: () => 0,
     addObstacles: (list: readonly Obstacle[]) => list.forEach(solid.add),
     setTide: () => {},

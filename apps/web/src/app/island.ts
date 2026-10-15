@@ -1,6 +1,8 @@
-import { findField, inFunnel, levelField } from "./airport";
+import { fieldDist, findField, inFunnel, levelField } from "./airport";
 import { buildCity } from "./city";
 import { LINE_UP_BACK } from "./convoy";
+import { PIER, causewayTop, dockDist, fromDock, layDock, toDock, type Dock } from "./dock";
+import { ferryObstacles } from "./ferry";
 import { planeObstacles } from "./flight";
 import { courseDistOf, courseLength, courseLimits, gatesAlong, type Mission } from "./missions";
 import { fbm, makeNoise2D, makeRandom, smoothstep } from "./noise";
@@ -8,6 +10,7 @@ import {
   CAMP_PITCHES, FAR, ROW, SITE_BLEND, SITE_FLAT, SNORKEL_WADE, STOCK_WADE, WORLD,
   flood, gridX, gridZ, level, nearest, sampleGrid, type Path, type Pitch, type Site, type SiteStyle, type Track,
 } from "./terrain";
+import { buildVegas } from "./vegas";
 import { buildWorld, obstacleIndex, trunkRadius, type AirWorld, type Bush, type Rock, type Tree, type World, type WorldId } from "./world";
 
 /**
@@ -388,6 +391,24 @@ export function buildIsland(seed = 20261009): AirWorld {
   clearOf(rocks);
   clearOf(bushes);
 
+  // The dock (ADR 0023): a causeway out to sea for the ferry to Las Vegas, as near the camp
+  // as the shore is clear of the courses, the garages, the airstrip and the sandbar. Built
+  // in last, like the sandbar, taking away only what stood where it goes.
+  const toBar = nearest(bar.line, false, 120).dist;
+  const dock = islandDock(shape, camp.heading, (x, z) =>
+    field(courseDist, x, z) > 16 && field(siteDist, x, z) > 30 && field(campDist, x, z) > 30 && !inFunnel(airport, x, z) && field(toBar, x, z) > 100,
+  );
+  layDock(heights, dock, siteDist);
+  const nearDock = dockDist(dock, 30);
+  const offDock = <T extends Pt>(list: T[]) => {
+    let n = 0;
+    for (const s of list) if (field(nearDock, s.x, s.z) > 12) list[n++] = s;
+    list.length = n;
+  };
+  offDock(trees);
+  offDock(rocks);
+  offDock(bushes);
+
   // What a truck can reach at high water, wading and with a snorkel.
   const start = camp.pitches[0].parking;
   const zone = new Uint8Array(ROW * ROW);
@@ -398,6 +419,7 @@ export function buildIsland(seed = 20261009): AirWorld {
   for (const t of trees) solid.add({ x: t.x, z: t.z, r: trunkRadius(t), h: Infinity });
   for (const r of rocks) solid.add({ x: r.x, z: r.z, r: Math.min(r.sx, r.sz) * 0.8, h: r.y + r.sy * 0.95 - ground(r.x, r.z), boulder: true });
   for (const o of planeObstacles(airport)) solid.add(o);
+  for (const o of ferryObstacles(dock, WORLD.water)) solid.add(o);
 
   // The sea stands at high water until it's told how far the tide is out (tide.ts).
   let sea: number = WORLD.water;
@@ -406,10 +428,12 @@ export function buildIsland(seed = 20261009): AirWorld {
     heights, water, forest, trackDist, riverDist, roadDist, siteDist, campDist, zone,
     snow: new Float32Array(ROW * ROW), ice: new Float32Array(ROW * ROW),
     track: NO_TRACK, rivers: [], roads: tracks, sites,
-    trees, bushes, rocks, missions, landmarks: [], courseDist, airport, station: null,
+    trees, bushes, rocks, missions, landmarks: [], courseDist, airport, station: null, dock,
     cafe, start, pitches: camp.pitches, camp: { ...camp.middle, heading: camp.heading },
     sea: true, mapSpan: (ISLAND.shore + 420) * 2,
-    height: ground, waterAt: () => sea, obstaclesNear: solid.near, limit: WORLD.limit,
+    height: (x, z) => Math.max(ground(x, z), causewayTop(dock, x, z)), waterAt: () => sea, obstaclesNear: solid.near, limit: WORLD.limit,
+    // The airstrip and the causeway are the island's only paving.
+    pavedAt: (x, z) => fieldDist(airport, x, z) <= 0 || onCauseway(dock, x, z),
     slipAt: () => 0,
     addObstacles: (list) => list.forEach(solid.add),
     setTide: (ebb) => void (sea = WORLD.water - ebb),
@@ -542,11 +566,41 @@ function planCourses(
   return out;
 }
 
+/**
+ * Where the dock goes: the shore at the bearing nearest the camp's where the whole of it,
+ * the causeway, its berth and the way out to sea, is somewhere `clear` says it may be.
+ */
+function islandDock(shape: ReturnType<typeof makeIsland>, campBearing: number, clear: (x: number, z: number) => boolean): Dock {
+  for (let off = 0; off <= 180; off++) {
+    for (const sign of off ? [1, -1] : [1]) {
+      const bearing = campBearing + sign * off * DEG;
+      const r = shape.shoreAlong(bearing);
+      const d: Dock = { ...along(bearing, r), heading: bearing, root: 0, y: WORLD.water + PIER.rise, water: WORLD.water };
+      let ok = true;
+      for (let lz = -40; lz <= PIER.length + 160 && ok; lz += 8) {
+        for (let lx = -32; lx <= 32 && ok; lx += 8) {
+          const p = fromDock(d, lx, lz);
+          ok = clear(p.x, p.z);
+        }
+      }
+      if (ok) return { ...d, root: Math.max(0, shape.height(d.x, d.z)) };
+    }
+  }
+  throw new Error("Nowhere on the island's shore for the dock.");
+}
+
+/** Whether a spot is on the causeway's level top. */
+export function onCauseway(d: Dock, x: number, z: number) {
+  const p = toDock(d, x, z);
+  return p.z >= 0 && p.z <= PIER.length && Math.abs(p.x) <= PIER.half + 0.5;
+}
+
 /** Where the island's fire is: out from the middle of the row of tents, further down the beach. */
 export function islandFire(world: World) {
   const { x, z, heading } = world.camp;
   return { x: x + Math.sin(heading) * FIRE_OUT, z: z + Math.cos(heading) * FIRE_OUT };
 }
 
-/** The ground of one world or the other, built from nothing. About a third of a second. */
-export const buildWorldOf = (id: WorldId): World => (id === "island" ? buildIsland() : id === "city" ? buildCity() : buildWorld());
+/** The ground of one world or another, built from nothing. About a third of a second. */
+export const buildWorldOf = (id: WorldId): World =>
+  id === "island" ? buildIsland() : id === "city" ? buildCity() : id === "vegas" ? buildVegas() : buildWorld();

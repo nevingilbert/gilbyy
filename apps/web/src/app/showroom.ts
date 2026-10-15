@@ -21,6 +21,9 @@ const WALLS: Record<SiteStyle, { wall: string; floor: string }> = {
   victorian: { wall: PALETTE.city.houses[1], floor: PALETTE.timber },
   pier: { wall: PALETTE.city.shed[0], floor: PALETTE.concrete },
   airfield: { wall: PALETTE.city.stucco[1], floor: PALETTE.concrete },
+  speedshop: { wall: PALETTE.vegas.stucco[0], floor: PALETTE.vegas.checker },
+  pitgarage: { wall: PALETTE.vegas.pitWhite, floor: PALETTE.concrete },
+  tradingpost: { wall: PALETTE.vegas.adobe, floor: PALETTE.timber },
 };
 
 export const GARAGE_NAMES: Record<SiteStyle, string> = {
@@ -38,6 +41,9 @@ export const GARAGE_NAMES: Record<SiteStyle, string> = {
   victorian: "The Mission Victorian",
   pier: "Pier 35",
   airfield: "The Crissy Field Hangar",
+  speedshop: "The Speed Shop",
+  pitgarage: "The Pit Garage",
+  tradingpost: "The Rim Trading Post",
 };
 
 export function buildShowroom() {

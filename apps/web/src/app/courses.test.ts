@@ -8,10 +8,12 @@ import { RAMP, rampLocal } from "./ramp";
 import { METRES_PER_MILE, PARTS, STOCK_LOADOUT, priceOf, specFor, type Loadout } from "./shop";
 import { TIDE, untilEbb } from "./tide";
 import { STARTERS, VEHICLES, vehicleById, type VehicleId } from "./vehicles";
+import { buildVegas } from "./vegas";
 import { buildWorld, type Mission, type World } from "./world";
 
 const world = buildWorld();
 const island = buildIsland();
+const vegas = buildVegas();
 const miles = (m: Mission) => {
   let metres = 0;
   let at: { x: number; z: number } = m.start;
@@ -144,21 +146,22 @@ describe("the courses", () => {
   });
 
   // The limit used to be 23 m/s, which the Sandfly (24.5) beat along the beach: an honest
-  // run in the island's own rig was refused as too fast to be true.
+  // run in the island's own rig was refused as too fast to be true. Then 27, until the
+  // Slipstream (31 on tarmac, ADR 0023) came.
   it("never take the quickest rigs, flat out, for cheats", () => {
     const quickest = Math.max(...VEHICLES.map((v) => v.maxSpeed));
     expect(TOO_QUICK).toBeGreaterThan(quickest * 1.08);
-    for (const rig of ["duneclaw", "sandfly"] as const) {
-      for (const [ground, courses] of [[world, world.missions], [island, island.missions]] as const) {
-        for (const m of courses) {
-          // The autopilot doesn't get every course round at this speed; where it does, the time has to stand.
-          const run = drive(m, { ...STOCK_LOADOUT, winter: "chains" }, rig, ground);
-          if (run) expect(run.seconds, `${rig} on ${m.id}`).toBeGreaterThan(m.minSeconds);
-        }
+    const runs: [VehicleId, World][] = [["duneclaw", world], ["sandfly", world], ["duneclaw", island], ["sandfly", island], ["duneclaw", vegas], ["slipstream", vegas]];
+    for (const [rig, ground] of runs) {
+      for (const m of ground.missions) {
+        // The autopilot doesn't get every course round at this speed; where it does, the time has to stand.
+        const run = drive(m, { ...STOCK_LOADOUT, winter: "chains" }, rig, ground);
+        if (run) expect(run.seconds, `${rig} on ${m.id}`).toBeGreaterThan(m.minSeconds);
       }
     }
-    const beach = island.missions.find((m) => m.id === "beach-run")!;
-    expect(drive(beach, STOCK_LOADOUT, "sandfly", island)!.seconds).toBeLessThan(beach.minSeconds * 1.2);
+    // And the limit is near what's possible: the racing car up the Strip, flat out, isn't far off it.
+    const strip = vegas.missions.find((m) => m.id === "the-strip")!;
+    expect(drive(strip, STOCK_LOADOUT, "slipstream", vegas)!.seconds).toBeLessThan(strip.minSeconds * 1.2);
   });
 });
 

@@ -4,6 +4,8 @@ import { makeNoise2D, smoothstep } from "./noise";
 import { PALETTE } from "./palette";
 import { rampLift } from "./ramp";
 import { CROOKED_KERB, inCrooked, kerbAt, type CityWorld } from "./city";
+import { PIER, toDock } from "./dock";
+import { GROUNDS, VEGAS, type VegasWorld } from "./vegas";
 import { CELL, ROW, WORLD, gridX, gridZ, sampleGrid, type World } from "./world";
 
 const colour = (hex: string) => new THREE.Color(hex);
@@ -13,15 +15,65 @@ export type Surface =
   // The island's.
   | "seabed" | "wetsand" | "beach" | "sand" | "scrub" | "jungle"
   // The city's (ADR 0022): its streets and pavements, its yards, lawns, dry hills and woods.
-  | "paved" | "yard" | "lawn" | "dryhill" | "cityfloor";
+  | "paved" | "yard" | "lawn" | "dryhill" | "cityfloor"
+  // Vegas's (ADR 0023): the desert, Red Rock, the canyon's bands, the lake's white ring, its
+  // shores and the river's beaches, the plateau, the town's lots; and the causeways' stone.
+  | "desert" | "redrock" | "strata" | "bathtub" | "sandbank" | "rimland" | "lot" | "causeway";
 
 /**
  * What the ground is made of at a point, and a 0–1 tone for variation within it.
  * Shared by the terrain colours and the grass, so tufts only grow where it's grassy.
  */
 export function makeSurface(world: World) {
+  const inner = surfaceOf(world);
+  const dock = world.dock;
+  if (!dock) return inner;
+  // A causeway, wherever there's a dock (ADR 0023): its road paved, its banks stone.
+  return (x: number, y: number, z: number, ny: number): [Surface, number] => {
+    const p = toDock(dock, x, z);
+    if (p.z > -4 && p.z < PIER.length + PIER.bank + 4 && Math.abs(p.x) < PIER.top + PIER.bank + 4) {
+      // Its road down the middle, the rest of its top and its banks laid stone.
+      if (Math.abs(p.x) <= PIER.half + 0.5 && p.z >= 0 && p.z <= PIER.length) return ["paved", 0.3];
+      if (y > dock.water - 4) return ["causeway", (Math.sin(x * 1.7) * Math.sin(z * 1.3) + 1) / 2];
+    }
+    return inner(x, y, z, ny);
+  };
+}
+
+function surfaceOf(world: World) {
   const patch = makeNoise2D(41);
   const fine = makeNoise2D(42);
+  const vegas = (world as Partial<VegasWorld>).vegas;
+  if (vegas) {
+    const cell = (x: number, z: number) => vegas.ground[Math.round((z + WORLD.size / 2) / CELL) * ROW + Math.round((x + WORLD.size / 2) / CELL)];
+    return (x: number, y: number, z: number, ny: number): [Surface, number] => {
+      const big = patch(x / 110, z / 110);
+      const small = fine(x / 24, z / 24);
+      const tone = Math.max(0, Math.min(1, (big * 0.7 + small * 0.3 + 1) / 2));
+      const water = sampleGrid(world.water, x, z);
+      if (y < water - 0.8) return ["lakebed", tone];
+      // The streets and pavements, the lots of everything built, the camp's earth.
+      if (kerbAt(vegas.kerb, x, z) < 1.8 || sampleGrid(world.siteDist, x, z) < 4) return ["paved", tone];
+      // The camp's ground is packed sand.
+      if (sampleGrid(world.campDist, x, z) < 1) return ["sandbank", tone];
+      const kind = GROUNDS[cell(x, z)];
+      // The canyon is coloured by height, band over band, up from the river's beaches.
+      if (kind === "canyon") {
+        if (y < VEGAS.lake + 3.2 + small * 0.4) return ["sandbank", tone];
+        return ["strata", Math.max(0, Math.min(1, (y - VEGAS.lake - 3) / (VEGAS.rim - VEGAS.lake) + small * 0.03))];
+      }
+      if (kind === "shore") {
+        if (y < water + 0.9 + small * 0.3) return ["sandbank", tone];
+        // The pale ring the lake left as it went down, where the shore is steep enough to show it.
+        if (ny < 0.94 && y < VEGAS.lake + 7 + big) return ["bathtub", tone];
+      }
+      if (kind === "redrock") return [ny < 0.9 ? "redrock" : "redrock", ny < 0.9 ? tone : tone * 0.6 + 0.4];
+      if (ny < 0.8) return ["redrock", tone];
+      if (kind === "rim") return ["rimland", tone];
+      if (kind === "town") return ["lot", tone];
+      return ["desert", tone];
+    };
+  }
   const city = (world as Partial<CityWorld>).city;
   if (city) {
     const KINDS: (Surface | null)[] = [null, "cityfloor", "lawn", "dryhill", "beach", "paved"];
@@ -127,14 +179,23 @@ export function buildTerrainMesh(world: World, surface: SurfaceAt, streets: THRE
     lawn: PALETTE.city.lawn.map(colour),
     dryhill: PALETTE.city.dryHill.map(colour),
     cityfloor: PALETTE.city.floor.map(colour),
+    desert: PALETTE.vegas.desert.map(colour),
+    redrock: PALETTE.vegas.redRock.map(colour),
+    strata: PALETTE.vegas.strata.map(colour),
+    bathtub: [colour(PALETTE.vegas.bathtub), colour(PALETTE.vegas.stucco[3])],
+    sandbank: PALETTE.vegas.beach.map(colour),
+    rimland: PALETTE.vegas.rimland.map(colour),
+    lot: PALETTE.vegas.lot.map(colour),
+    causeway: PALETTE.ferry.stone.map(colour),
   };
   const material = new THREE.MeshLambertMaterial({ vertexColors: true });
   // Where the tide (tide.ts) has left the seabed bare, it's wet sand, like the strip above
   // it. At high water there is none, and the ground is exactly the colours it was given.
   const sea = { value: WORLD.water as number };
-  if (world.sea) {
+  if (world.sea || streets) {
     const wet = { value: colour(PALETTE.wetSand) };
-    // The city's streets are painted on from its street map: asphalt, the kerb, the pavement (ADR 0022).
+    // Streets are painted on from a street map: asphalt, the kerb, the pavement. The city's
+    // (ADR 0022), and Vegas's (ADR 0023), which has no sea.
     const kerbs = streets ? { value: streets } : null;
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uSea = sea;
@@ -173,12 +234,13 @@ export function buildTerrainMesh(world: World, surface: SurfaceAt, streets: THRE
         )
         .replace(
           "#include <color_fragment>",
-          `#include <color_fragment>
+          `#include <color_fragment>${world.sea ? `
           float bare = smoothstep(uSea - 0.3, uSea + 0.05, vShoreY) * (1.0 - smoothstep(-0.6, -0.3, vShoreY));
-          diffuseColor.rgb = mix(diffuseColor.rgb, uWet, bare);${streetsGlsl}`,
+          diffuseColor.rgb = mix(diffuseColor.rgb, uWet, bare);` : ""}${streetsGlsl}`,
         );
     };
-    material.customProgramCacheKey = () => (kerbs ? "shore-streets" : "shore");
+    const key = `${world.sea ? "shore" : "inland"}${kerbs ? "-streets" : ""}`;
+    material.customProgramCacheKey = () => key;
   }
   const group = new THREE.Group();
   const c = new THREE.Color();

@@ -19,10 +19,11 @@ export const WORLD = {
 
 /**
  * The places there are to drive. Each is its own ground on the same grid: the valley you
- * start in, the island a plane takes you to (island.ts, ADR 0014), and San Francisco, a
- * train ride away (city.ts, ADR 0022).
+ * start in, the island a plane takes you to (island.ts, ADR 0014), San Francisco, a
+ * train ride away (city.ts, ADR 0022), and Las Vegas and the Grand Canyon, a ferry ride
+ * from the island (vegas.ts, ADR 0023).
  */
-export type WorldId = "valley" | "island" | "city";
+export type WorldId = "valley" | "island" | "city" | "vegas";
 
 export const CELL = WORLD.size / WORLD.segments;
 export const HALF = WORLD.size / 2;
@@ -349,11 +350,12 @@ function runRiver(base: (x: number, z: number) => number, angle: number, seed: n
   return { xs, zs, surface };
 }
 
-/** Eight in the valley, three on the island, and three in the city. */
+/** Eight in the valley, three on the island, three in the city, and three in Vegas. */
 export type SiteStyle =
   | "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch"
   | "shack" | "outpost" | "lodge"
-  | "victorian" | "pier" | "airfield";
+  | "victorian" | "pier" | "airfield"
+  | "speedshop" | "pitgarage" | "tradingpost";
 export type Site = { x: number; z: number; rot: number; style: SiteStyle; y: number };
 
 export type Terrain = {

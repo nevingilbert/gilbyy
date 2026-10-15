@@ -136,6 +136,7 @@ export function specFor(vehicle: VehicleId, l: Loadout): CarSpec {
     snowGrip: Math.max(t.snowGrip, winterOf(l).fitted ? 0.85 : 0),
     radius: v.width / 2 + 0.2,
     hang: HANG,
+    road: v.road ?? 0,
   };
 }
 

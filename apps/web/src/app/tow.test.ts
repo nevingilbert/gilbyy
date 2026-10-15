@@ -128,7 +128,8 @@ describe("the way in", () => {
     }
     expect(run / 300).toBeGreaterThan(0.6);
     expect(none / 300).toBeLessThan(0.15);
-  });
+    // It builds the whole valley and finds three hundred ways in: a few seconds, longer with every other test file running.
+  }, 30000);
 });
 
 describe("the visit", () => {

@@ -204,14 +204,18 @@ describe("the ramp and the hold", () => {
 });
 
 describe("the worlds", () => {
-  it("are the valley, the island a flight away and the city a train ride away, and every way goes back", () => {
-    expect(WORLD_IDS).toEqual(["valley", "island", "city"]);
+  it("are the valley, the island a flight away, the city a train ride away and Vegas a ferry ride from the island, and every way goes back", () => {
+    expect(WORLD_IDS).toEqual(["valley", "island", "city", "vegas"]);
     expect(wayFrom("valley", "plane")).toBe("island");
     expect(wayFrom("island", "plane")).toBe("valley");
     expect(wayFrom("valley", "train")).toBe("city");
     expect(wayFrom("city", "train")).toBe("valley");
+    expect(wayFrom("island", "boat")).toBe("vegas");
+    expect(wayFrom("vegas", "boat")).toBe("island");
     expect(wayFrom("island", "train")).toBeNull();
     expect(wayFrom("city", "plane")).toBeNull();
+    expect(wayFrom("valley", "boat")).toBeNull();
+    expect(wayFrom("vegas", "plane")).toBeNull();
     for (const r of ROUTES) {
       expect(goesTo(r.to, r.from)).toBe(true);
       expect(r.to).not.toBe(r.from);
@@ -244,9 +248,10 @@ describe("the worlds and the server agree", () => {
     );
     const client = Object.fromEntries(VEHICLES.filter((v) => v.only).map((v) => [itemKey("vehicle", v.id), v.only]));
     expect(server).toEqual(client);
-    expect(client).toEqual({ "vehicle:sandfly": "island", "vehicle:robotaxi": "city" });
+    expect(client).toEqual({ "vehicle:sandfly": "island", "vehicle:robotaxi": "city", "vehicle:slipstream": "vegas" });
     expect(soldOnlyIn("vehicle:sandfly")).toBe("island");
     expect(soldOnlyIn("vehicle:robotaxi")).toBe("city");
+    expect(soldOnlyIn("vehicle:slipstream")).toBe("vegas");
     expect(soldOnlyIn("vehicle:duneclaw")).toBeNull();
     expect(soldOnlyIn("tyres:mud")).toBeNull();
   });
@@ -265,6 +270,7 @@ describe("the worlds and the server agree", () => {
     expect(worldTopic("valley")).toBe("world");
     expect(worldTopic("island")).toBe("world:island");
     expect(worldTopic("city")).toBe("world:city");
+    expect(worldTopic("vegas")).toBe("world:vegas");
     // The valley's policy names its channel outright; the others are built from the world's id.
     expect(migration).toContain("p_topic = 'world:' || p.world");
     expect(migration).toContain("p.world <> 'valley'");

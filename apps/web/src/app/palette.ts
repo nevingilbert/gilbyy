@@ -77,6 +77,8 @@ export const PALETTE = {
     forestGreen: "#3d5a3e",
     /** Not for sale: the Sandfly's own colour. */
     coral: "#ee6f5b",
+    /** Not for sale either: the Slipstream's (ADR 0023). */
+    racingRed: "#d22a2f",
   },
   lightBar: "#2a2826",
   // The winch on the bumper, and the cable it pays out to a stuck truck (ADR 0021).
@@ -241,6 +243,17 @@ export const PALETTE = {
     pelicanBill: "#c49a62",
     parrotGreen: "#3f9a46",
     parrotRed: "#c8392f",
+    bighornCoat: "#a3865e",
+    bighornRump: "#efe6d6",
+    bighornHorn: "#c8b38a",
+    jackCoat: "#a39276",
+    jackEar: "#d9b3a2",
+    roadrunnerBody: "#6f604e",
+    roadrunnerStreak: "#e6dccb",
+    roadrunnerTail: "#3b342d",
+    condorBlack: "#1f1d20",
+    condorWhite: "#eeeae2",
+    condorHead: "#c98063",
   },
 
   /**
@@ -318,6 +331,93 @@ export const PALETTE = {
     /** Sutro Tower's red and white. */
     mastRed: "#c2412f",
     mastWhite: "#eeeae2",
+  },
+
+  /**
+   * Las Vegas and the Grand Canyon (ADR 0023): pale desert and creosote under the same warm
+   * haze, Red Rock and the canyon's bands of brown, red, cream and buff; the Strip's resorts
+   * in stucco, glass and gold by day, and by night the one place in the game that glows.
+   */
+  vegas: {
+    /** The desert floor: pale caliche and sand. */
+    desert: ["#dcbf96", "#e2c8a0", "#d4b48a", "#e8d1ab"],
+    /** Red Rock's sandstone, and the canyon's red walls. */
+    redRock: ["#c4623f", "#b45838", "#d0714a"],
+    /**
+     * The canyon's bands from the river up: dark schist in the inner gorge, the bench's
+     * grey-green shale, the red cliff, the slopes above it, the pale band under the rim,
+     * and the buff rock at the top.
+     */
+    strata: ["#5a4a48", "#8a8a6a", "#b4563c", "#c8714a", "#e8d6b4", "#d9b98a"],
+    /** The rise to the plateau and the plateau's top: tan, with sage in it. */
+    rimland: ["#b99b74", "#a8926c", "#c4a67c"],
+    /** The white ring the lake has left on its rocks. */
+    bathtub: "#ece6da",
+    /** The river's beaches and the lake's shore, and under the water. */
+    beach: ["#d8c4a0", "#cbb592"],
+    lakebed: "#7a6a58",
+    /** Creosote and sage; the Joshua trees' spiky heads over shaggy trunks. */
+    creosote: ["#6f7a46", "#7f8650", "#5f6c3e", "#8a8e5c"],
+    joshua: ["#5f7a3a", "#6d8442", "#56703a"],
+    joshuaTrunk: "#7a6650",
+    /** The lots and verges in town. */
+    lot: ["#c9b496", "#bfa98c"],
+    /** Stucco, sandstone and concrete. */
+    stucco: ["#efe2cc", "#e8d4b8", "#f2e6d6", "#e0cdb2", "#f4ece0"],
+    /** Glass: gold, green, blue-grey, and the pyramid's black. */
+    goldGlass: "#c9a24a",
+    greenGlass: "#3f8a64",
+    blueGlass: "#4c6a86",
+    blackGlass: "#24242a",
+    bronze: "#9a6a3e",
+    /** The castle's turrets: red, blue and gold cones. */
+    turrets: ["#c4473a", "#2f6fb5", "#e0b03a"],
+    /** The Eiffel tower's iron, the volcano's rock, the big top's stripes. */
+    iron: "#7a5a46",
+    volcano: "#6a4a3e",
+    bigtop: ["#d4362a", "#f2ece2"],
+    /** The wheel's white rim, the tower's shaft and pod, the Sphere's shell (dark until it's lit). */
+    wheel: "#e8e6e2",
+    tower: "#e8e2d8",
+    sphere: "#2a2a34",
+    /** The lights: neon pink, cyan, gold, green, red and violet. */
+    neon: ["#ff4fa0", "#3fe0ff", "#ffc23a", "#6af06a", "#ff4a3a", "#b46aff"],
+    /** The lake before the fountains, and their spray. */
+    pool: "#5fb2c4",
+    spray: "#f4f8fa",
+    /** The Welcome sign: a white diamond, red letters, blue and gold trim. */
+    signWhite: "#f4efe2",
+    signRed: "#c4373a",
+    signBlue: "#2f5fb5",
+    signGold: "#e0b03a",
+    /** The circuit's kerbs at the corners, and the grid's paint. */
+    kerbRed: "#c43a32",
+    kerbWhite: "#f2ede4",
+    /** The diner: chrome, teal and red. */
+    chrome: "#d8dcdf",
+    teal: "#3fa6a0",
+    dinerRed: "#c4373a",
+    /** The trading post's adobe and its beams; the speed shop's checkers; the pit garage's white. */
+    adobe: "#d8a878",
+    vigas: "#7a5a3e",
+    checker: "#2a2a2c",
+    pitWhite: "#eeeae4",
+  },
+
+  /** The ferry (ADR 0023): a dark blue hull, red below the waterline, white above, a yellow funnel; and the causeway's stone. */
+  ferry: {
+    hull: "#2f4f6a",
+    bottom: "#a5382e",
+    deck: "#7a7670",
+    rail: "#e8e4dc",
+    house: "#f2eee6",
+    glass: "#2a3a46",
+    ramp: "#6a6660",
+    funnel: "#e0b03a",
+    buoy: "#e2702f",
+    stone: ["#a9a29a", "#9a948c", "#b4ada4"],
+    road: "#8f8a84",
+    bollard: "#3a3a3e",
   },
 
   // Airstrips and the plane.

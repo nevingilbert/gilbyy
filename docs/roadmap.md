@@ -32,8 +32,12 @@ subdomains." Update the **You are here** marker as you progress.
 > stops at a station and takes the truck through a tunnel to a third world, San
 > Francisco, built from public map data, with its own rig, garages, café and courses.
 > Its migration is on the live project, where the database checks pass; it's pull
-> request 24, not yet merged. Asked for next: Vegas and
-> the Grand Canyon by boat from the island, then Japan by helicopter from Vegas.
+> request 24, not yet merged.
+> Later on 2026-10-15, on `feat/game-vegas` (`decisions/0023`): a dock on the island and a
+> car ferry to a fourth world, Las Vegas and the Grand Canyon, with an F1 car that needs
+> tarmac, three garages, a diner and eight courses, the Grand Prix round the Strip among
+> them. Its migration is written, not yet on the live project. Asked for next: Japan by
+> helicopter from Vegas.
 > On 2026-10-10, photo mode (`decisions/0018`): P stops the world, the camera goes
 > round the truck, the shutter saves a picture. Client only; merged to `main` as pull
 > request 14 (`sessions/2026-10-10-photo-mode.md`).

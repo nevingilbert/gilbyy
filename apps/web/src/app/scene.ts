@@ -3,8 +3,11 @@ import { buildAirport } from "./airport-model";
 import { buildWildlife } from "./animal-models";
 import { buildCampCentre, buildCampGate, buildTentSite, mergeByMaterial } from "./campground-model";
 import { buildCar, buildTowTruck, type CarModel, type TowTruck } from "./car-model";
-import { buildCoffeeShop } from "./coffee-shop-model";
+import { buildCoffeeShop, buildDiner } from "./coffee-shop-model";
 import { hourAt, skyAt } from "./daylight";
+import { PIER, dockBoard, fromDock, pierTop } from "./dock";
+import { FERRY, mooredPose, type FerryFrame } from "./ferry";
+import { buildCausewayDressing, buildFerry } from "./ferry-model";
 import { standPose, type Frame } from "./flight";
 import { buildLandmark } from "./landmark-models";
 import { buildGarage, isShared, type Circle, type GarageModel } from "./garages";
@@ -33,6 +36,8 @@ import { buildSky } from "./sky";
 import { buildGrass, buildTerrainMesh, buildWaterMesh, makeSurface } from "./terrain-mesh";
 import { CONSIST, trainMotion } from "./track";
 import type { VehicleId } from "./vehicles";
+import type { VegasWorld } from "./vegas";
+import { buildVegasTown } from "./vegas-model";
 import { TOW_SPEC } from "./tow";
 import type { Threat } from "./wildlife";
 import { cableEnds } from "./winch";
@@ -42,10 +47,15 @@ const SHADOW_SPAN = 55;
 const FAR = 2600;
 /**
  * San Francisco's air is clearer than the valley's haze, so its skyline carries across it
- * from Twin Peaks, and the camera sees further to match (ADR 0022).
+ * from Twin Peaks, and the camera sees further to match (ADR 0022). The desert's is
+ * clearer too, so the Strip stands up across the basin from the canyon's rim (ADR 0023).
  */
 const CITY_AIR = 0.32;
 const CITY_FAR = 3800;
+const VEGAS_AIR = 0.45;
+/** How thick the air is in a world, against the valley's, and how far the camera sees in it. */
+const airOf = (w: World) => (w.id === "city" ? CITY_AIR : w.id === "vegas" ? VEGAS_AIR : 1);
+const farOf = (w: World) => (w.id === "city" || w.id === "vegas" ? CITY_FAR : FAR);
 
 /** A garage as the game sees it: where to stop, where to drive in, which way it faces. */
 export type Garage = {
@@ -69,10 +79,14 @@ export type Shot = { from: { x: number; y: number; z: number }; to: { x: number;
 
 /**
  * One frame of a film, and the ground the truck stands on in it: the plane's (flight.ts),
- * where that's its ramp and hold as well as the apron; or the train's (rail-trip.ts),
- * where it's the flat wagon and its ramp (ADR 0022).
+ * where that's its ramp and hold as well as the apron; the train's (rail-trip.ts), where
+ * it's the flat wagon and its ramp (ADR 0022); or the ferry's (ferry.ts), its car deck and
+ * ramps as well as the causeway (ADR 0023).
  */
-export type Film = { way: "plane"; frame: Frame; ground: Ground } | { way: "train"; frame: TrainFrame; ground: Ground };
+export type Film =
+  | { way: "plane"; frame: Frame; ground: Ground }
+  | { way: "train"; frame: TrainFrame; ground: Ground }
+  | { way: "boat"; frame: FerryFrame; ground: Ground };
 
 /** Puts a model on the ground at (x, z) turned by `rot`, and its colliders into the world. */
 function placer(world: World, group: THREE.Group, colliders: Obstacle[]) {
@@ -130,11 +144,13 @@ function placeCamp(world: World, windows: THREE.Material, glow: THREE.Material) 
   group.add(mergeByMaterial(pitches));
   const centre = buildCampCentre(glow);
   const city = (world as Partial<CityWorld>).city;
-  // On Washington Square the café has no gravel lot: the square is its patio.
-  const shop = buildCoffeeShop(windows, glow, !city);
+  const vegas = (world as Partial<VegasWorld>).vegas;
+  // On Washington Square the café has no gravel lot: the square is its patio. In Vegas it's a diner.
+  const shop = vegas ? buildDiner(windows, glow) : buildCoffeeShop(windows, glow, !city);
   const meet = place(shop.object, shop.colliders, world.cafe.x, world.cafe.z, world.cafe.rot);
   const cafe = { ...meet(shop.meet.x, shop.meet.z), r: shop.meet.r };
   if (city) place(centre.object, centre.colliders, city.fire.x, city.fire.z, world.camp.heading);
+  else if (vegas) place(centre.object, centre.colliders, vegas.fire.x, vegas.fire.z, world.camp.heading);
   else if (world.id === "valley") {
     place(centre.object, centre.colliders, CAMP_CENTRE.x, CAMP_CENTRE.z, 0);
     // The arch spans the road east out of camp, which runs along x. It stands outside the levelled camp, where the
@@ -201,6 +217,20 @@ function placeStation(world: World, windows: THREE.Material, lamps: THREE.Materi
   }
   world.addObstacles(colliders);
   return { group, setPoints };
+}
+
+/** The causeway's bollards and lamps, where there's a dock (ADR 0023). The causeway is the ground's; the ferry is the view's. */
+function placeDock(world: World, lamps: THREE.Material) {
+  const group = new THREE.Group();
+  const d = world.dock;
+  if (!d) return group;
+  const colliders: Obstacle[] = [];
+  const board = dockBoard(d);
+  const wait = Math.hypot(board.x - d.x, board.z - d.z);
+  const built = buildCausewayDressing(lamps, PIER.length, PIER.half, PIER.top, wait, (lz) => pierTop(d, lz) - d.y, d.y - d.water + 6);
+  placer(world, group, colliders)(built.object, built.colliders, d.x, d.z, d.heading, d.y);
+  world.addObstacles(colliders);
+  return group;
 }
 
 /**
@@ -358,7 +388,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     const group = new THREE.Group();
     const surface = makeSurface(world);
     const city = (world as Partial<CityWorld>).city ? (world as CityWorld) : null;
-    const streets = city ? kerbTexture(city) : null;
+    const vegas = (world as Partial<VegasWorld>).vegas ? (world as VegasWorld) : null;
+    const streets = city ? kerbTexture(city.city.kerb) : vegas ? kerbTexture(vegas.vegas.kerb) : null;
     const terrain = buildTerrainMesh(world, surface, streets);
     const grass = buildGrass(world, surface);
     const water = buildWaterMesh(world);
@@ -370,15 +401,19 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     const airport = placeAirport(world, windows, lamps);
     const station = placeStation(world, windows, lamps);
     const town = city ? placeCity(city, windows, lamps, cityUniforms) : null;
+    const strip = vegas ? buildVegasTown(vegas, windows, lamps) : null;
+    const dock = placeDock(world, lamps);
     const wildlife = buildWildlife(world);
+    const bushTones = world.id === "island" ? PALETTE.fern : world.id === "city" ? PALETTE.city.lawn : world.id === "vegas" ? PALETTE.vegas.creosote : PALETTE.bush;
     group.add(
       terrain.object, grass.object, water.object,
       buildTrees(world.trees, (x, z) => sampleGrid(world.snow, x, z)),
-      buildBushes(world.bushes, world.id === "island" ? PALETTE.fern : world.id === "city" ? PALETTE.city.lawn : PALETTE.bush), buildRocks(world.rocks),
-      sites.group, camp.group, courses.group, landmarks.group, airport.group, station.group, wildlife.object,
+      buildBushes(world.bushes, bushTones), buildRocks(world.rocks),
+      sites.group, camp.group, courses.group, landmarks.group, airport.group, station.group, dock, wildlife.object,
     );
     if (railway) group.add(railway.object);
     if (town) group.add(town.group);
+    if (strip) group.add(strip.object);
     scene.add(group);
     const remotes = createRemotes(scene, world);
 
@@ -393,14 +428,14 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
         for (const m of [o.material].flat()) if (!kept.has(m) && !isShared(m)) m.dispose();
       });
     }
-    return { world, terrain, grass, water, railway, sites, camp, courses, landmarks, airport, station, town, wildlife, remotes, dispose };
+    return { world, terrain, grass, water, railway, sites, camp, courses, landmarks, airport, station, town, strip, wildlife, remotes, dispose };
   }
 
   let world = first;
   let stage = stageFor(world);
   /** How far the camera sees in a world, with the sky's dome just inside that. */
   const fitView = (w: World) => {
-    const far = w.id === "city" ? CITY_FAR : FAR;
+    const far = farOf(w);
     camera.far = far;
     camera.updateProjectionMatrix();
     sky.object.scale.setScalar(far / FAR);
@@ -435,6 +470,20 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     if (st && world.id === "city") stationTrain.pose(carsOn(st.line, st.head, st.facing), 0);
   };
   standTrain();
+
+  // The ferry (ADR 0023): tied up at the dock of whichever world has one, riding the water
+  // there, the island's tide and all, until a crossing takes it.
+  const ferry = buildFerry(windows, lamps);
+  scene.add(ferry.object);
+  const moor = () => {
+    const d = world.dock;
+    ferry.object.visible = Boolean(d);
+    if (!d) return;
+    const berth = fromDock(d, 0, PIER.length + FERRY.gap + FERRY.length / 2);
+    ferry.pose(mooredPose(d, world.waterAt(berth.x, berth.z)));
+    ferry.setRamps(0, 0, 0, 0);
+  };
+  moor();
   /** The ground for the truck's own wheels: the deck it's on or the ground under it, by how high it already is. */
   let underTruck = 0;
   const truckGround: Ground = {
@@ -564,7 +613,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     const daylight = skyAt(hour);
     night = daylight.night;
     sky.apply(daylight, scene, fog, hemi, sun);
-    if (world.id === "city") fog.density *= CITY_AIR;
+    fog.density *= airOf(world);
     car.setLights(night);
     windows.emissiveIntensity = 0.1 + night * 1.6;
     lamps.emissiveIntensity = 0.4 + night * 2.2;
@@ -623,7 +672,19 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     wasRiding = Boolean(ride);
     stage.railway?.showTrain(!ride);
     stage.town?.update(camera.position, time, hour);
+    stage.strip?.update(time, night);
     cityUniforms.night.value = night;
+
+    // The ferry: where the film has it, its ramps as the film sets them, or tied up.
+    const crossing = film?.way === "boat" ? film.frame : null;
+    const d = world.dock;
+    if (crossing && d) {
+      ferry.object.visible = true;
+      ferry.pose(crossing.ferry);
+      const foot = fromDock(d, 0, PIER.length + FERRY.gap - FERRY.ramp);
+      ferry.setRamps(crossing.ramps[0], crossing.ramps[1], world.height(foot.x, foot.z) - (crossing.ferry.y + FERRY.deck), 0);
+    } else moor();
+    ferry.update(time, night);
 
     const ease = (rate: number) => 1 - Math.exp(-rate * dt);
     if (Number.isNaN(camYaw)) camYaw = state.heading;
@@ -702,7 +763,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
 
     // The shadow box follows the car, or the plane while it's the one to watch; snapping
     // it to texels stops it shimmering.
-    const focus = flight ? flight.plane : ride ? ride.camera.to : watch ? watch.to : state;
+    const focus = flight ? flight.plane : ride ? ride.camera.to : crossing ? crossing.camera.to : watch ? watch.to : state;
     const texel = (SHADOW_SPAN * 2) / sun.shadow.mapSize.x;
     const tx = Math.round(focus.x / texel) * texel;
     const tz = Math.round(focus.z / texel) * texel;
@@ -779,6 +840,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     fitView(world);
     park();
     standTrain();
+    moor();
     wasRiding = false;
     rampOpen = 0;
     camPos.set(0, 0, 0);

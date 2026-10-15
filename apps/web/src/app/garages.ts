@@ -4,9 +4,10 @@ import { PALETTE } from "./palette";
 
 export type GarageStyle =
   | "workshop" | "barn" | "bunker" | "quonset" | "cabin" | "container" | "hangar" | "ranch" | "shack" | "outpost" | "lodge"
-  | "victorian" | "pier" | "airfield";
+  | "victorian" | "pier" | "airfield" | "speedshop" | "pitgarage" | "tradingpost";
 export const GARAGE_STYLES: readonly GarageStyle[] = [
   "workshop", "barn", "bunker", "quonset", "cabin", "container", "hangar", "ranch", "shack", "outpost", "lodge", "victorian", "pier", "airfield",
+  "speedshop", "pitgarage", "tradingpost",
 ];
 
 export type Circle = { x: number; z: number; r: number };
@@ -859,12 +860,113 @@ const airfield: Build = (root, k, glass) => {
   return { setDoor, colliders: ring([], -W / 2 - 0.3, W / 2 + 0.3, -F, F), ...entry(F, 12) };
 };
 
+// --- Vegas's (ADR 0023). ---
+
+/** A door of ribbed steel that rolls up under the lintel. */
+const rollUp = (root: THREE.Group, w: number, h: number, z: number, colour: THREE.ColorRepresentation) =>
+  part(root, 0, h, z, (dk) => {
+    dk.box(lambert(colour), w, h, 0.08, 0, -h / 2, 0);
+    for (let y = 0.3; y < h; y += 0.32) dk.box(lambert(tone(colour, 0.8)), w, 0.05, 0.1, 0, -y, 0.02);
+  });
+
+/**
+ * The speed shop at the south end of the Strip: a white box out of the fifties, a band of
+ * chequers round it, a long window full of parts, and a pylon sign that lights up at night.
+ */
+const speedshop: Build = (root, k, glass) => {
+  const W = 14, D = 11, H = 5.2, DW = 4.6, DH = 3.8, F = D / 2;
+  const wall = lambert(PALETTE.vegas.stucco[0]), dark = lambert(PALETTE.vegas.checker), white = lambert(PALETTE.vegas.kerbWhite);
+  const red = lambert(PALETTE.vegas.dinerRed);
+  shell(k, wall, W, D, H, DW, DH);
+  k.box(wall, W + 0.6, 0.35, D + 0.6, 0, H + 0.17, 0);
+  // Chequers round the top of the walls.
+  for (let x = -W / 2; x < W / 2 - 0.01; x += 0.5) {
+    for (const [row, y] of [[0, H - 0.75], [1, H - 0.3]] as const) {
+      const m = (Math.round((x + W / 2) / 0.5) + row) % 2 ? dark : white;
+      k.box(m, 0.5, 0.45, 0.06, x + 0.25, y, F + 0.03);
+      k.box(m, 0.5, 0.45, 0.06, x + 0.25, y, -F - 0.03);
+    }
+  }
+  // The shop window beside the door, and a red stripe under it.
+  pane(k.at(-W / 4 - 1, 2.1, F + 0.02), glass, 3.6, 1.9, PALETTE.vegas.chrome);
+  k.box(red, W, 0.25, 0.08, 0, 0.9, F + 0.05);
+  // The pylon: a tall blade on two legs, a starburst on top, its panels lit.
+  const py = k.at(W / 2 + 1.6, 0, F + 1.2);
+  for (const s of [1, -1]) py.box(dark, 0.2, 9, 0.2, s * 0.6, 4.5, 0);
+  py.box(red, 1.8, 4.2, 0.4, 0, 6.6, 0);
+  py.box(glass, 1.4, 3.6, 0.46, 0, 6.6, 0);
+  for (let i = 0; i < 8; i++) py.box(lambert(PALETTE.vegas.signGold), 0.12, 1.4, 0.12, 0, 9.6, 0, 0, 0, (i * Math.PI) / 8);
+  const door = rollUp(root, DW, DH, F - 0.3, PALETTE.vegas.chrome);
+  const props = [{ x: W / 2 + 1.6, z: F + 1.2, r: 1.1 }];
+  return { setDoor: (t) => (door.scale.y = 1 - 0.95 * t), colliders: ring(props, -W / 2, W / 2, -F, F), ...entry(F, 11) };
+};
+
+/**
+ * The pit garage by the Grand Prix's grid: one bay of a pit building, white, its top storey
+ * a band of dark glass, a red line along the bottom, and a wide door to the pit lane.
+ */
+const pitgarage: Build = (root, k, glass) => {
+  const W = 16, D = 13, H = 7.4, DW = 6.4, DH = 3.9, F = D / 2;
+  const wall = lambert(PALETTE.vegas.pitWhite), red = lambert(PALETTE.vegas.kerbRed), dark = lambert(PALETTE.vegas.checker);
+  shell(k, wall, W, D, H, DW, DH);
+  k.box(wall, W + 0.3, 0.3, D + 0.3, 0, H + 0.15, 0);
+  // The hospitality floor's glass, round three sides above the door.
+  k.box(glass, W - 0.6, 2.2, 0.1, 0, H - 1.6, F + 0.06);
+  for (const s of [1, -1]) k.box(glass, 0.1, 2.2, D - 0.6, s * (W / 2 + 0.06), H - 1.6, 0);
+  k.box(red, W + 0.1, 0.3, 0.1, 0, 0.35, F + 0.06);
+  k.box(dark, W + 0.1, 0.18, 0.12, 0, H - 2.9, F + 0.08);
+  // A gantry of lights over the door, and the bay's board beside it.
+  k.box(dark, DW + 1.6, 0.25, 0.4, 0, DH + 0.55, F + 0.4);
+  for (let x = -DW / 2; x <= DW / 2 + 0.01; x += DW / 4) k.box(glass, 0.35, 0.3, 0.3, x, DH + 0.3, F + 0.45);
+  k.box(dark, 1.6, 2.4, 0.15, DW / 2 + 1.6, 2.2, F + 0.1);
+  k.box(lambert(PALETTE.vegas.signGold), 1.2, 0.5, 0.17, DW / 2 + 1.6, 2.9, F + 0.12);
+  const door = rollUp(root, DW, DH, F - 0.3, PALETTE.vegas.kerbWhite);
+  // A tyre stack each side of the door.
+  const tyres = lambert(PALETTE.tyre);
+  for (const s of [1, -1]) for (let i = 0; i < 4; i++) k.cyl(tyres, 0.36, 0.26, s * (DW / 2 + 0.9), 0.15 + i * 0.27, F + 0.8, 0, 0, 12);
+  const props = [1, -1].map((s) => ({ x: s * (DW / 2 + 0.9), z: F + 0.8, r: 0.45 }));
+  return { setDoor: (t) => (door.scale.y = 1 - 0.95 * t), colliders: ring(props, -W / 2, W / 2, -F, F), ...entry(F, 12) };
+};
+
+/**
+ * The trading post on the canyon's rim: thick adobe walls with the roof beams' ends
+ * standing out of them, a parapet round a flat roof, a porch of rough posts along the
+ * front, and timber doors that swing open.
+ */
+const tradingpost: Build = (root, k, glass) => {
+  const W = 13, D = 10, H = 4.4, DW = 4, DH = 3.3, F = D / 2;
+  const adobe = lambert(PALETTE.vegas.adobe), beam = lambert(PALETTE.vegas.vigas), wood = lambert(PALETTE.timber);
+  shell(k, adobe, W, D, H, DW, DH, 0.5);
+  // Parapet, a little ragged, and the roof inside it.
+  k.box(adobe, W + 0.3, 0.6, 0.6, 0, H + 0.3, F - 0.15);
+  k.box(adobe, W + 0.3, 0.6, 0.6, 0, H + 0.3, -F + 0.15);
+  for (const s of [1, -1]) k.box(adobe, 0.6, 0.6, D, s * (W / 2 - 0.15), H + 0.3, 0);
+  k.box(lambert(tone(PALETTE.vegas.adobe, 0.8)), W - 0.4, 0.2, D - 0.4, 0, H - 0.05, 0);
+  // The beams' ends along both long walls.
+  for (let x = -W / 2 + 0.9; x < W / 2 - 0.5; x += 1.2) for (const s of [1, -1]) k.cyl(beam, 0.14, 0.9, x, H - 0.45, s * (F + 0.3), Math.PI / 2, 0, 7);
+  // The porch: posts, a beam along them, a roof of poles.
+  for (const x of [-W / 2 + 0.4, -DW / 2 - 0.6, DW / 2 + 0.6, W / 2 - 0.4]) k.cyl(wood, 0.13, 3.1, x, 1.55, F + 2.2, 0, 0, 7);
+  k.box(wood, W, 0.25, 0.3, 0, 3.15, F + 2.2);
+  for (let x = -W / 2 + 0.3; x < W / 2; x += 0.35) k.cyl(beam, 0.07, 2.4, x, 3.35, F + 1.1, Math.PI / 2 - 0.08, 0, 5);
+  for (const s of [1, -1]) pane(k.at(s * 4.4, 2.0, F + 0.26), glass, 1.4, 1.2, PALETTE.vegas.vigas);
+  // A row of rugs over the porch rail, in the canyon's colours.
+  PALETTE.vegas.strata.slice(1, 5).forEach((c, i) => k.box(lambert(c), 0.9, 0.7, 0.05, -W / 2 + 1.4 + i * 1.0, 2.6, F + 2.38));
+  const leaf = (dk: Kit, s: number) => {
+    dk.box(wood, DW / 2, DH, 0.1, (s * DW) / 4, DH / 2, 0);
+    for (let y = 0.4; y < DH; y += 0.5) dk.box(beam, DW / 2 - 0.1, 0.08, 0.12, (s * DW) / 4, y, 0.02);
+  };
+  const doors = swingDoors(root, DW, F + 0.05, leaf);
+  const props = [-W / 2 + 0.4, -DW / 2 - 0.6, DW / 2 + 0.6, W / 2 - 0.4].map((x) => ({ x, z: F + 2.2, r: 0.25 }));
+  return { setDoor: doors, colliders: ring(props, -W / 2, W / 2, -F, F), ...entry(F, 11) };
+};
+
 const BUILDERS: Record<GarageStyle, Build> = {
   workshop, barn, bunker, quonset, cabin, container: containers, hangar, ranch,
   shack: hut({ wall: PALETTE.bamboo, roof: PALETTE.thatch, boards: true }),
   outpost: hut({ wall: PALETTE.driftwood, roof: [PALETTE.roofTin, PALETTE.corrugated], boards: false }),
   lodge: hut({ wall: PALETTE.logWood, roof: PALETTE.jungleThatch, boards: false }),
   victorian, pier: pierShed, airfield,
+  speedshop, pitgarage, tradingpost,
 };
 
 /** A garage the car can drive into. `windowMaterial` is shared and owned by the caller; it glows at night. */
