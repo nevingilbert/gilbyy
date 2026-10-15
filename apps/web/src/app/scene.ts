@@ -731,8 +731,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     if (crossing && d) {
       ferry.object.visible = true;
       ferry.pose(crossing.ferry);
-      const foot = fromDock(d, 0, PIER.length + FERRY.gap - FERRY.ramp);
-      ferry.setRamps(crossing.ramps[0], crossing.ramps[1], world.height(foot.x, foot.z) - (crossing.ferry.y + FERRY.deck), 0);
+      const edge = fromDock(d, 0, PIER.length - 1);
+      ferry.setRamps(crossing.ramps[0], crossing.ramps[1], world.height(edge.x, edge.z) - (crossing.ferry.y + FERRY.deck), 0);
     } else moor();
     ferry.update(time, night);
 

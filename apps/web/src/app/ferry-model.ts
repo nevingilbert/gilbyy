@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { FERRY, type FerryPose } from "./ferry";
+import { paved } from "./airport-model";
+import { FERRY, rampAngle, type FerryPose } from "./ferry";
 import { Kit, lambert, tone } from "./garages";
 import { PALETTE } from "./palette";
 
@@ -15,7 +16,7 @@ import { PALETTE } from "./palette";
 export type FerryModel = {
   object: THREE.Group;
   pose(p: FerryPose): void;
-  /** Each ramp, 0 up and 1 down, and how far above the deck the ground is that its foot comes down on. */
+  /** Each ramp, 0 up and 1 down, and how far over the deck the quay's top is that it comes down on. */
   setRamps(near: number, far: number, nearRise: number, farRise: number): void;
   /** The masthead light, which blinks at night: `night` is 0 by day and 1 at full night. */
   update(time: number, night: number): void;
@@ -98,15 +99,17 @@ export function buildFerry(windows: THREE.Material, lamps: THREE.Material): Ferr
   light.position.set(cx - 0.4, wy + 4.75, 0);
   hull.add(light);
 
-  // The ramps: a slab and its ribs each, hinged at an end of the deck.
+  // The ramps: a slab and its ribs each, hinged at an end of the deck, half the slab's
+  // thickness over it, so a ramp lying flat has its underside on the deck's level.
+  const { hinge, slab } = FERRY;
   const ramps = [1, -1].map((s) => {
     const g = new THREE.Group();
-    g.position.set(0, D, s * (half - 0.2));
+    g.position.set(0, D + slab / 2, s * (half - hinge));
     const rk = new Kit();
     const steel = lambert(PALETTE.ferry.ramp);
-    rk.box(steel, lane * 2, 0.22, R, 0, 0, (s * R) / 2);
-    for (let z = 0.5; z < R; z += 0.6) rk.box(lambert(tone(PALETTE.ferry.ramp, 0.8)), lane * 2 - 0.4, 0.06, 0.1, 0, 0.13, s * z);
-    for (const x of [-lane, lane]) rk.box(rail, 0.12, 0.5, R, x, 0.3, (s * R) / 2);
+    rk.box(steel, lane * 2, slab, R, 0, 0, (s * R) / 2);
+    for (let z = 0.5; z < R; z += 0.6) rk.box(lambert(tone(PALETTE.ferry.ramp, 0.8)), lane * 2 - 0.4, 0.06, 0.1, 0, slab / 2 + 0.02, s * z);
+    for (const x of [-lane, lane]) rk.box(rail, 0.12, 0.5, R, x, slab / 2 + 0.19, (s * R) / 2);
     rk.build(g);
     hull.add(g);
     return { g, s };
@@ -121,9 +124,9 @@ export function buildFerry(windows: THREE.Material, lamps: THREE.Material): Ferr
     setRamps(near, far, nearRise, farRise) {
       [near, far].forEach((t, i) => {
         const { g, s } = ramps[i];
-        // Up, it stands nearly upright against the end of the deck; down, it rests on whatever is at its foot.
+        // Up, it stands nearly upright against the end of the deck; down, it rests on the quay (ferry.ts).
         const up = 1.35;
-        const down = Math.atan2(i ? farRise : nearRise, R);
+        const down = rampAngle(i ? farRise : nearRise);
         const a = up + (down - up) * t;
         g.rotation.x = -s * a;
       });
@@ -135,27 +138,34 @@ export function buildFerry(windows: THREE.Material, lamps: THREE.Material): Ferr
   };
 }
 
-/**
- * A solid of stone along z: its top `w` either side of the middle at each sample's height,
- * its sides and end straight down to `bottom`. Samples go from the shore out.
- */
-function stoneStrip(w: number, samples: [number, number][], bottom: number) {
+/** Triangles from quads, each four corners going round. */
+function quads(list: number[][][]) {
   const pos: number[] = [];
-  const quad = (a: number[], b: number[], c: number[], d: number[]) => pos.push(...a, ...b, ...c, ...a, ...c, ...d);
-  for (let i = 1; i < samples.length; i++) {
-    const [z0, y0] = samples[i - 1];
-    const [z1, y1] = samples[i];
-    quad([-w, y0, z0], [-w, y1, z1], [w, y1, z1], [w, y0, z0]);
-    quad([w, y0, z0], [w, y1, z1], [w, bottom, z1], [w, bottom, z0]);
-    quad([-w, bottom, z0], [-w, bottom, z1], [-w, y1, z1], [-w, y0, z0]);
-  }
-  const [zEnd, yEnd] = samples[samples.length - 1];
-  quad([-w, yEnd, zEnd], [-w, bottom, zEnd], [w, bottom, zEnd], [w, yEnd, zEnd]);
+  for (const [a, b, c, d] of list) pos.push(...a, ...b, ...c, ...a, ...c, ...d);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array((pos.length / 3) * 2), 2));
   geo.computeVertexNormals();
   return geo;
+}
+
+/** The top of a strip of stone along z, `w` either side of the middle at each sample's height. Samples go from the shore out. */
+function stoneTop(w: number, samples: [number, number][]) {
+  return quads(samples.slice(1).map(([z1, y1], i) => {
+    const [z0, y0] = samples[i];
+    return [[-w, y0, z0], [-w, y1, z1], [w, y1, z1], [w, y0, z0]];
+  }));
+}
+
+/** And its sides and its far end, straight down from the top to `bottom`. */
+function stoneSides(w: number, samples: [number, number][], bottom: number) {
+  const list = samples.slice(1).flatMap(([z1, y1], i) => {
+    const [z0, y0] = samples[i];
+    return [[[w, y0, z0], [w, y1, z1], [w, bottom, z1], [w, bottom, z0]], [[-w, bottom, z0], [-w, bottom, z1], [-w, y1, z1], [-w, y0, z0]]];
+  });
+  const [zEnd, yEnd] = samples[samples.length - 1];
+  list.push([[-w, yEnd, zEnd], [-w, bottom, zEnd], [w, bottom, zEnd], [w, yEnd, zEnd]]);
+  return quads(list);
 }
 
 /**
@@ -168,16 +178,20 @@ function stoneStrip(w: number, samples: [number, number][], bottom: number) {
 export function buildCausewayDressing(lamps: THREE.Material, length: number, half: number, top: number, waitAt: number, rise: (lz: number) => number, depth: number) {
   const object = new THREE.Group();
   const k = new Kit();
-  const bollard = lambert(PALETTE.ferry.bollard), paint = lambert(PALETTE.runwayPaint);
+  const bollard = lambert(PALETTE.ferry.bollard), paint = paved(PALETTE.runwayPaint, 3);
   const samples: [number, number][] = [];
   for (let lz = 0; lz < length; lz += 2) samples.push([lz, rise(lz)]);
   samples.push([length, rise(length)]);
-  k.add(lambert(PALETTE.ferry.stone[0]), stoneStrip(top, samples, -depth), 0, 0, 0);
-  k.add(lambert(PALETTE.ferry.road), stoneStrip(half, samples.map(([z, y]) => [z, y + 0.03]), -0.2), 0, 0, 0);
+  // The stone's top lies on the ground laid at the same height under it, the road on the
+  // stone and the paint on the road: each is nudged toward the camera over the one beneath,
+  // so none of them flickers through another.
+  k.add(paved(PALETTE.ferry.stone[0], 1), stoneTop(top, samples), 0, 0, 0);
+  k.add(lambert(PALETTE.ferry.stone[0]), stoneSides(top, samples, -depth), 0, 0, 0);
+  k.add(paved(PALETTE.ferry.road, 2), stoneTop(half, samples), 0, 0, 0);
   for (let z = 6; z < length; z += 8) for (const s of [1, -1]) k.cyl(bollard, 0.22, 0.75, s * (half + 0.6), rise(z) + 0.37, z, 0, 0, 8);
   // The waiting box, out near the end.
-  for (const s of [1, -1]) k.box(paint, 0.2, 0.03, 9, s * 2.4, 0.05, waitAt);
-  for (const z of [waitAt - 4.5, waitAt + 4.5]) k.box(paint, 5, 0.03, 0.2, 0, 0.05, z);
+  for (const s of [1, -1]) k.box(paint, 0.2, 0.02, 9, s * 2.4, 0.01, waitAt);
+  for (const z of [waitAt - 4.5, waitAt + 4.5]) k.box(paint, 5, 0.02, 0.2, 0, 0.01, z);
   // Two lamps at the end, a post each.
   for (const s of [1, -1]) {
     k.cyl(bollard, 0.08, 5.4, s * (half + 0.6), 2.7, length - 3, 0, 0, 6);

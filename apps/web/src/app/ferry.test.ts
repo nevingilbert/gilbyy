@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DOCK_REACH, PIER, dockBoard, dockLeave, fromDock, toDock } from "./dock";
-import { FERRY, LAND, SAIL, ferryBase, mooredPose, sailIn, sailOut } from "./ferry";
+import { FERRY, LAND, SAIL, ferryBase, mooredPose, rampAngle, sailIn, sailOut } from "./ferry";
 import { buildIsland } from "./island";
 import { TIDE } from "./tide";
 import { buildVegas } from "./vegas";
@@ -44,6 +44,36 @@ describe.each(["island", "vegas"] as const)("the %s's dock", (id) => {
     const leave = dockLeave(d);
     expect(toDock(d, leave.x, leave.z).z).toBeLessThan(PIER.length / 2);
     expect(DOCK_REACH).toBeLessThan(PIER.length / 4);
+  });
+
+  it("lays its ramp on the quay at any water it floats on, never through it", () => {
+    // Level with the quay at high water, so there the ramp lies flat.
+    expect(FERRY.deck).toBe(PIER.rise);
+    const low = d.water - (id === "island" ? TIDE.fall : 0);
+    const { gap, hinge, slab, ramp } = FERRY;
+    for (let water = low; water <= d.water + 1e-9; water += 0.1) {
+      const rise = d.y - (water + FERRY.deck);
+      const a = rampAngle(rise);
+      // Its underside, over the deck, `h` out from the hinge: never into the quay's edge or top,
+      // and its lip resting on the top, not standing off it.
+      const under = (h: number) => slab / 2 + h * Math.tan(a) - slab / 2 / Math.cos(a);
+      const reach = ramp * Math.cos(a);
+      expect(reach, `at ${water.toFixed(1)}`).toBeGreaterThan(gap + hinge + 0.15);
+      for (let h = gap + hinge; h <= reach; h += 0.05) expect(under(h), `at ${water.toFixed(1)}, ${h.toFixed(2)} out`).toBeGreaterThan(rise - 1e-6);
+      expect(under(reach) - rise, `at ${water.toFixed(1)}`).toBeLessThan(0.15);
+      // Gentle enough to drive up.
+      expect(a).toBeLessThan((16 * Math.PI) / 180);
+      // And the truck's wheels follow it from the deck to the causeway without a jump.
+      const f = mooredPose(d, water);
+      const base = (x: number, z: number) => ferryBase(d, f, [1, 0], ground, x, z);
+      let last = NaN;
+      for (let lz = PIER.length - 6; lz <= PIER.length + gap + 6; lz += 0.25) {
+        const p = fromDock(d, 0, lz);
+        const b = base(p.x, p.z);
+        if (!Number.isNaN(last)) expect(Math.abs(b - last), `at ${water.toFixed(1)}, ${lz} out`).toBeLessThan(0.3);
+        last = b;
+      }
+    }
   });
 
   it("films the way out: along the causeway, over the ramp, up the deck, and away into the haze", () => {

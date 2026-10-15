@@ -19,15 +19,20 @@ import type { Obstacle } from "./world";
 export const FERRY = {
   length: 36,
   beam: 11,
-  /** The car deck over the waterline, and how deep the hull goes under it. */
-  deck: 1.3,
+  /**
+   * The car deck over the waterline, level with the causeway's road at high water
+   * (`PIER.rise`), so the ramp lies flat onto it; and how deep the hull goes under it.
+   */
+  deck: 2.4,
   draught: 2.2,
   /** Half the lane down the middle of the deck; the cabins are along the left of it. */
   lane: 3.5,
-  /** Each ramp's length, hinged at an end of the deck. */
-  ramp: 7,
-  /** The gap between the near end and the causeway's quay wall when it's tied up. */
-  gap: 3,
+  /** Each ramp's length, hinged this far in from an end of the deck, and its thickness. */
+  ramp: 6.6,
+  hinge: 0.2,
+  slab: 0.22,
+  /** The gap between the near end and the causeway's quay wall when it's tied up: the ramp spans it. */
+  gap: 6,
   /** How far in from each end the hull's bottom is level; past that it rakes up to the end. */
   body: 14,
 } as const;
@@ -76,22 +81,44 @@ function toFerry(f: FerryPose, x: number, z: number) {
 }
 
 /**
+ * The angle a ramp lowered toward the quay comes to rest at, up from level, when the quay's
+ * top is `rise` over the deck. It's hinged a little over the deck, so lying flat its
+ * underside is on the deck's level. With the quay higher, as on the island when the tide is
+ * out, the ramp comes down onto the quay's edge and rests on it; with the quay lower it rests
+ * its lip on the top. Whichever it meets first as it comes down.
+ */
+export function rampAngle(rise: number) {
+  const { gap, hinge, slab, ramp } = FERRY;
+  // The edge, from the hinge's line; the ramp's underside is half its thickness below that line.
+  const [e, c] = [gap + hinge, rise - slab / 2];
+  const edge = Math.atan2(c, e) + Math.asin(Math.min(1, slab / 2 / Math.hypot(e, c)));
+  const lip = Math.asin(Math.max(-1, Math.min(1, rise / ramp)));
+  return Math.max(edge, lip);
+}
+
+/** The top of a lowered ramp over the deck, `h` metres out from its hinge, when the quay's top is `rise` over the deck. */
+export function rampTop(rise: number, h: number) {
+  const a = rampAngle(rise);
+  return FERRY.slab / 2 + h * Math.tan(a) + FERRY.slab / 2 / Math.cos(a);
+}
+
+/**
  * The height of what's under a wheel at (x, z) while the ferry is tied up at `d`: its
- * deck, a lowered ramp sloping up from the deck to the causeway, or `ground` anywhere else.
+ * deck, a lowered ramp from the deck to the causeway, or `ground` anywhere else.
  */
 export function ferryBase(d: Dock, f: FerryPose, ramps: [number, number], ground: (x: number, z: number) => number, x: number, z: number) {
   const p = toFerry(f, x, z);
   const deck = f.y + FERRY.deck;
   if (Math.abs(p.x) > FERRY.lane + 0.3) return ground(x, z);
   const half = FERRY.length / 2;
-  if (Math.abs(p.z) <= half) return deck;
-  // A ramp down at the end it's past reaches from the deck to wherever its foot rests.
+  if (Math.abs(p.z) <= half - FERRY.hinge) return deck;
+  // A ramp down at the end it's past: its top, out to its lip, over the quay where it laps it.
   const end = p.z > 0 ? 0 : 1;
-  const out = Math.abs(p.z) - half;
-  if (ramps[end] > 0.5 && out <= FERRY.ramp) {
-    const foot = fromDock(d, 0, PIER.length + FERRY.gap - FERRY.ramp);
-    const top = Math.max(deck, ground(foot.x, foot.z));
-    return deck + ((top - deck) * out) / FERRY.ramp;
+  const h = Math.abs(p.z) - half + FERRY.hinge;
+  if (ramps[end] > 0.5) {
+    const edge = fromDock(d, 0, PIER.length - 1);
+    const rise = ground(edge.x, edge.z) - deck;
+    if (h <= FERRY.ramp * Math.cos(rampAngle(rise))) return Math.max(deck + rampTop(rise, h), ground(x, z));
   }
   return ground(x, z);
 }
@@ -187,14 +214,14 @@ export function sailOut(d: Dock, from: { x: number; z: number; heading: number }
     const from_ = fromDock(d, -16, PIER.length - 22);
     camera = {
       from: { x: from_.x, y: d.y + 4.5, z: from_.z },
-      to: { ...onFerry(mooredPose(d, water), 0, 2.5, 4) },
+      to: { ...onFerry(mooredPose(d, water), 0, FERRY.deck + 1.2, 4) },
       shot: 0, ease: 2.2, wide: true,
     };
   } else {
     // Up on the lamp's gantry at the end of the causeway, high enough to see the truck on the
     // deck over the raised ramp, as the ferry pulls away into the haze.
     const from_ = fromDock(d, 6, PIER.length - 4);
-    camera = { from: { x: from_.x, y: d.y + 9, z: from_.z }, to: onFerry(ferry, 0, 1.5, 0), shot: 1, ease: 0, wide: true };
+    camera = { from: { x: from_.x, y: d.y + 9, z: from_.z }, to: onFerry(ferry, 0, FERRY.deck + 0.2, 0), shot: 1, ease: 0, wide: true };
   }
   camera.from = clear(camera.from, ground);
   return { ferry, ramps, truck: t >= SAIL.end ? null : truck, camera, haze: smooth(SAIL.haze[0], SAIL.haze[1], t) };
@@ -227,11 +254,11 @@ export function sailIn(d: Dock, ground: (x: number, z: number) => number, water:
   if (t < 9) {
     // Low on the causeway's end, looking out to the ferry coming in out of the haze.
     const from_ = fromDock(d, -5, PIER.length - 3);
-    camera = { from: { x: from_.x, y: d.y + 2.6, z: from_.z }, to: onFerry(ferry, 0, 3, 0), shot: 10, ease: 0, wide: true };
+    camera = { from: { x: from_.x, y: d.y + 2.6, z: from_.z }, to: onFerry(ferry, 0, FERRY.deck + 1.7, 0), shot: 10, ease: 0, wide: true };
   } else if (t < LAND.rampDown[1]) {
     // On the shore beside the causeway, as it comes alongside the end and ties up.
     const from_ = fromDock(d, 26, 12);
-    camera = { from: { x: from_.x, y: d.y + 6, z: from_.z }, to: onFerry(ferry, 0, 2, 8), shot: 11, ease: 0, wide: true };
+    camera = { from: { x: from_.x, y: d.y + 6, z: from_.z }, to: onFerry(ferry, 0, FERRY.deck + 0.7, 8), shot: 11, ease: 0, wide: true };
   } else {
     // Beside the causeway, following the truck back along it.
     const from_ = fromDock(d, 18, PIER.length * 0.45);

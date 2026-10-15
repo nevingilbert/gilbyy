@@ -150,6 +150,10 @@ Pure modules, no three.js, all unit-tested:
     `height()` lay over the grid, as the valley's does the jump's deck). `ferry.ts` is the
     crossing as a film, pure like the flight's and the train's: `sailOut()` and
     `sailIn()`, a frame for any time, and `ferryBase()` for what the truck's wheels stand on.
+    The ferry's deck is level with the causeway at high water; when the island's tide is
+    out it floats lower, and its ramp comes down onto the quay's edge and rests there
+    (`rampAngle()`), never through it. The causeway's stone, its road and the paint on that
+    are each drawn a layer over the one beneath (`paved()`), so none flickers.
   - `vegas.ts`'s `buildVegas()` returns the same `World` shape again, with nothing to
     fetch: the ground from noise and a few drawn lines (the canyon's, the side canyon's,
     the lake's blobs), roads graded into it on smoothed profiles (`gradeRoad`) and painted
