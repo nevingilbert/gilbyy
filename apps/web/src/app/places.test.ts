@@ -4,7 +4,8 @@ import { beforeAll, describe, it, expect } from "vitest";
 import { buildCity } from "./city";
 import { loadCityData } from "./city-streets";
 import { buildIsland } from "./island";
-import { CAFE_KEY, CAFE_KEYS, PLACES, airportKey, countFound, dockKey, eggKey, foundLine, garageKey, placesOf, stationKey, totalsOf } from "./places";
+import { buildJapan } from "./japan";
+import { CAFE_KEY, CAFE_KEYS, PLACES, airportKey, countFound, dockKey, eggKey, foundLine, garageKey, helipadKey, placesOf, stationKey, totalsOf } from "./places";
 import { LocalStore } from "./store";
 import { buildVegas } from "./vegas";
 import { buildWorld, type World } from "./world";
@@ -17,7 +18,7 @@ const [valley, island] = worlds;
 // The city's ground and streets are fetched on their own (ADR 0022).
 beforeAll(async () => {
   await loadCityData();
-  worlds.push(buildCity(), buildVegas());
+  worlds.push(buildCity(), buildVegas(), buildJapan());
 }, 30000);
 
 describe("places", () => {
@@ -31,7 +32,7 @@ describe("places", () => {
       ),
     );
     expect(server).toEqual(PLACES);
-    expect(worlds.map((w) => w.id)).toEqual(["valley", "island", "city", "vegas"]);
+    expect(worlds.map((w) => w.id)).toEqual(["valley", "island", "city", "vegas", "japan"]);
     for (const world of worlds) {
       // One garage of each style, or a style would stop naming a place.
       const onMap = placesOf(world).map((p) => p.key).sort();
@@ -47,17 +48,20 @@ describe("places", () => {
   it("are counted by kind for one world, once each, ignoring anything that isn't one there", () => {
     const found = [
       garageKey("barn"), garageKey("barn"), garageKey("cabin"), CAFE_KEY, "garage:castle", garageKey("shack"), eggKey("bank"), airportKey("island"),
-      garageKey("pier"), stationKey("city"), CAFE_KEYS.city, dockKey("vegas"), garageKey("pitgarage"),
+      garageKey("pier"), stationKey("city"), CAFE_KEYS.city, dockKey("vegas"), garageKey("pitgarage"), helipadKey("japan"), garageKey("kura"),
     ];
-    expect(countFound(found, "valley")).toEqual({ garage: 2, cafe: 1, airport: 0, station: 0, dock: 0, egg: 1 });
+    expect(countFound(found, "valley")).toEqual({ garage: 2, cafe: 1, airport: 0, station: 0, dock: 0, helipad: 0, egg: 1 });
     expect(foundLine(countFound(found, "valley"), "valley")).toBe("2/8 garages · 1/1 café · 0/1 airport · 0/1 station · 1/4 easter eggs");
-    expect(countFound(found, "island")).toEqual({ garage: 1, cafe: 0, airport: 1, station: 0, dock: 0, egg: 0 });
-    // The island has no station and no easter eggs, so its line doesn't mention them; the city has no airport, and Vegas only a dock.
+    expect(countFound(found, "island")).toEqual({ garage: 1, cafe: 0, airport: 1, station: 0, dock: 0, helipad: 0, egg: 0 });
+    // The island has no station and no easter eggs, so its line doesn't mention them; the city has no airport, Vegas a dock and a
+    // helipad, and Japan only a helipad.
     expect(foundLine(countFound(found, "island"), "island")).toBe("1/3 garages · 0/1 café · 1/1 airport · 0/1 dock");
-    expect(countFound(found, "city")).toEqual({ garage: 1, cafe: 1, airport: 0, station: 1, dock: 0, egg: 0 });
+    expect(countFound(found, "city")).toEqual({ garage: 1, cafe: 1, airport: 0, station: 1, dock: 0, helipad: 0, egg: 0 });
     expect(foundLine(countFound(found, "city"), "city")).toBe("1/3 garages · 1/1 café · 1/1 station");
-    expect(countFound(found, "vegas")).toEqual({ garage: 1, cafe: 0, airport: 0, station: 0, dock: 1, egg: 0 });
-    expect(foundLine(countFound(found, "vegas"), "vegas")).toBe("1/3 garages · 0/1 café · 1/1 dock");
+    expect(countFound(found, "vegas")).toEqual({ garage: 1, cafe: 0, airport: 0, station: 0, dock: 1, helipad: 0, egg: 0 });
+    expect(foundLine(countFound(found, "vegas"), "vegas")).toBe("1/3 garages · 0/1 café · 1/1 dock · 0/1 helipad");
+    expect(countFound(found, "japan")).toEqual({ garage: 1, cafe: 0, airport: 0, station: 0, dock: 0, helipad: 1, egg: 0 });
+    expect(foundLine(countFound(found, "japan"), "japan")).toBe("1/3 garages · 0/1 café · 1/1 helipad");
   });
 
   it("never put an easter egg on the map", () => {
@@ -70,6 +74,6 @@ describe("places", () => {
     store.discover(garageKey("barn"));
     store.discover(garageKey("shack"));
     expect(store.get().found).toEqual([garageKey("barn"), garageKey("shack")]);
-    expect((await store.leaderboard())[0]).toMatchObject({ world: "valley", found: { garage: 1, cafe: 0, airport: 0, station: 0, dock: 0, egg: 0 } });
+    expect((await store.leaderboard())[0]).toMatchObject({ world: "valley", found: { garage: 1, cafe: 0, airport: 0, station: 0, dock: 0, helipad: 0, egg: 0 } });
   });
 });

@@ -95,7 +95,8 @@ Pure modules, no three.js, all unit-tested:
   wheels. Sideways slip decays fast on dirt, slowly on snow and very slowly on ice,
   scaled by the tyres' snow grip.
 - `vehicles.ts` (the eight rigs, the Sandfly, which only the island's garages sell, the
-  Robotaxi, only the city's, and the Slipstream, only Vegas's) and `shop.ts` (parts,
+  Robotaxi, only the city's, the Slipstream, only Vegas's, and the Kei Truck, only
+  Japan's) and `shop.ts` (parts,
   prices, and `specFor()`, which turns a rig and its loadout into a `CarSpec`). A
   `CarSpec` with `road` set is a racing car: where `Ground.pavedAt` says there's no tarmac
   under it, `step()` gives it `OFF_ROAD`'s share of its push and its top speed (ADR 0023).
@@ -158,6 +159,20 @@ Pure modules, no three.js, all unit-tested:
   - The island's dock is built in after everything else there (`islandDock`), on the
     shore nearest the camp that's clear of the courses, the garages, the airstrip and the
     sandbar, and takes away only the scatter where it goes.
+- The fifth world and the helicopter to it (`decisions/0024-japan-and-the-helicopter.md`):
+  - `ROUTES` has the helicopter between Vegas and Japan, both ways (`"heli"`).
+  - `heli.ts` is a helipad in "pad space" (`fromPad`/`toPad`): the circle a truck waits
+    on, the helicopter's stand beside it, and the trip as a film, pure like the others:
+    `liftOff()` and `setDown()`, a frame for any time, the truck hanging the slings'
+    length (`SLUNG`) under the hook while it's off the ground. A world's `pad` is levelled
+    and kept clear of scatter (`markNear` into its site field); Vegas's and Japan's.
+  - `japan.ts`'s `buildJapan()` returns the same `World` shape again, with nothing to
+    fetch: the ground from noise and a few shapes (the cone, the lake, the ridge with its
+    pass, the terraces' shelves), roads graded into it by `roads.ts` with a bench wide
+    enough to stay level across a slope, the town's houses as boxes in the city's wall
+    field, the mountain's snow as slippery as the valley's, and the paddies as water a
+    hand deep that the renderer lays level on each terrace. `World.japan` carries what
+    only the renderer needs.
 - `wildlife.ts`: the animals (`decisions/0015-wildlife.md`). `SPECIES` says which world
   each kind lives in and how it behaves, `habitat()` where a herd can make its home,
   `placeHerds()` puts every herd down from a fixed seed (the first ones in front of the
@@ -302,7 +317,15 @@ for sign-in (Google only), and Realtime for the shared valley. See
   to `routes` (whose `way` may now be `'boat'`), the Slipstream in `shop_items` (sold only
   in Vegas), Vegas's eight courses, its places and both docks (a new kind of place), a
   `docks` column on `leaderboard()`, and every other course's `min_seconds` redone for
-  the faster limit (`TOO_QUICK`, 34 m/s) (ADR 0023). Not yet applied to the live project.
+  the faster limit (`TOO_QUICK`, 34 m/s) (ADR 0023). Applied to the live project on
+  2026-10-15 with Japan's, the same way as the city's (its SQL with `db query`, then
+  `migration repair`), after a rolled-back dry run of both with `game.test.sql` passed;
+  the checks pass against the migrated project too.
+- `20261015200000_japan_and_the_helicopter.sql` adds Japan to `worlds` (150 miles), the
+  helicopter to `routes` (whose `way` may now be `'heli'`), the Kei Truck in `shop_items`
+  (sold only in Japan), Japan's eight courses, its places and both helipads (a new kind of
+  place), and a `helipads` column on `leaderboard()` (ADR 0024). Applied to the live
+  project on 2026-10-15, straight after Vegas's.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

@@ -3,16 +3,16 @@
  * but named for itself: the real names are trademarks.
  *
  * Starters are free; you pick one when you first arrive. The rest cost miles at a
- * garage, three of them only in their own worlds: the Sandfly on the island (ADR 0014), the
- * Robotaxi in San Francisco (ADR 0022), the Slipstream in Las Vegas (ADR 0023). Pure data:
- * shapes for car-model.ts and vehicle-models.ts, handling for the physics (combined with
- * the fitted tyres in shop.ts).
+ * garage, four of them only in their own worlds: the Sandfly on the island (ADR 0014), the
+ * Robotaxi in San Francisco (ADR 0022), the Slipstream in Las Vegas (ADR 0023), the Kei Truck
+ * in Japan (ADR 0024). Pure data: shapes for car-model.ts and vehicle-models.ts, handling for
+ * the physics (combined with the fitted tyres in shop.ts).
  */
 import type { PALETTE } from "./palette";
 import type { WorldId } from "./terrain";
 
 export type VehicleId =
-  | "ridgeback" | "bluff" | "mule" | "overlander" | "prairie" | "highland" | "summit" | "duneclaw" | "sandfly" | "robotaxi" | "slipstream";
+  | "ridgeback" | "bluff" | "mule" | "overlander" | "prairie" | "highland" | "summit" | "duneclaw" | "sandfly" | "robotaxi" | "slipstream" | "kei";
 
 export type Vehicle = {
   id: VehicleId;
@@ -123,6 +123,13 @@ export const VEHICLES: Vehicle[] = [
     price: 400, starter: false, length: 5.3, width: 1.98, height: 0.98, wheelbase: 3.5, track: 1.62,
     wheelRadius: 0.36, ride: 0.52, travel: 0.1, accel: 9.6, maxSpeed: 31, grip: 1.0, clearance: 0.16, wade: 0.95, factoryPaint: "racingRed",
     only: "vegas", road: 1,
+  },
+  // Inspired by Japan's kei trucks: a cab over the front wheels, a long flat bed, tiny wheels, low gears.
+  {
+    id: "kei", name: "Kei Truck", blurb: "Tiny cab-over farm truck. Slow, narrow, and up any track a farmer could walk. Sold only in Japan.",
+    price: 200, starter: false, length: 3.4, width: 1.48, height: 1.8, wheelbase: 1.9, track: 1.3,
+    wheelRadius: 0.3, ride: 0.74, travel: 0.24, accel: 6.4, maxSpeed: 17.5, grip: 1.14, clearance: 0.32, wade: 0.95, factoryPaint: "pearlWhite",
+    only: "japan",
   },
 ];
 

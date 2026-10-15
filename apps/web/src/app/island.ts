@@ -10,6 +10,7 @@ import {
   CAMP_PITCHES, FAR, ROW, SITE_BLEND, SITE_FLAT, SNORKEL_WADE, STOCK_WADE, WORLD,
   flood, gridX, gridZ, level, nearest, sampleGrid, type Path, type Pitch, type Site, type SiteStyle, type Track,
 } from "./terrain";
+import { buildJapan } from "./japan";
 import { buildVegas } from "./vegas";
 import { buildWorld, obstacleIndex, trunkRadius, type AirWorld, type Bush, type Rock, type Tree, type World, type WorldId } from "./world";
 
@@ -428,7 +429,7 @@ export function buildIsland(seed = 20261009): AirWorld {
     heights, water, forest, trackDist, riverDist, roadDist, siteDist, campDist, zone,
     snow: new Float32Array(ROW * ROW), ice: new Float32Array(ROW * ROW),
     track: NO_TRACK, rivers: [], roads: tracks, sites,
-    trees, bushes, rocks, missions, landmarks: [], courseDist, airport, station: null, dock,
+    trees, bushes, rocks, missions, landmarks: [], courseDist, airport, station: null, dock, pad: null,
     cafe, start, pitches: camp.pitches, camp: { ...camp.middle, heading: camp.heading },
     sea: true, mapSpan: (ISLAND.shore + 420) * 2,
     height: (x, z) => Math.max(ground(x, z), causewayTop(dock, x, z)), waterAt: () => sea, obstaclesNear: solid.near, limit: WORLD.limit,
@@ -603,4 +604,4 @@ export function islandFire(world: World) {
 
 /** The ground of one world or another, built from nothing. About a third of a second. */
 export const buildWorldOf = (id: WorldId): World =>
-  id === "island" ? buildIsland() : id === "city" ? buildCity() : id === "vegas" ? buildVegas() : buildWorld();
+  id === "island" ? buildIsland() : id === "city" ? buildCity() : id === "vegas" ? buildVegas() : id === "japan" ? buildJapan() : buildWorld();

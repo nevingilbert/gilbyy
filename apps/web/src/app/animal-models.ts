@@ -550,12 +550,101 @@ function condor(): Body {
   };
 }
 
+/** A sika deer: smaller than the valley's, chestnut dappled with white, a white rump; the stags' antlers short. */
+function sika(): Body {
+  const body = merge(
+    lump([0.23, 0.26, 0.58], [0, 0.86, 0], A.sikaCoat),
+    lump([0.21, 0.25, 0.26], [0, 0.84, 0.32], A.sikaCoat),
+    lump([0.17, 0.1, 0.38], [0, 0.7, 0], A.deerPale),
+    lump([0.18, 0.2, 0.09], [0, 0.89, -0.55], A.sikaRump),
+    block([0.06, 0.12, 0.04], [0, 0.95, -0.61], A.hoof),
+    // The dapples along its back.
+    ...[-0.36, -0.18, 0, 0.18].flatMap((z) => pair((s) => lump([0.035, 0.02, 0.035], [s * 0.15, 1.02, z], A.sikaSpot))),
+  );
+  const head = merge(
+    lump([0.12, 0.15, 0.14], [0, 0.07, 0.03], A.sikaCoat),
+    stick(0.085, [0, 0, 0], [0, 0.4, 0.25], A.sikaCoat, 0.07),
+    lump([0.085, 0.095, 0.15], [0, 0.42, 0.32], A.sikaCoat),
+    block([0.085, 0.075, 0.12], [0, 0.39, 0.47], A.sikaCoat),
+    lump([0.04, 0.035, 0.03], [0, 0.4, 0.53], A.hoof),
+    ...pair((s) => lump([0.03, 0.085, 0.045], [s * 0.095, 0.51, 0.28], A.sikaCoat, [0, 0, -s * 0.7])),
+    ...pair((s) => lump([0.019, 0.019, 0.019], [s * 0.072, 0.45, 0.37], A.eye)),
+  );
+  const antlers = merge(
+    ...pair((s) => stick(0.02, [s * 0.04, 0.49, 0.31], [s * 0.13, 0.78, 0.22], A.antler, 0.014)),
+    ...pair((s) => stick(0.015, [s * 0.13, 0.78, 0.22], [s * 0.15, 0.92, 0.12], A.antler, 0.008)),
+    ...pair((s) => stick(0.014, [s * 0.09, 0.64, 0.27], [s * 0.1, 0.76, 0.38], A.antler, 0.008)),
+  );
+  const fore = () => merge(lump([0.07, 0.15, 0.09], [0, -0.09, 0], A.sikaCoat), stick(0.034, [0, -0.7, 0], [0, 0, 0], A.hoof, 0.04), block([0.05, 0.05, 0.07], [0, -0.72, 0.01], A.hoof));
+  const hind = () => merge(lump([0.09, 0.19, 0.12], [0, -0.1, 0], A.sikaCoat), stick(0.03, [0, -0.73, -0.02], [0, 0, 0], A.hoof, 0.044), block([0.05, 0.05, 0.07], [0, -0.75, -0.01], A.hoof));
+  return {
+    gait: "hoof",
+    size: 1,
+    parts: [
+      { joint: "body", geometry: body, at: [0, 0, 0] },
+      { joint: "head", geometry: head, at: [0, 0.84, 0.47] },
+      { joint: "antlers", geometry: antlers, at: [0, 0.84, 0.47] },
+      ...legs([0.11, 0.74, 0.34], [0.11, 0.76, -0.38], fore, hind),
+    ],
+  };
+}
+
+/** A Japanese macaque: thick grey-brown fur, a red face, a stub of a tail; on all fours. */
+function macaque(): Body {
+  const body = merge(
+    lump([0.17, 0.18, 0.28], [0, 0.42, 0], A.macaqueFur),
+    lump([0.16, 0.17, 0.14], [0, 0.46, 0.16], A.macaqueFur),
+    lump([0.04, 0.04, 0.05], [0, 0.48, -0.28], A.macaqueFur),
+  );
+  const head = merge(
+    lump([0.11, 0.11, 0.1], [0, 0.04, 0.04], A.macaqueFur),
+    lump([0.07, 0.075, 0.04], [0, 0.03, 0.12], A.macaqueFace),
+    ...pair((s) => lump([0.014, 0.014, 0.014], [s * 0.03, 0.05, 0.155], A.eye)),
+  );
+  const fore = () => merge(lump([0.05, 0.12, 0.06], [0, -0.08, 0], A.macaqueFur), stick(0.03, [0, -0.36, 0.02], [0, -0.1, 0], A.macaqueFur, 0.03));
+  const hind = () => merge(lump([0.07, 0.14, 0.09], [0, -0.08, 0], A.macaqueFur), stick(0.03, [0, -0.38, 0], [0, -0.1, 0], A.macaqueFur, 0.035));
+  return {
+    gait: "hoof",
+    size: 1.15,
+    parts: [
+      { joint: "body", geometry: body, at: [0, 0, 0] },
+      { joint: "head", geometry: head, at: [0, 0.5, 0.3] },
+      ...legs([0.1, 0.38, 0.18], [0.1, 0.4, -0.16], fore, hind),
+    ],
+  };
+}
+
+/** A red-crowned crane: tall and white, its neck and the plumes over its tail black, a red cap. */
+function crane(): Body {
+  const body = merge(
+    lump([0.2, 0.2, 0.42], [0, 1.0, 0], A.craneWhite),
+    block([0.24, 0.12, 0.3], [0, 1.0, -0.42], A.craneBlack, [0.3, 0, 0]),
+    ...pair((s) => stick(0.02, [s * 0.07, 0, 0.02], [s * 0.07, 0.86, 0], A.craneLeg)),
+  );
+  const head = merge(
+    stick(0.045, [0, 0, 0], [0, 0.5, 0.12], A.craneBlack, 0.035),
+    lump([0.055, 0.06, 0.08], [0, 0.52, 0.16], A.craneWhite),
+    lump([0.04, 0.02, 0.04], [0, 0.575, 0.15], A.craneRed),
+    spike(0.02, 0.16, [0, 0.51, 0.28], A.craneBill, 4),
+    ...pair((s) => lump([0.012, 0.012, 0.012], [s * 0.045, 0.53, 0.19], A.eye)),
+  );
+  return {
+    gait: "wing",
+    size: 1,
+    parts: [
+      { joint: "body", geometry: body, at: [0, 0, 0] },
+      { joint: "head", geometry: head, at: [0, 1.08, 0.3] },
+      ...wings([0.12, 1.08, 0.05], [{ span: 0.5, chord: 0.36, hex: A.craneWhite }, { span: 0.45, chord: 0.28, hex: A.craneWhite }, { span: 0.3, chord: 0.2, hex: A.craneBlack }]),
+    ],
+  };
+}
+
 const BODIES: Record<SpeciesId, () => Body> = {
-  deer, hare, reindeer, duck, crab, gull, boar, macaw, dolphin, bison, sealion, pelican, parrot, bighorn, jackrabbit, roadrunner, condor,
+  deer, hare, reindeer, duck, crab, gull, boar, macaw, dolphin, bison, sealion, pelican, parrot, bighorn, jackrabbit, roadrunner, condor, sika, macaque, crane,
 };
 
-/** Only some deer are stags; every reindeer has antlers. */
-const antlered = (a: Animal) => a.species !== "deer" || a.tone < 0.35;
+/** Only some deer are stags, the sika too; every reindeer has antlers. */
+const antlered = (a: Animal) => (a.species !== "deer" && a.species !== "sika") || a.tone < 0.35;
 
 /** Every herd in the world, at home, as a group to add to the scene; `update` moves them on and draws them. */
 export function buildWildlife(world: World) {

@@ -1,5 +1,6 @@
 import { FIELD_CLEAR, FIELD_REACH, fieldDist, inFunnel, levelField, raiseBank, screenTrees, valleyAirfield, type Airport } from "./airport";
 import type { Dock } from "./dock";
+import type { Pad } from "./heli";
 import { planeObstacles } from "./flight";
 import { LANDMARK_BLEND, LANDMARK_CLEAR, LANDMARK_FLAT, chooseLandmarks, type Landmark } from "./landmarks";
 import { courseDistOf, planMissions, planMore, type Mission } from "./missions";
@@ -46,9 +47,10 @@ export type Obstacle = {
 /**
  * Pines and broadleaves grow in the valley; palms and the jungle's canopy trees on the
  * island; Monterey cypress, blue gum and pines in San Francisco, and its palms; Joshua
- * trees in the desert round Las Vegas, palms on the Strip and pines on the canyon's rim.
+ * trees in the desert round Las Vegas, palms on the Strip and pines on the canyon's rim;
+ * cherries in blossom, bamboo, cedars (the pines) and maples (the broadleaves) in Japan.
  */
-export type TreeKind = "pine" | "broadleaf" | "palm" | "canopy" | "cypress" | "eucalyptus" | "joshua";
+export type TreeKind = "pine" | "broadleaf" | "palm" | "canopy" | "cypress" | "eucalyptus" | "joshua" | "sakura" | "bamboo";
 export type Tree = { x: number; y: number; z: number; scale: number; rot: number; kind: TreeKind; tone: number };
 export type Bush = { x: number; y: number; z: number; scale: number; rot: number; tone: number };
 export type Rock = { x: number; y: number; z: number; sx: number; sy: number; sz: number; rot: number; tone: number };
@@ -87,6 +89,8 @@ export type World = Ground & Terrain & {
   station: Station | null;
   /** The ferry's dock, where there is one: the island's and Lake Mead's marina (ADR 0023). */
   dock: Dock | null;
+  /** The helicopter's pad, where there is one: on the canyon's rim in Vegas, and in Japan (ADR 0024). */
+  pad: Pad | null;
   /** True where the only water is the sea: one level sheet out to the horizon. */
   sea: boolean;
   /** How much ground the full map shows, in metres across. */
@@ -109,7 +113,8 @@ export type World = Ground & Terrain & {
 export type AirWorld = World & { airport: Airport };
 
 /** How wide a tree, a boulder and a bush stand, for the physics. */
-export const trunkRadius = (t: Tree) => (t.kind === "pine" ? 0.45 : t.kind === "palm" || t.kind === "eucalyptus" ? 0.32 : 0.55) * t.scale;
+export const trunkRadius = (t: Tree) =>
+  (t.kind === "pine" ? 0.45 : t.kind === "palm" || t.kind === "eucalyptus" || t.kind === "sakura" ? 0.32 : t.kind === "bamboo" ? 1.2 : 0.55) * t.scale;
 
 /** What stands in the way, bucketed so a lookup is a few cells. */
 export function obstacleIndex() {
@@ -325,7 +330,7 @@ export function buildWorld(seed = 20261006): AirWorld {
   for (const r of ramps) for (const o of rampObstacles(r, ground)) solid.add(o);
 
   return {
-    ...terrain, id: "valley", cafe: CAFE, trees, bushes, rocks, missions, landmarks, courseDist, airport, station, dock: null,
+    ...terrain, id: "valley", cafe: CAFE, trees, bushes, rocks, missions, landmarks, courseDist, airport, station, dock: null, pad: null,
     start: START, pitches: campPitches(), camp: { x: CAMP.x, z: CAMP.z, heading: 0 },
     sea: false, mapSpan: WORLD.limit * 2.1,
     // A ramp isn't in the grid: its deck is laid over the ground for whoever asks.

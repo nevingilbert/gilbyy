@@ -712,7 +712,7 @@ export function buildCity(seed = 20261015): CityWorld {
     heights, water, forest, trackDist, riverDist: new Float32Array(ROW * ROW).fill(FAR), roadDist, siteDist, campDist, zone,
     snow: new Float32Array(ROW * ROW), ice: new Float32Array(ROW * ROW),
     track: { xs: [], zs: [], ys: [], s: [], length: 0, bridges: [], crossings: [] }, rivers: [], roads: [], sites,
-    trees, bushes, rocks, missions, landmarks: [], courseDist, airport: null, station: cityStation(rail.line, rail.portal), dock: null,
+    trees, bushes, rocks, missions, landmarks: [], courseDist, airport: null, station: cityStation(rail.line, rail.portal), dock: null, pad: null,
     cafe, start, pitches: camp.pitches, camp: { ...rob, heading: campHeading },
     sea: true, mapSpan: CITY_LIMIT * 2.05, square: true,
     height, waterAt: (x, z) => sampleGrid(water, x, z),

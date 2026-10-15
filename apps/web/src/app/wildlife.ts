@@ -2,6 +2,7 @@ import { fieldDist } from "./airport";
 import { toGame } from "./city-streets";
 import { makeRandom } from "./noise";
 import { GROUNDS, VEGAS, type VegasWorld } from "./vegas";
+import { JAPAN, JAPAN_GROUNDS, type JapanWorld } from "./japan";
 import { CELL, sampleGrid, WORLD, type World, type WorldId } from "./world";
 
 /**
@@ -28,7 +29,8 @@ import { CELL, sampleGrid, WORLD, type World, type WorldId } from "./world";
 export type SpeciesId =
   | "deer" | "hare" | "reindeer" | "duck" | "crab" | "gull" | "boar" | "macaw" | "dolphin"
   | "bison" | "sealion" | "pelican" | "parrot"
-  | "bighorn" | "jackrabbit" | "roadrunner" | "condor";
+  | "bighorn" | "jackrabbit" | "roadrunner" | "condor"
+  | "sika" | "macaque" | "crane";
 
 /**
  * How a species gets about:
@@ -159,6 +161,21 @@ export const SPECIES: Record<SpeciesId, Species> = {
     walk: 0, run: 9, calm: 0, wary: 0, graze: [0, 0], radius: 0.6, wade: 0, stride: 4.5, drop: 0, see: 520,
     cruise: 70, level: 172,
   },
+  // Japan's (ADR 0024): sika deer in the woods and meadows, macaques up the valley round the
+  // hot spring, and red-crowned cranes standing in the paddies.
+  sika: {
+    world: "japan", way: "walk", herds: 44, size: [3, 6], apart: 150, range: 60, spread: 8,
+    walk: 1, run: 9.5, calm: 13, wary: 44, graze: [4, 12], radius: 0.4, wade: 0.6, stride: 1.35, drop: 1.7, see: 270,
+  },
+  macaque: {
+    world: "japan", way: "walk", herds: 8, size: [4, 8], apart: 120, range: 45, spread: 7,
+    walk: 0.7, run: 6, calm: 9, wary: 30, graze: [5, 15], radius: 0.25, wade: 0.9, stride: 0.55, drop: 0.5, see: 200,
+  },
+  crane: {
+    world: "japan", way: "perch", herds: 12, size: [2, 4], apart: 110, range: 50, spread: 5,
+    walk: 0.3, run: 9, calm: 16, wary: 34, graze: [4, 10], radius: 0.3, wade: 0.4, stride: 0.5, drop: 1.1, see: 230,
+    cruise: 9, flight: [8, 16],
+  },
 };
 
 /**
@@ -267,6 +284,13 @@ function vegasGround(world: World, x: number, z: number) {
   return GROUNDS[v.ground[Math.round((z + WORLD.size / 2) / CELL) * (WORLD.segments + 1) + Math.round((x + WORLD.size / 2) / CELL)]];
 }
 
+/** In Japan, what the ground is at a spot (japan.ts); elsewhere, nothing. */
+function japanGround(world: World, x: number, z: number) {
+  const j = (world as Partial<JapanWorld>).japan;
+  if (!j || Math.abs(x) > WORLD.size / 2 || Math.abs(z) > WORLD.size / 2) return null;
+  return JAPAN_GROUNDS[j.ground[Math.round((z + WORLD.size / 2) / CELL) * (WORLD.segments + 1) + Math.round((x + WORLD.size / 2) / CELL)]];
+}
+
 /** The ground or the water, whichever is higher: where something sitting on it is. */
 const surface = (world: World, x: number, z: number) => Math.max(world.height(x, z), world.waterAt(x, z));
 
@@ -276,7 +300,8 @@ export function passable(world: World, id: SpeciesId, x: number, z: number) {
   if (Math.hypot(x, z) > world.limit - 150) return false;
   const y = world.height(x, z);
   // A sea has a tide (tide.ts), and animals reckon by high water: nothing follows the sea out to be caught when it comes back.
-  const water = world.sea ? WORLD.water : world.waterAt(x, z);
+  // Japan's sea has none, and its lake and paddies are water as well.
+  const water = world.sea && world.id !== "japan" ? WORLD.water : world.waterAt(x, z);
   const depth = water - y;
   if (sp.water) return depth > 0.8 && Math.abs(water - WORLD.water) < 0.01 && sampleGrid(world.ice, x, z) < 0.02;
   if (depth > sp.wade) return false;
@@ -363,6 +388,14 @@ export function habitat(world: World, id: SpeciesId, x: number, z: number) {
     }
     case "parrot":
       return true;
+    case "sika": {
+      const kind = japanGround(world, x, z);
+      return dry && slope < 0.4 && y > 30 && at(world.snow) < 0.05 && (kind === "forest" || kind === "meadow");
+    }
+    case "macaque":
+      return dry && slope < 0.55 && y > 40 && Math.hypot(x - JAPAN.onsen.x, z - JAPAN.onsen.z) < 420;
+    case "crane":
+      return japanGround(world, x, z) === "paddy" && slope < 0.1;
   }
 }
 
@@ -417,7 +450,7 @@ function inView(world: World, id: SpeciesId) {
 }
 
 /** Which herds start in view of the camp, so the opening shot has something in it. */
-const SHOWCASE: Record<WorldId, SpeciesId[]> = { valley: ["deer"], island: ["dolphin", "gull"], city: [], vegas: [] };
+const SHOWCASE: Record<WorldId, SpeciesId[]> = { valley: ["deer"], island: ["dolphin", "gull"], city: [], vegas: [], japan: [] };
 
 /** Every herd in a world, at home. Deterministic, so every browser starts them in the same places. */
 export function placeHerds(world: World, seed = 20261009): Herd[] {

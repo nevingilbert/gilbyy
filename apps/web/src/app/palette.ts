@@ -254,6 +254,16 @@ export const PALETTE = {
     condorBlack: "#1f1d20",
     condorWhite: "#eeeae2",
     condorHead: "#c98063",
+    sikaCoat: "#9a5f3a",
+    sikaSpot: "#f1e6d2",
+    sikaRump: "#f4efe6",
+    macaqueFur: "#8d8073",
+    macaqueFace: "#d9675a",
+    craneWhite: "#f6f4ef",
+    craneBlack: "#1f1f22",
+    craneRed: "#d23a2e",
+    craneLeg: "#3a3633",
+    craneBill: "#8a8f6a",
   },
 
   /**
@@ -402,6 +412,66 @@ export const PALETTE = {
     vigas: "#7a5a3e",
     checker: "#2a2a2c",
     pitWhite: "#eeeae4",
+  },
+
+  /**
+   * Japan (ADR 0024): spring under the same warm haze. Fresh green meadows and paddies of
+   * still water, dark cedar on the hills and red maples among it, pale pink cherry in
+   * blossom round the lake and the pagoda, bamboo's yellow-green, the mountain's ash and its
+   * snow; vermilion for the gate and the pagoda, grey tile, pale plaster and dark timber.
+   */
+  japan: {
+    meadow: ["#8fae58", "#9bb862", "#84a352", "#a6bd6c"],
+    /** The paddies' mud under their water, and the grass on the terraces' risers. */
+    paddy: ["#6f7a48", "#7a8450"],
+    /** The paddies' water: shallow and still, the sky in it, the mud under it showing. */
+    paddyWater: "#a7c2bb",
+    /** Young rice, planted out in the paddies. */
+    rice: ["#86b84e", "#93c25a", "#7aac46"],
+    /** Bushes: mostly green, some of them azaleas in flower. */
+    shrub: ["#3f6f34", "#4c7a3a", "#36622e", "#c95a8a", "#d97aa4"],
+    forest: ["#5f7340", "#556a3a"],
+    /** The mountain's bare upper slopes: dark ash. */
+    ash: ["#6e6460", "#5f5652", "#7a706a"],
+    /** Steep ground: dark volcanic rock with moss on it, not the valley's lavender, which goes ghostly against green. */
+    crag: ["#5f6152", "#6a6a5a", "#565a4b"],
+    beach: ["#d9cdb0", "#cfc2a4"],
+    town: ["#a39c8e", "#988f80"],
+    /** Cherry in blossom; bamboo's leaves and canes. */
+    sakura: ["#f2c4d0", "#efb6c6", "#f6d2db", "#e9a9bc"],
+    bamboo: ["#8fb04a", "#9cbc56", "#7fa040"],
+    bambooCane: "#a9b46a",
+    /** Vermilion for the gate and the pagoda, its black caps, the stone of the lanterns. */
+    vermilion: "#d0412a",
+    gateBlack: "#2a2624",
+    stone: "#a8a49c",
+    /** Grey tiles, pale plaster, dark timber, and the harbour shed's blue. */
+    tile: "#4d5560",
+    plaster: "#ece6d8",
+    timber: "#5a4334",
+    cedarWall: "#7a5a40",
+    shedBlue: "#4f7a96",
+    /** Paper screens, which glow at night; the noren over a door. */
+    shoji: "#f4ecd8",
+    noren: "#2f4f7a",
+    /** The hot spring's water and its steam. */
+    onsen: "#7fb8b0",
+    steam: "#f2f0ec",
+    /** Fishing boats: white hulls, a blue stripe. */
+    boatHull: "#efece4",
+    boatStripe: "#3f6fa0",
+  },
+
+  /** The helicopter (ADR 0024): a heavy-lift crane, orange and white, a dark cockpit, the cable steel. */
+  heli: {
+    body: "#e2702f",
+    white: "#efece6",
+    glass: "#22313c",
+    rotor: "#2f2c2a",
+    cable: "#4b463f",
+    hook: "#d6a43a",
+    pad: "#5f5a54",
+    padPaint: "#efe6d6",
   },
 
   /** The ferry (ADR 0023): a dark blue hull, red below the waterline, white above, a yellow funnel; and the causeway's stone. */
