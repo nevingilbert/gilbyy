@@ -327,7 +327,7 @@ select public.explore('{9}', 'island');
 select pg_temp.check(public.explored() = '0002' || repeat('00', 2046), 'the island''s fog clears on the island''s map');
 select pg_temp.check(public.explored('valley') = '01000040' || repeat('00', 2043) || '80', 'and not on the valley''s');
 select pg_temp.refused($$ select public.explore('{1}', 'moon') $$, 'no such world', 'there is no map of nowhere');
-select pg_temp.check((select count(*) from public.worlds) = 3, 'anyone can read what the flights cost');
+select pg_temp.check((select count(*) from public.worlds) = 5, 'anyone can read what the flights cost');
 reset role;
 
 -- Realtime channels.
