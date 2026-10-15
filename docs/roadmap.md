@@ -31,7 +31,8 @@ subdomains." Update the **You are here** marker as you progress.
 > On 2026-10-15, on `feat/game-city-and-train` (`decisions/0022`): the valley's train
 > stops at a station and takes the truck through a tunnel to a third world, San
 > Francisco, built from public map data, with its own rig, garages, café and courses.
-> Its migration is written but not yet on the live project. Asked for next: Vegas and
+> Its migration is on the live project, where the database checks pass; it's pull
+> request 24, not yet merged. Asked for next: Vegas and
 > the Grand Canyon by boat from the island, then Japan by helicopter from Vegas.
 > On 2026-10-10, photo mode (`decisions/0018`): P stops the world, the camera goes
 > round the truck, the shutter saves a picture. Client only; merged to `main` as pull

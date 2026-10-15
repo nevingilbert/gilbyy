@@ -276,7 +276,9 @@ for sign-in (Google only), and Realtime for the shared valley. See
   flights), a `routes` table that `fly()` now checks so it only goes where the plane or
   the train does, the Robotaxi in `shop_items` (sold only in the city), the city's eight
   courses, its places and both stations (a new kind of place), and a `stations` column
-  on `leaderboard()` (ADR 0022). Not yet applied to the live project.
+  on `leaderboard()` (ADR 0022). Applied to the live project on 2026-10-15 the same way as
+  the sandbar's (its SQL with `db query`, then `migration repair`), after a rolled-back dry
+  run with `game.test.sql` passed; the checks pass against the migrated project too.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

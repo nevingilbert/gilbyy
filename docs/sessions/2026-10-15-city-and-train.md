@@ -88,8 +88,9 @@ from Vegas) are still to do.
 
 ## Open questions
 
-- The migration isn't applied and `game.test.sql` hasn't been run against it; both need
-  the owner's go-ahead (a rolled-back dry run first, per the usual routine).
+- Done later the same day, with the owner's yes: the rolled-back dry run passed, the
+  migration was applied (`db query`, then `migration repair --status applied
+  20261015120000`), and every check passes against the live project.
 - Real-device frame rate in the city is unmeasured; it's the heaviest world to draw.
 - Not built: Marin's roads past the bridge, the hills south of the county line, the Bay
   Bridge's ramps to Treasure Island, Saints Peter and Paul on Washington Square.
@@ -97,12 +98,10 @@ from Vegas) are still to do.
 
 ## Exact next step
 
-Ask the owner to approve the dry run, then the migration: check
-`supabase migration list --linked`, run `supabase/tests/game.test.sql` with the new
-migration as a rolled-back dry run on the live project, and if it passes apply
-`20261015120000_city_and_train.sql`. After that, start Vegas: a boat dock on the
-island (`island.ts`), a car ferry film like `flight.ts`/`rail-trip.ts` (`Way` gets
-`"boat"`, a `public.routes` row island↔vegas), and a new `vegas.ts` world.
+Start Vegas, on a branch from this one: a boat dock on the island (`island.ts`), a car
+ferry film like `flight.ts`/`rail-trip.ts` (`Way` gets `"boat"`, a `public.routes` row
+island↔vegas), and a new `vegas.ts` world. Pull request 24 can be merged whenever the
+owner likes: its migration is already on the live project.
 
 ## Tokens advisory
 
