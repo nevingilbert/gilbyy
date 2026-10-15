@@ -4,6 +4,10 @@ import { makeNoise2D, smoothstep } from "./noise";
 import { PALETTE } from "./palette";
 import { rampLift } from "./ramp";
 import { CROOKED_KERB, inCrooked, kerbAt, type CityWorld } from "./city";
+import { PIER, toDock } from "./dock";
+import { PAD, toPad } from "./heli";
+import { GROUNDS, VEGAS, type VegasWorld } from "./vegas";
+import { JAPAN, JAPAN_GROUNDS, type JapanWorld } from "./japan";
 import { CELL, ROW, WORLD, gridX, gridZ, sampleGrid, type World } from "./world";
 
 const colour = (hex: string) => new THREE.Color(hex);
@@ -13,15 +17,106 @@ export type Surface =
   // The island's.
   | "seabed" | "wetsand" | "beach" | "sand" | "scrub" | "jungle"
   // The city's (ADR 0022): its streets and pavements, its yards, lawns, dry hills and woods.
-  | "paved" | "yard" | "lawn" | "dryhill" | "cityfloor";
+  | "paved" | "yard" | "lawn" | "dryhill" | "cityfloor"
+  // Vegas's (ADR 0023): the desert, Red Rock, the canyon's bands, the lake's white ring, its
+  // shores and the river's beaches, the plateau, the town's lots; and the causeways' stone.
+  | "desert" | "redrock" | "strata" | "bathtub" | "sandbank" | "rimland" | "lot" | "causeway"
+  // Japan's (ADR 0024): meadow, the paddies, the cedar woods' floor, the mountain's ash, its
+  // dark crags, the grey shingle of its beaches, the town's gravel.
+  | "meadow" | "paddy" | "cedar" | "ash" | "crag" | "shingle" | "gravel";
 
 /**
  * What the ground is made of at a point, and a 0–1 tone for variation within it.
  * Shared by the terrain colours and the grass, so tufts only grow where it's grassy.
  */
 export function makeSurface(world: World) {
+  const inner = surfaceOf(world);
+  const { dock, pad } = world;
+  if (!dock && !pad) return inner;
+  return (x: number, y: number, z: number, ny: number): [Surface, number] => {
+    // A causeway, wherever there's a dock (ADR 0023): its road paved, its banks stone.
+    if (dock) {
+      const p = toDock(dock, x, z);
+      if (p.z > -4 && p.z < PIER.length + PIER.bank + 4 && Math.abs(p.x) < PIER.top + PIER.bank + 4) {
+        // Its road down the middle, the rest of its top and its banks laid stone.
+        if (Math.abs(p.x) <= PIER.half + 0.5 && p.z >= 0 && p.z <= PIER.length) return ["paved", 0.3];
+        if (y > dock.water - 4) return ["causeway", (Math.sin(x * 1.7) * Math.sin(z * 1.3) + 1) / 2];
+      }
+    }
+    // A helipad (ADR 0024): its circle, the helicopter's spot and the way between are paved,
+    // so no grass comes up through them.
+    if (pad) {
+      const p = toPad(pad, x, z);
+      if (Math.hypot(p.x, p.z) < PAD.radius + 2.5 || Math.hypot(p.x - PAD.stand, p.z) < 10.5 || (p.x > 0 && p.x < PAD.stand && Math.abs(p.z) < 4)) return ["paved", 0.3];
+    }
+    return inner(x, y, z, ny);
+  };
+}
+
+function surfaceOf(world: World) {
   const patch = makeNoise2D(41);
   const fine = makeNoise2D(42);
+  const japan = (world as Partial<JapanWorld>).japan;
+  if (japan) {
+    const cell = (x: number, z: number) => japan.ground[Math.round((z + WORLD.size / 2) / CELL) * ROW + Math.round((x + WORLD.size / 2) / CELL)];
+    return (x: number, y: number, z: number, ny: number): [Surface, number] => {
+      const big = patch(x / 110, z / 110);
+      const small = fine(x / 24, z / 24);
+      const tone = Math.max(0, Math.min(1, (big * 0.7 + small * 0.3 + 1) / 2));
+      if (y < -0.6) return ["seabed", Math.min(1, -y / 16)];
+      const water = sampleGrid(world.water, x, z);
+      const kind = JAPAN_GROUNDS[cell(x, z)];
+      // The paddies stand in a hand's depth of water; the lake and the hot spring are deep.
+      if (kind === "paddy") return ["paddy", tone];
+      if (water > WORLD.water + 0.05 && y < water - 0.8) return ["lakebed", tone];
+      if (y < WORLD.water + 0.7 + small * 0.2) return ["wetsand", tone];
+      // The town's streets, the garages' yards and the pad are paved; the camp is earth. Out
+      // in the country the ground runs right up to the road, which the street paint lays on it.
+      if ((kind === "town" && kerbAt(japan.kerb, x, z) < 1.8) || sampleGrid(world.siteDist, x, z) < 6) return ["paved", tone];
+      if (sampleGrid(world.campDist, x, z) < 1) return ["dirt", tone];
+      // The lake's shore is a ring of grey shingle.
+      if (water > WORLD.water + 0.05 && y < water + 0.9 + big * 0.4) return ["shingle", tone];
+      const snow = sampleGrid(world.snow, x, z);
+      if (snow > 0.55 + small * 0.25) return [ny < 0.7 ? "crag" : "snow", tone];
+      if (kind === "beach") return ["shingle", tone];
+      if (kind === "ash") return [ny < 0.72 ? "crag" : "ash", tone];
+      if (ny < 0.8 + small * 0.04) return ["crag", tone];
+      if (kind === "forest") return ["cedar", tone];
+      if (kind === "town") return ["gravel", tone];
+      return ["meadow", tone];
+    };
+  }
+  const vegas = (world as Partial<VegasWorld>).vegas;
+  if (vegas) {
+    const cell = (x: number, z: number) => vegas.ground[Math.round((z + WORLD.size / 2) / CELL) * ROW + Math.round((x + WORLD.size / 2) / CELL)];
+    return (x: number, y: number, z: number, ny: number): [Surface, number] => {
+      const big = patch(x / 110, z / 110);
+      const small = fine(x / 24, z / 24);
+      const tone = Math.max(0, Math.min(1, (big * 0.7 + small * 0.3 + 1) / 2));
+      const water = sampleGrid(world.water, x, z);
+      if (y < water - 0.8) return ["lakebed", tone];
+      // The streets and pavements, the lots of everything built, the camp's earth.
+      if (kerbAt(vegas.kerb, x, z) < 1.8 || sampleGrid(world.siteDist, x, z) < 4) return ["paved", tone];
+      // The camp's ground is packed sand.
+      if (sampleGrid(world.campDist, x, z) < 1) return ["sandbank", tone];
+      const kind = GROUNDS[cell(x, z)];
+      // The canyon is coloured by height, band over band, up from the river's beaches.
+      if (kind === "canyon") {
+        if (y < VEGAS.lake + 3.2 + small * 0.4) return ["sandbank", tone];
+        return ["strata", Math.max(0, Math.min(1, (y - VEGAS.lake - 3) / (VEGAS.rim - VEGAS.lake) + small * 0.03))];
+      }
+      if (kind === "shore") {
+        if (y < water + 0.9 + small * 0.3) return ["sandbank", tone];
+        // The pale ring the lake left as it went down, where the shore is steep enough to show it.
+        if (ny < 0.94 && y < VEGAS.lake + 7 + big) return ["bathtub", tone];
+      }
+      if (kind === "redrock") return [ny < 0.9 ? "redrock" : "redrock", ny < 0.9 ? tone : tone * 0.6 + 0.4];
+      if (ny < 0.8) return ["redrock", tone];
+      if (kind === "rim") return ["rimland", tone];
+      if (kind === "town") return ["lot", tone];
+      return ["desert", tone];
+    };
+  }
   const city = (world as Partial<CityWorld>).city;
   if (city) {
     const KINDS: (Surface | null)[] = [null, "cityfloor", "lawn", "dryhill", "beach", "paved"];
@@ -127,14 +222,30 @@ export function buildTerrainMesh(world: World, surface: SurfaceAt, streets: THRE
     lawn: PALETTE.city.lawn.map(colour),
     dryhill: PALETTE.city.dryHill.map(colour),
     cityfloor: PALETTE.city.floor.map(colour),
+    desert: PALETTE.vegas.desert.map(colour),
+    redrock: PALETTE.vegas.redRock.map(colour),
+    strata: PALETTE.vegas.strata.map(colour),
+    bathtub: [colour(PALETTE.vegas.bathtub), colour(PALETTE.vegas.stucco[3])],
+    sandbank: PALETTE.vegas.beach.map(colour),
+    rimland: PALETTE.vegas.rimland.map(colour),
+    lot: PALETTE.vegas.lot.map(colour),
+    causeway: PALETTE.ferry.stone.map(colour),
+    meadow: PALETTE.japan.meadow.map(colour),
+    paddy: PALETTE.japan.paddy.map(colour),
+    cedar: PALETTE.japan.forest.map(colour),
+    ash: PALETTE.japan.ash.map(colour),
+    crag: PALETTE.japan.crag.map(colour),
+    shingle: PALETTE.japan.beach.map(colour),
+    gravel: PALETTE.japan.town.map(colour),
   };
   const material = new THREE.MeshLambertMaterial({ vertexColors: true });
   // Where the tide (tide.ts) has left the seabed bare, it's wet sand, like the strip above
   // it. At high water there is none, and the ground is exactly the colours it was given.
   const sea = { value: WORLD.water as number };
-  if (world.sea) {
+  if (world.sea || streets) {
     const wet = { value: colour(PALETTE.wetSand) };
-    // The city's streets are painted on from its street map: asphalt, the kerb, the pavement (ADR 0022).
+    // Streets are painted on from a street map: asphalt, the kerb, the pavement. The city's
+    // (ADR 0022), and Vegas's (ADR 0023), which has no sea.
     const kerbs = streets ? { value: streets } : null;
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uSea = sea;
@@ -173,12 +284,13 @@ export function buildTerrainMesh(world: World, surface: SurfaceAt, streets: THRE
         )
         .replace(
           "#include <color_fragment>",
-          `#include <color_fragment>
+          `#include <color_fragment>${world.sea ? `
           float bare = smoothstep(uSea - 0.3, uSea + 0.05, vShoreY) * (1.0 - smoothstep(-0.6, -0.3, vShoreY));
-          diffuseColor.rgb = mix(diffuseColor.rgb, uWet, bare);${streetsGlsl}`,
+          diffuseColor.rgb = mix(diffuseColor.rgb, uWet, bare);` : ""}${streetsGlsl}`,
         );
     };
-    material.customProgramCacheKey = () => (kerbs ? "shore-streets" : "shore");
+    const key = `${world.sea ? "shore" : "inland"}${kerbs ? "-streets" : ""}`;
+    material.customProgramCacheKey = () => key;
   }
   const group = new THREE.Group();
   const c = new THREE.Color();
@@ -239,17 +351,28 @@ export function buildWaterMesh(world: World) {
     const far = WORLD.size * 1.5;
     chunks.set(0, [-far, WORLD.water, -far, -far, WORLD.water, far, far, WORLD.water, -far, far, WORLD.water, -far, -far, WORLD.water, far, far, WORLD.water, far]);
   }
+  // Japan's paddies (ADR 0024) are a hand's depth of still water on each terrace, each a level
+  // mirror of its own: a cell is laid flat at its lowest water, so none runs down the bank to
+  // the terrace below, and they're thinner water than a lake's, the mud showing through.
+  const paddies = world.id === "japan" ? new Map<number, number[]>() : null;
   // A sea world's lakes stand above the sea, each at its own level: the city's are (ADR 0022).
   for (let j = 0; j < WORLD.segments; j++) {
     for (let i = 0; i < WORLD.segments; i++) {
       const ks = [j * ROW + i, j * ROW + i + 1, (j + 1) * ROW + i, (j + 1) * ROW + i + 1];
       if (world.sea && !ks.some((k) => W[k] > WORLD.water + 0.05)) continue;
-      if (!ks.some((k) => H[k] < W[k] - 0.02)) continue;
+      const wet = ks.filter((k) => H[k] < W[k] - 0.02);
+      if (!wet.length) continue;
       const [k00, k10, k01, k11] = ks;
       const x0 = gridX(i), x1 = gridX(i + 1), z0 = gridZ(j), z1 = gridZ(j + 1);
+      // The hot spring is too small for the grid: japan-model.ts lays its water as a disc.
+      if (paddies && Math.hypot(x0 + CELL / 2 - JAPAN.onsen.x, z0 + CELL / 2 - JAPAN.onsen.z) < JAPAN.onsen.r + 15) continue;
       const key = Math.floor(j / CHUNK) * 100 + Math.floor(i / CHUNK);
-      const list = chunks.get(key) ?? chunks.set(key, []).get(key)!;
-      list.push(x0, W[k00], z0, x0, W[k01], z1, x1, W[k10], z0, x1, W[k10], z0, x0, W[k01], z1, x1, W[k11], z1);
+      const paddy = paddies && wet.every((k) => W[k] - H[k] < 0.3);
+      const into = paddy ? paddies : chunks;
+      const list = into.get(key) ?? into.set(key, []).get(key)!;
+      const flat = paddy ? Math.min(...wet.map((k) => W[k])) : null;
+      const y = (k: number) => flat ?? W[k];
+      list.push(x0, y(k00), z0, x0, y(k01), z1, x1, y(k10), z0, x1, y(k10), z0, x0, y(k01), z1, x1, y(k11), z1);
     }
   }
 
@@ -279,14 +402,19 @@ export function buildWaterMesh(world: World) {
   material.customProgramCacheKey = () => "water";
 
   const group = new THREE.Group();
-  for (const list of chunks.values()) {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(list, 3));
-    geo.computeVertexNormals();
-    geo.computeBoundingSphere();
-    const mesh = new THREE.Mesh(geo, material);
-    mesh.receiveShadow = true;
-    group.add(mesh);
+  const paddyWater = new THREE.MeshPhongMaterial({
+    color: PALETTE.japan.paddyWater, specular: PALETTE.waterSpecular, shininess: 60, transparent: true, opacity: 0.5, depthWrite: false,
+  });
+  for (const [lists, m] of [[chunks, material], [paddies, paddyWater]] as const) {
+    for (const list of lists?.values() ?? []) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(list, 3));
+      geo.computeVertexNormals();
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    }
   }
   // Out past the ground's edge the sea has nothing under it: a bed there, as deep as the
   // seabed at the edge, keeps the open sea one colour out to the horizon.
@@ -374,6 +502,11 @@ export function buildGrass(world: World, surface: SurfaceAt) {
     lawn: { share: 0.35, tones: PALETTE.city.lawn.map(colour) },
     dryhill: { share: 1, tones: PALETTE.city.dryHill.map(colour) },
     cityfloor: { share: 0.25, tones: PALETTE.city.floor.map(colour) },
+    // Japan's meadows are long grass, its cedar woods have a little, and its paddies are
+    // planted out with young rice standing up through the water.
+    meadow: { share: 1, tones: PALETTE.japan.meadow.map(colour) },
+    cedar: { share: 0.3, tones: PALETTE.japan.forest.map(colour) },
+    paddy: { share: 0.55, tones: PALETTE.japan.rice.map(colour) },
   };
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();

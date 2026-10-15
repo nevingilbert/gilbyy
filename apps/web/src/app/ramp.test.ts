@@ -59,9 +59,23 @@ describe("the ramp's shape", () => {
   });
 });
 
+/**
+ * The rigs the jump is for: all but a racing car (ADR 0023), which is slow on the grass it
+ * stands on and goes over it with hardly any air.
+ */
+const JUMPERS = VEHICLES.filter((v) => !v.road);
+
 describe("the jump", () => {
+  it("is barely a jump for a racing car, slow on the grass", () => {
+    const racer = VEHICLES.find((v) => v.road);
+    expect(racer).toBeDefined();
+    const run = drive(racer!.id, -110, 0, 0, 20);
+    expect(run.u).toBeGreaterThan(RAMP.length);
+    expect(run.air).toBeLessThan(0.95);
+  });
+
   it("puts every rig in the air for about a second, and the quicker the rig the longer", () => {
-    const airs = VEHICLES.map((v) => ({ v, ...drive(v.id, -110, 0, 0, 12) }));
+    const airs = JUMPERS.map((v) => ({ v, ...drive(v.id, -110, 0, 0, 12) }));
     for (const a of airs) {
       expect(a.air, a.v.id).toBeGreaterThan(0.95);
       expect(a.air, a.v.id).toBeLessThan(1.6);
@@ -75,7 +89,7 @@ describe("the jump", () => {
   });
 
   it("comes down inside the landing, wheels down and still rolling", () => {
-    for (const v of VEHICLES) {
+    for (const v of JUMPERS) {
       // Just long enough to be over the lip and down again.
       const { car, u, w } = drive(v.id, -110, 0, 0, 110 / v.maxSpeed + 5.5);
       expect(car.grounded, v.id).toBe(true);

@@ -4,6 +4,9 @@ import { PALETTE } from "./palette";
 import { PIN_HEAD, PIN_STEM, onMini } from "./pin";
 import { placesOf } from "./places";
 import { kerbAt, type CityWorld } from "./city";
+import { PIER, fromDock } from "./dock";
+import type { VegasWorld } from "./vegas";
+import { JAPAN_GROUNDS, type JapanWorld } from "./japan";
 import { HALF, WORLD, sampleGrid, type Mission, type World } from "./world";
 
 /**
@@ -19,10 +22,11 @@ import { HALF, WORLD, sampleGrid, type Mission, type World } from "./world";
  */
 /**
  * The sheet: 512 px for the valley and the island; the city's is finer, 1536 px, so its
- * streets come out as streets (ADR 0022).
+ * streets come out as streets (ADR 0022); Vegas's and Japan's are in between, 1024
+ * (ADR 0023, 0024).
  */
 const sheetOf = (world: World) => {
-  const size = world.square ? 1536 : 512;
+  const size = world.square ? 1536 : world.id === "vegas" || world.id === "japan" ? 1024 : 512;
   const px = size / WORLD.size;
   return { size, px, toPx: (v: number) => (v + HALF) * px };
 };
@@ -60,6 +64,9 @@ function paintBase(world: World, sheet: Sheet) {
   const lawn = rgb(PALETTE.city.lawn[0]);
   const road = rgb(C.paperShade);
   const city = (world as Partial<CityWorld>).city ?? null;
+  const vegas = (world as Partial<VegasWorld>).vegas ?? null;
+  const japan = (world as Partial<JapanWorld>).japan ?? null;
+  const woods = JAPAN_GROUNDS.indexOf("forest");
   const step = 1 / PX;
   const heights = new Float32Array(SIZE * SIZE);
   for (let py = 0; py < SIZE; py++) {
@@ -79,8 +86,8 @@ function paintBase(world: World, sheet: Sheet) {
       // Hillshade lit from the north-west, the way paper maps are.
       const lit = Math.max(0, Math.min(1, 0.62 + (dx + dz) * -0.35 - Math.hypot(dx, dz) * 0.15));
       let c = mix(shade, paper, lit);
-      // The island's sheet is sand where it isn't trees.
-      if (world.sea) c = mix(c, sand, 0.45);
+      // The island's sheet is sand where it isn't trees. Japan's is green, so it's left paper.
+      if (world.sea && !japan) c = mix(c, sand, 0.45);
       const depth = sampleGrid(world.water, x, z) - h;
       if (sampleGrid(world.ice, x, z) > 0.5) c = mix(c, ice, 0.85);
       else if (depth > 0) c = mix(water, deep, Math.min(1, depth / 12));
@@ -91,6 +98,19 @@ function paintBase(world: World, sheet: Sheet) {
         else if (park === 2) c = mix(c, lawn, 0.45);
         else if (park === 4) c = mix(c, sand, 0.7);
         if (kerbAt(city.kerb, x, z) < 0) c = mix(c, road, 0.75);
+      } else if (vegas) {
+        // The desert's sheet is sand; the Strip's streets and the resorts' blocks are drawn on it, and the cliffs.
+        c = mix(c, sand, 0.4);
+        if (kerbAt(vegas.kerb, x, z) < 0) c = mix(c, road, 0.85);
+        else if (vegas.walls.distance(x, z) < 0) c = mix(c, shade, 0.7);
+        else if (Math.hypot(dx, dz) > 0.75) c = mix(c, rock, 0.6);
+      } else if (japan) {
+        // Japan's sheet: the town's streets and houses, the mountain's snow, the cliffs, the cedar woods.
+        if (kerbAt(japan.kerb, x, z) < 0) c = mix(c, road, 0.85);
+        else if (japan.walls.distance(x, z) < 0) c = mix(c, shade, 0.7);
+        else if (sampleGrid(world.snow, x, z) > 0.6) c = mix(c, snow, 0.7);
+        else if (Math.hypot(dx, dz) > 0.75) c = mix(c, rock, 0.6);
+        else if (japan.ground[Math.round((z + HALF) / 10) * 601 + Math.round((x + HALF) / 10)] === woods) c = mix(c, forest, 0.55);
       } else if (h > 190 || sampleGrid(world.snow, x, z) > 0.6) c = mix(c, snow, 0.7);
       else if (Math.hypot(dx, dz) > 0.75) c = mix(c, rock, 0.6);
       else if (sampleGrid(world.forest, x, z) > 0.6) c = mix(c, forest, 0.55);
@@ -162,6 +182,18 @@ function paintBase(world: World, sheet: Sheet) {
     g.lineWidth = Math.max(1.5, d.half * 2 * PX);
     g.beginPath();
     d.xs.forEach((x, i) => (i ? g.lineTo(toPx(x), toPx(d.zs[i])) : g.moveTo(toPx(x), toPx(d.zs[i]))));
+    g.stroke();
+  }
+
+  // A dock's causeway, out into the water (ADR 0023).
+  const dock = world.dock;
+  if (dock) {
+    const [a0, a1] = [fromDock(dock, 0, 0), fromDock(dock, 0, PIER.length)];
+    g.strokeStyle = C.runway;
+    g.lineWidth = Math.max(2, PIER.top * 2 * PX);
+    g.beginPath();
+    g.moveTo(toPx(a0.x), toPx(a0.z));
+    g.lineTo(toPx(a1.x), toPx(a1.z));
     g.stroke();
   }
 
@@ -284,6 +316,34 @@ function drawStation(g: CanvasRenderingContext2D, x: number, y: number, s: numbe
   g.fillRect(x - s * 0.95, y + s * 0.8, s * 1.9, s * 0.16);
 }
 
+/** A dock: a little ferry side on, its hull and its cabin, on a line of water (ADR 0023). */
+function drawBoat(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  g.fillStyle = PALETTE.map.garage;
+  g.beginPath();
+  g.moveTo(x - s, y);
+  g.lineTo(x + s, y);
+  g.lineTo(x + s * 0.7, y + s * 0.55);
+  g.lineTo(x - s * 0.7, y + s * 0.55);
+  g.closePath();
+  g.fill();
+  g.fillRect(x - s * 0.35, y - s * 0.55, s * 0.7, s * 0.45);
+  g.fillRect(x + s * 0.1, y - s * 0.95, s * 0.2, s * 0.4);
+  g.fillStyle = PALETTE.map.water;
+  g.fillRect(x - s * 1.1, y + s * 0.7, s * 2.2, s * 0.18);
+}
+
+/** A helipad: a ring with an H in it (ADR 0024). */
+function drawPad(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  g.strokeStyle = g.fillStyle = PALETTE.map.garage;
+  g.lineWidth = Math.max(1.5, s * 0.22);
+  g.beginPath();
+  g.arc(x, y, s * 0.9, 0, Math.PI * 2);
+  g.stroke();
+  g.fillRect(x - s * 0.45, y - s * 0.5, s * 0.2, s);
+  g.fillRect(x + s * 0.25, y - s * 0.5, s * 0.2, s);
+  g.fillRect(x - s * 0.3, y - s * 0.09, s * 0.6, s * 0.18);
+}
+
 /** A little plane seen from above, nose the way the runway runs. */
 function drawPlane(g: CanvasRenderingContext2D, x: number, y: number, heading: number, s: number) {
   g.save();
@@ -402,6 +462,8 @@ export function createMap(world: World, onFound: (key: string) => void = () => {
       if (p.kind === "cafe") drawCafe(g, ...place(p.x, p.z), icon * 0.9);
       else if (p.kind === "garage") drawGarage(g, ...place(p.x, p.z), icon);
       else if (p.kind === "station") drawStation(g, ...place(p.x, p.z), icon);
+      else if (p.kind === "dock") drawBoat(g, ...place(p.x, p.z), icon);
+      else if (p.kind === "helipad") drawPad(g, ...place(p.x, p.z), icon);
       else if (world.airport) drawPlane(g, ...place(p.x, p.z), world.airport.heading, icon * 1.15);
     }
     for (const m of seenMissions) drawFlag(g, ...place(m.start.x, m.start.z), icon);

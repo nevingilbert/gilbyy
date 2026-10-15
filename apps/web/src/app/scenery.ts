@@ -112,6 +112,92 @@ function eucalyptusGeometry(): Parts {
   return { trunk: mergeGeometries([painted(trunk, bark), painted(fork, bark)]), crown: mergeGeometries(clumps.map((k) => painted(k, WHITE))) };
 }
 
+/**
+ * A Joshua tree (ADR 0023): a shaggy trunk that forks, and forks again, into crooked arms,
+ * each ending in a spiky ball of leaves.
+ */
+function joshuaGeometry(): Parts {
+  const bark = colour(PALETTE.vegas.joshuaTrunk);
+  const limbs: THREE.BufferGeometry[] = [];
+  const heads: THREE.BufferGeometry[] = [];
+  /** A limb from `a` along `dir` (tilted from upright by `lean`, turned by `turn`), `len` long, `r` thick. */
+  const limb = (a: THREE.Vector3, lean: number, turn: number, len: number, r: number) => {
+    const dir = new THREE.Vector3(Math.sin(lean) * Math.cos(turn), Math.cos(lean), Math.sin(lean) * Math.sin(turn));
+    const seg = new THREE.CylinderGeometry(r * 0.8, r, len + 0.1, 5);
+    seg.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+    const mid = a.clone().addScaledVector(dir, len / 2);
+    limbs.push(painted(seg.translate(mid.x, mid.y, mid.z), bark));
+    return a.clone().addScaledVector(dir, len);
+  };
+  const head = (at: THREE.Vector3) => {
+    heads.push(painted(new THREE.IcosahedronGeometry(0.42, 0).translate(at.x, at.y + 0.1, at.z), WHITE));
+    for (let i = 0; i < 7; i++) {
+      const spike = new THREE.ConeGeometry(0.1, 0.9, 3).translate(0, 0.45, 0);
+      spike.applyQuaternion(new THREE.Quaternion().setFromEuler(new THREE.Euler(((i % 3) - 1) * 0.9, (i / 7) * Math.PI * 2, 0.9 + (i % 2) * 0.5)));
+      heads.push(painted(spike.translate(at.x, at.y + 0.1, at.z), WHITE));
+    }
+  };
+  const fork = limb(new THREE.Vector3(0, 0, 0), 0.05, 0, 2.6, 0.3);
+  for (const [lean, turn, len, again] of [[0.7, 0.3, 1.6, true], [0.6, 2.5, 1.9, false], [0.9, 4.4, 1.3, true]] as const) {
+    const end = limb(fork, lean, turn, len, 0.18);
+    if (again) {
+      head(limb(end, 0.3, turn + 0.9, 0.9, 0.12));
+      head(limb(end, 0.5, turn - 0.8, 0.8, 0.12));
+    } else head(end);
+  }
+  return { trunk: mergeGeometries(limbs), crown: mergeGeometries(heads) };
+}
+
+/**
+ * A cherry in blossom (ADR 0024): a short dark trunk that spreads into crooked limbs,
+ * under a wide, low, lumpy crown of pink.
+ */
+function sakuraGeometry(): Parts {
+  const bark = colour(PALETTE.japan.timber);
+  const limbs: THREE.BufferGeometry[] = [];
+  const limb = (a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number) => {
+    const d = b.clone().sub(a);
+    const seg = new THREE.CylinderGeometry(r1, r0, d.length(), 5).translate(0, d.length() / 2, 0);
+    seg.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
+    limbs.push(painted(seg.translate(a.x, a.y, a.z), bark));
+  };
+  const fork = new THREE.Vector3(0.2, 2.2, 0);
+  limb(new THREE.Vector3(0, 0, 0), fork, 0.32, 0.24);
+  const ends = [new THREE.Vector3(2.2, 3.6, 0.6), new THREE.Vector3(-1.6, 3.9, 1.4), new THREE.Vector3(-0.6, 3.5, -2.0), new THREE.Vector3(1.0, 4.4, -0.8)];
+  for (const e of ends) limb(fork, e, 0.2, 0.1);
+  const puffs = [
+    [2.0, 1.3, 1.9, 0.6, 4.4, 0.6], [1.9, 1.2, 1.8, -1.5, 4.6, 1.3], [1.8, 1.1, 1.8, -0.6, 4.3, -1.8],
+    [2.1, 1.4, 2.0, 0.6, 5.2, -0.4], [1.5, 1.0, 1.5, 2.4, 4.0, -1.2], [1.4, 0.9, 1.4, -2.6, 4.1, -0.4],
+  ].map(([sx, sy, sz, x, y, z]) => new THREE.IcosahedronGeometry(1, 1).scale(sx, sy, sz).translate(x, y, z));
+  return { trunk: mergeGeometries(limbs), crown: mergeGeometries(puffs.map((p) => painted(p, WHITE))) };
+}
+
+/** A clump of bamboo: a dozen tall, thin canes leaning a little apart, leafy only near their tops. */
+function bambooGeometry(): Parts {
+  const cane = colour(PALETTE.japan.bambooCane);
+  const rand = makeRandom(207);
+  const canes: THREE.BufferGeometry[] = [];
+  const leaves: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 12; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = 0.3 + rand() * 1.1;
+    const h = 9 + rand() * 5;
+    const lean = 0.03 + rand() * 0.07;
+    const base = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+    const dir = new THREE.Vector3(Math.cos(a) * lean, 1, Math.sin(a) * lean).normalize();
+    const seg = new THREE.CylinderGeometry(0.06, 0.09, h, 5).translate(0, h / 2, 0);
+    seg.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+    canes.push(painted(seg.translate(base.x, base.y, base.z), cane));
+    // Its leaves: narrow sprays hung off the top third, each a flattened blob.
+    for (let k = 0; k < 3; k++) {
+      const at = base.clone().addScaledVector(dir, h * (0.7 + k * 0.12));
+      const spray = new THREE.IcosahedronGeometry(1, 0).scale(1.2, 0.5, 0.7).rotateY(rand() * Math.PI).translate(at.x, at.y, at.z);
+      leaves.push(painted(spray, WHITE));
+    }
+  }
+  return { trunk: mergeGeometries(canes), crown: mergeGeometries(leaves) };
+}
+
 /** A lumpy boulder: an icosahedron with its corners pushed about. */
 function boulderGeometry(seed: number) {
   const geo = mergeVertices(new THREE.IcosahedronGeometry(1, 1).deleteAttribute("normal").deleteAttribute("uv"));
@@ -162,7 +248,7 @@ export function tiled<T extends { x: number; z: number }>(
 /** `snowAt` is how snowy it is at a spot, 0–1: pines there are frosted. */
 const TREE_GEOMETRY: Record<TreeKind, () => THREE.BufferGeometry | Parts> = {
   pine: pineGeometry, broadleaf: broadleafGeometry, palm: palmGeometry, canopy: canopyGeometry,
-  cypress: cypressGeometry, eucalyptus: eucalyptusGeometry,
+  cypress: cypressGeometry, eucalyptus: eucalyptusGeometry, joshua: joshuaGeometry, sakura: sakuraGeometry, bamboo: bambooGeometry,
 };
 
 export function buildTrees(trees: Tree[], snowAt: (x: number, z: number) => number = () => 0) {
@@ -176,6 +262,9 @@ export function buildTrees(trees: Tree[], snowAt: (x: number, z: number) => numb
   const flame = PALETTE.flameTree.map(colour);
   const cypress = PALETTE.city.cypress.map(colour);
   const gum = PALETTE.city.gum.map(colour);
+  const joshua = PALETTE.vegas.joshua.map(colour);
+  const sakura = PALETTE.japan.sakura.map(colour);
+  const bamboo = PALETTE.japan.bamboo.map(colour);
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
   const place = (t: Tree, m: THREE.Matrix4, c: THREE.Color) => {
@@ -184,6 +273,9 @@ export function buildTrees(trees: Tree[], snowAt: (x: number, z: number) => numb
     if (t.kind === "broadleaf") c.copy(pick(leaf, t.tone));
     else if (t.kind === "cypress") c.copy(pick(cypress, t.tone));
     else if (t.kind === "eucalyptus") c.copy(pick(gum, t.tone));
+    else if (t.kind === "joshua") c.copy(pick(joshua, t.tone));
+    else if (t.kind === "sakura") c.copy(pick(sakura, t.tone));
+    else if (t.kind === "bamboo") c.copy(pick(bamboo, t.tone));
     else if (t.kind === "palm") c.copy(pick(frond, t.tone));
     // One jungle tree in thirty is in flower.
     else if (t.kind === "canopy") c.copy(t.tone < 0.035 ? pick(flame, t.tone / 0.035) : pick(canopy, (t.tone - 0.035) / 0.965));

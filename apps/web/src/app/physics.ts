@@ -108,7 +108,12 @@ export type CarSpec = {
   radius: number;
   /** How far over `clearance` a rock can be and still hang the truck up. 0, and it never is. */
   hang: number;
+  /** How much it needs tarmac, 0 to 1 (vehicles.ts): off it, a racing car has a fraction of its push and its speed (ADR 0023). */
+  road?: number;
 };
+
+/** Off tarmac, a car that needs it all (`road` 1) keeps this much of its push and of its top speed. */
+export const OFF_ROAD = { accel: 0.4, speed: 0.35 } as const;
 
 /** The original overlander on road tyres: what tests drive unless they say otherwise. */
 export const STOCK: CarSpec = {
@@ -200,6 +205,8 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
   const depth = ground.waterAt(car.x, car.z) - groundY;
   const wading = depth > 0 ? Math.min(1, depth / spec.wade) : 0;
   const grip = traction(ground.slipAt(car.x, car.z), spec);
+  // A racing car off the tarmac: its wings and its slicks do nothing for it out there.
+  const rough = spec.road && !ground.pavedAt?.(car.x, car.z) ? spec.road : 0;
   let drive = 0;
 
   if (car.grounded) {
@@ -208,7 +215,7 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
 
     // Better tyres keep more of the push on a climb; on the flat they change nothing.
     const climb = Math.min(1, Math.abs(Math.sin(slopePitch)) * 4);
-    if (input.gas) drive = spec.accel * (1 + (spec.grip - 1) * climb) * (1 - wading * 0.7) * grip.bite;
+    if (input.gas) drive = spec.accel * (1 + (spec.grip - 1) * climb) * (1 - wading * 0.7) * grip.bite * (1 - rough * (1 - OFF_ROAD.accel));
     else if (input.brake) drive = (car.speed > 0.5 ? -BRAKE : -spec.accel * 0.8) * grip.bite;
     car.speed += drive * dt;
     if (!input.gas && !input.brake) {
@@ -216,7 +223,7 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
       car.speed -= Math.sign(car.speed) * Math.min(Math.abs(car.speed), (1.4 + Math.abs(car.speed) * 0.2) * grip.bite * dt);
     }
     if (wading > 0) car.speed *= Math.exp(-wading * 2.2 * dt);
-    const top = spec.maxSpeed * (1 - wading * 0.75);
+    const top = spec.maxSpeed * (1 - wading * 0.75) * (1 - rough * (1 - OFF_ROAD.speed));
     car.speed = Math.max(MAX_REVERSE, Math.min(top, car.speed));
   }
 

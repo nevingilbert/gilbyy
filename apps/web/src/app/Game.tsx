@@ -5,7 +5,10 @@ import { achievementFor } from "./achievements";
 import { CONVOY_MAX, Convoys, GATHER_REACH, lineUp, type ConvoyEvent } from "./convoy";
 import { secondsUntil } from "./daylight";
 import { cityData, loadCityData } from "./city-streets";
+import { DOCK_REACH, PIER, dockBoard, dockLeave, fromDock } from "./dock";
+import { LAND, SAIL, ferryBase, sailIn, sailOut, type FerryFrame } from "./ferry";
 import { ARRIVE, BOARD_REACH, DEPART, arrival, boardSpot, deckAt, departure, leaveSpot, rideOnDeck } from "./flight";
+import { LIFT, PAD_REACH, SET, liftOff, padBoard, padLeave, setDown } from "./heli";
 import { arrival as trainIn, departure as trainOut, inEnd, outEnd, wagonBase, type TrainFrame } from "./rail-trip";
 import { BOARD_REACH as STATION_REACH } from "./station";
 import { GarageMenu, fmtMiles } from "./GarageMenu";
@@ -338,6 +341,7 @@ export function Game() {
       get square() {
         return world.square;
       },
+      pavedAt: (x, z) => world.pavedAt?.(x, z) ?? false,
       obstaclesNear: (x, z) => {
         const still = world.obstaclesNear(x, z);
         const near = moving.filter((o) => Math.abs(o.x - x) < 24 && Math.abs(o.z - z) < 24);
@@ -816,10 +820,17 @@ export function Game() {
       const way = boardingWay;
       const to = way && wayFrom(world.id, way);
       if (!way || !to) return "Nothing goes anywhere from here.";
-      const spot = way === "plane" ? world.airport && boardSpot(world.airport) : world.station?.board;
-      const reach = way === "plane" ? BOARD_REACH : STATION_REACH;
+      const spot =
+        way === "plane" ? world.airport && boardSpot(world.airport)
+        : way === "boat" ? world.dock && dockBoard(world.dock)
+        : way === "heli" ? world.pad && padBoard(world.pad)
+        : world.station?.board;
+      const reach = way === "plane" ? BOARD_REACH : way === "boat" ? DOCK_REACH : way === "heli" ? PAD_REACH : STATION_REACH;
       if (!spot || modeRef.current !== "drive" || trip || running || convoys.state || car.stuck || Math.hypot(car.x - spot.x, car.z - spot.z) > reach + 2) {
-        return way === "plane" ? "Pull up behind the plane first." : "Pull up beside the flat wagon first.";
+        return way === "plane" ? "Pull up behind the plane first."
+          : way === "boat" ? "Pull up out on the causeway first."
+          : way === "heli" ? "Pull up onto the helipad first."
+          : "Pull up beside the flat wagon first.";
       }
       // The train only takes you while it's standing at the platform.
       const wait = way === "train" ? trainWait() : 0;
@@ -1385,6 +1396,12 @@ export function Game() {
       } else if (params.has("station") && world.station) {
         const spot = world.station.board;
         placeOnGround(spot.x, spot.z, spot.heading, 0);
+      } else if (params.has("dock") && world.dock) {
+        const spot = dockBoard(world.dock);
+        placeOnGround(spot.x, spot.z, spot.heading, 0);
+      } else if (params.has("pad") && world.pad) {
+        const spot = padBoard(world.pad);
+        placeOnGround(spot.x, spot.z, spot.heading, 0);
       } else if (at.length >= 2 && at.every(Number.isFinite)) placeOnGround(at[0], at[1], at[2] ?? 0, 0);
     };
     placeAsAsked();
@@ -1393,6 +1410,15 @@ export function Game() {
 
     /** What the truck's wheels stand on during the plane's film: the ramp and the hold's floor, as well as the apron. */
     const deck: Ground = { ...ground, height: (x, z) => world.height(x, z) + (world.airport ? deckAt(world.airport, x, z) : 0) };
+    /** And during the ferry's: its car deck and ramps, as well as the causeway. Set each frame. */
+    let ferryFrame: FerryFrame | null = null;
+    const aboard: Ground = {
+      ...ground,
+      height: (x, z) => {
+        const d = world.dock;
+        return ferryFrame && d ? ferryBase(d, ferryFrame.ferry, ferryFrame.ramps, (gx, gz) => world.height(gx, gz), x, z) : world.height(x, z);
+      },
+    };
     /** And during the train's: the flat wagon's deck and its ramp, as well as the ground. Set each frame. */
     let wagonFrame: TrainFrame | null = null;
     const onWagon: Ground = {
@@ -1403,17 +1429,27 @@ export function Game() {
     /** What's said on arriving: where you are, and what the way back costs. */
     const welcome = (way: Way) => {
       const back = wayFrom(world.id, way);
+      if (world.id === "island" && way === "boat") return `Back on the island. The flight to the valley is ${WORLDS.valley.fare} mi, whenever you have them.`;
       if (world.id === "island") return `The island. The flight home is ${WORLDS.valley.fare} mi, whenever you have them.`;
       if (world.id === "city") return `San Francisco. Fourth and King, and the whole city. The train home is ${WORLDS.valley.fare} mi, whenever you have them.`;
+      if (world.id === "vegas" && way === "heli") return `Back in Las Vegas, on the canyon's rim. The ferry to the island is ${WORLDS.island.fare} mi, whenever you have them.`;
+      if (world.id === "japan") return `Japan. Fuji over the lake, the town by the harbour, the terraces and the pass. The helicopter back is ${WORLDS.vegas.fare} mi, whenever you have them.`;
+      if (world.id === "vegas") return `Las Vegas. The marina on Lake Mead, the Strip across the desert, and the canyon beyond. The ferry back is ${WORLDS.island.fare} mi, whenever you have them.`;
       return back ? "Back in the valley." : "";
     };
 
-    /** The film is over: the truck is on the apron, or beside the platform, of the other world, and is the player's again. */
+    /** The film is over: the truck is on the apron, beside the platform, back on the causeway or on the pad, of the other world, and is the player's again. */
     const arrive = (way: Way) => {
-      const spot = way === "plane" && world.airport ? leaveSpot(world.airport) : world.station ? world.station.leave : world.start;
+      const spot =
+        way === "plane" && world.airport ? leaveSpot(world.airport)
+        : way === "boat" && world.dock ? dockLeave(world.dock)
+        : way === "heli" && world.pad ? padLeave(world.pad)
+        : world.station ? world.station.leave
+        : world.start;
       placeOnGround(spot.x, spot.z, spot.heading, 0);
       trip = null;
       wagonFrame = null;
+      ferryFrame = null;
       landed = true;
       lastDistance = car.distance;
       lastPose = { x: car.x, z: car.z };
@@ -1444,7 +1480,9 @@ export function Game() {
       if (!trip) return null;
       trip.t += dt;
       const train = trip.way === "train";
-      const outLength = train && world.station ? outEnd(world.station) : DEPART.end;
+      const boat = trip.way === "boat";
+      const byHeli = trip.way === "heli";
+      const outLength = train && world.station ? outEnd(world.station) : boat ? SAIL.end : byHeli ? LIFT.end : DEPART.end;
       if (trip.leg === "out" && trip.t >= outLength) {
         if (trip.to === "city" && !cityData()) {
           // Still fetching: hold the last frame, in the dark.
@@ -1456,6 +1494,46 @@ export function Game() {
         }
       }
       const cloud = cloudRef.current;
+      if (byHeli) {
+        const p = world.pad;
+        if (!p) {
+          arrive("heli");
+          return null;
+        }
+        const heightAt = (x: number, z: number) => world.height(x, z);
+        const frame = trip.leg === "out" ? liftOff(p, trip.from, heightAt, Math.min(trip.t, outLength)) : setDown(p, heightAt, Math.min(trip.t, SET.end));
+        const tr = frame.truck;
+        if (tr) {
+          pose(tr.x, tr.z, tr.heading, tr.base + spec.ride, tr.pitch, dt);
+          // Hanging under the helicopter, its wheels droop and don't turn.
+          if (tr.hung) Object.assign(car, { roll: tr.roll, grounded: false, speed: 0 });
+        }
+        if (cloud) {
+          cloud.style.opacity = String(frame.haze);
+          cloud.style.backgroundColor = view.haze();
+        }
+        if (trip.leg === "in" && trip.t >= SET.end) arrive("heli");
+        return { way: "heli", frame, ground };
+      }
+      if (boat) {
+        const d = world.dock;
+        if (!d) {
+          arrive("boat");
+          return null;
+        }
+        const ground = (x: number, z: number) => world.height(x, z);
+        const berth = fromDock(d, 0, PIER.length + 20);
+        const water = world.waterAt(berth.x, berth.z);
+        const frame = trip.leg === "out" ? sailOut(d, trip.from, ground, water, Math.min(trip.t, outLength)) : sailIn(d, ground, water, Math.min(trip.t, LAND.end));
+        ferryFrame = frame;
+        if (frame.truck) pose(frame.truck.x, frame.truck.z, frame.truck.heading, frame.truck.base + spec.ride, frame.truck.pitch, dt);
+        if (cloud) {
+          cloud.style.opacity = String(frame.haze);
+          cloud.style.backgroundColor = view.haze();
+        }
+        if (trip.leg === "in" && trip.t >= LAND.end) arrive("boat");
+        return { way: "boat", frame, ground: aboard };
+      }
       if (train) {
         const st = world.station;
         if (!st) {
@@ -1766,12 +1844,16 @@ export function Game() {
       const together = found < 0 && !m ? convoyPrompt() : null;
 
       const still = !running && !convoys.state && found < 0 && !m && !together && Math.abs(car.speed) < 5;
-      // Behind the plane's tail, or beside the train's flat wagon: what's on offer is a trip.
+      // Behind the plane's tail, beside the train's flat wagon, out on the causeway or on the helipad: what's on offer is a trip.
       const plane = world.airport && boardSpot(world.airport);
       const wagon = world.station?.board;
+      const quay = world.dock && dockBoard(world.dock);
+      const helipad = world.pad && padBoard(world.pad);
       tripHere =
         still && plane && Math.hypot(car.x - plane.x, car.z - plane.z) < BOARD_REACH ? { way: "plane", wait: 0 }
         : still && wagon && Math.hypot(car.x - wagon.x, car.z - wagon.z) < STATION_REACH ? { way: "train", wait: trainWait() }
+        : still && quay && Math.hypot(car.x - quay.x, car.z - quay.z) < DOCK_REACH ? { way: "boat", wait: 0 }
+        : still && helipad && Math.hypot(car.x - helipad.x, car.z - helipad.z) < PAD_REACH ? { way: "heli", wait: 0 }
         : null;
       landmarkHere = (still && !tripHere && view.landmarks.find((l) => Math.hypot(car.x - l.x, car.z - l.z) < 7)?.kind) || null;
 
@@ -2307,7 +2389,7 @@ export function Game() {
             {prompt.kind === "landmark" && <>Look in at {LANDMARKS[prompt.id].place}</>}
             {prompt.kind === "trip" && prompt.wait === 0 && (
               <>
-                Board the {prompt.way} to <b className="font-semibold">{WORLDS[prompt.to].name}</b>
+                Board the {prompt.way === "boat" ? "ferry" : prompt.way === "heli" ? "helicopter" : prompt.way} to <b className="font-semibold">{WORLDS[prompt.to].name}</b>
                 <span className="text-[rgba(255,246,232,0.6)]"> · {fmtMiles(WORLDS[prompt.to].fare)} mi</span>
               </>
             )}

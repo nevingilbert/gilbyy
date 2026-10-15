@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { deckPoint, type Deck } from "./city-bridges";
 import type { Building, District } from "./city-buildings";
-import { KERB_N, type CityWorld } from "./city";
+import { KERB_N } from "./city";
 import { STREET_WIDTH, resample, toGame, type Pt } from "./city-streets";
 import { makeRandom } from "./noise";
 import { Kit, lambert, tone } from "./garages";
@@ -274,9 +274,9 @@ export function buildBuildings(buildings: Building[], u: CityUniforms) {
   };
 }
 
-/** The street map as a texture: each texel a kerb distance, which the terrain's shader paints as road, kerb or pavement. */
-export function kerbTexture(world: CityWorld) {
-  const tex = new THREE.DataTexture(world.city.kerb, KERB_N, KERB_N, THREE.RedFormat, THREE.UnsignedByteType);
+/** A street map as a texture: each texel a kerb distance, which the terrain's shader paints as road, kerb or pavement. The city's, or Vegas's. */
+export function kerbTexture(kerb: Uint8Array) {
+  const tex = new THREE.DataTexture(kerb, KERB_N, KERB_N, THREE.RedFormat, THREE.UnsignedByteType);
   tex.magFilter = THREE.LinearFilter;
   tex.minFilter = THREE.LinearFilter;
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
