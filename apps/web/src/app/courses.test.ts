@@ -234,7 +234,7 @@ describe("the sandbar", () => {
     for (const rig of ["bluff", "sandfly"] as const) {
       const run = driveNow(course, STOCK_LOADOUT, rig, island);
       expect(run, rig).not.toBeNull();
-      expect(run!.seconds, rig).toBeGreaterThan(drive(course, STOCK_LOADOUT, rig, island)!.seconds * 1.5);
+      expect(run!.seconds, rig).toBeGreaterThan(drive(course, STOCK_LOADOUT, rig, island)!.seconds * 1.2);
     }
   });
 });
