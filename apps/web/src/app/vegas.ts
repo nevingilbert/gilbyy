@@ -224,6 +224,161 @@ export const EIFFEL = { dx: -88, spread: 13, height: 84 } as const;
 export const WHEEL = { radius: 44, axle: 52, feet: 26 } as const;
 /** The tower at the north end of the Strip: this far back from its casino's front, which it rises out of; this tall; its shaft this thick. */
 export const STRAT = { inset: 16, height: 190, shaft: 9 } as const;
+/** The Sphere: its radius against its lot's half-size, and how much of that is sunk into the ground. */
+export const SPHERE = { size: 1.12, sunk: 0.42 } as const;
+
+/**
+ * Which way a resort faces and its half-sizes across and along that, as its model is
+ * built: the Strip's face the Strip, downtown's face Fremont Street. In a resort's own
+ * space, +z is out of its front and x runs across it.
+ */
+export function resortFrame(r: Resort) {
+  const downtown = r.kind === "downtown";
+  const rot = downtown ? (r.z < CROSS.fremont ? 0 : Math.PI) : r.x < STRIP_X ? Math.PI / 2 : -Math.PI / 2;
+  const [fw, fd] = downtown ? [r.hw, r.hd] : [r.hd, r.hw];
+  return { rot, fw, fd };
+}
+
+/** A point in a resort's own space as a world (x, z). */
+export function fromResort(r: Resort, lx: number, lz: number) {
+  const { rot } = resortFrame(r);
+  return { x: r.x + lx * Math.cos(rot) + lz * Math.sin(rot), z: r.z - lx * Math.sin(rot) + lz * Math.cos(rot) };
+}
+
+/** The resorts with a marquee out front, and where it stands: at the front corner nearer the middle of the Strip. */
+export const MARQUEE_KINDS = new Set<ResortKind>(["pyramid", "castle", "skyline", "glass", "fountains", "palace", "volcano", "bigtop", "lion", "slab", "venice", "bronze", "strat"]);
+export function marqueeAt(r: Resort) {
+  const { fw, fd } = resortFrame(r);
+  return { x: (r.z > 0 ? 1 : -1) * (r.x < STRIP_X ? -1 : 1) * (fw - 7), z: fd - 2.5 };
+}
+
+/** A box in a resort's own space, turned by `rot` within it; and a round thing. */
+export type MassBox = { x: number; z: number; hw: number; hd: number; rot: number };
+export type MassRound = { x: number; z: number; r: number };
+/** How high off the ground a truck's body reaches, where it meets what's built. */
+const BUMPER = 2;
+
+/**
+ * What stands on a resort's lot that a truck runs into, as its model (vegas-model.ts)
+ * draws it at the height of a truck: its towers, podiums and front buildings as boxes; its
+ * cones, drums, posts and legs as rounds. Not its lagoons and canals, which are paint on the
+ * ground, nor what only overhangs. In the resort's own space (`resortFrame`). The lot round
+ * it is open ground; the model's numbers are these (vegas.test.ts holds the two together).
+ */
+export function resortMasses(r: Resort): { boxes: MassBox[]; rounds: MassRound[] } {
+  const { fw, fd } = resortFrame(r);
+  const boxes: MassBox[] = [];
+  const rounds: MassRound[] = [];
+  const box = (x: number, z: number, hw: number, hd: number, rot = 0) => boxes.push({ x, z, hw, hd, rot });
+  const round = (x: number, z: number, rr: number) => rounds.push({ x, z, r: rr });
+  /** A curve of tower blocks, `n` either side of the middle, `step` apart in angle on a circle of `radius`. */
+  const curve = (n: number, step: number, radius: number, hw: number, hd: number) => {
+    for (let i = -n; i <= n; i++) {
+      const a = i * step;
+      box(Math.sin(a) * radius, -Math.cos(a) * radius + radius - fd * 0.2, hw, hd, -a);
+    }
+  };
+  switch (r.kind) {
+    case "pyramid": {
+      const base = Math.min(fw, fd) * 1.6;
+      box(0, -fd + base / 2 + 4, base / 2, base / 2);
+      // The sphinx, its body and its paws, and the obelisk.
+      box(0, fd - 10, 3.5, 9);
+      box(0, fd + 1, 3.5, 3.5);
+      round(fw - 14, fd - 6, 2);
+      break;
+    }
+    case "castle":
+      box(0, fd - 14, fw * 0.7, 9);
+      for (const f of [-0.7, -0.35, 0, 0.35, 0.7]) round(f * fw, fd - 6, 3.4);
+      for (const s of [1, -1]) box(s * fw * 0.5, -fd * 0.35, 11, 30);
+      break;
+    case "skyline":
+      for (const [fx, fz] of SKYLINE_TOWERS) box(fx * fw, fz * fd, 6, 6);
+      box(fw - 8, fd - 8, 3.5, 3.5);
+      break;
+    case "glass":
+      box(-fw * 0.4, -fd * 0.2, 10, 13);
+      box(fw * 0.45, -fd * 0.3, 9, 11);
+      box(0, fd * 0.3, 8, 9);
+      break;
+    case "fountains":
+      curve(3, 0.11, 120, 13, 9);
+      break;
+    case "palace":
+      // The front and its colonnade, the dome's drum, the hotel tower.
+      box(0, fd - 11.2, fw * 0.8, 8.8);
+      round(-fw * 0.4, -fd * 0.1, 13);
+      box(fw * 0.25, -fd * 0.45, 20, 11);
+      break;
+    case "volcano":
+      // The cone, as wide as it is at a truck's height: its foot is round, it's rough higher up.
+      round(0, fd - 18, 15);
+      for (const a of [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3]) box(Math.sin(a) * 14, -fd * 0.35 + Math.cos(a) * 14, 6, 7, a);
+      round(0, -fd * 0.35, 9);
+      break;
+    case "bigtop":
+      round(0, fd * 0.25, Math.min(fw, fd) * 0.65);
+      box(0, -fd * 0.7, fw * 0.6, 8);
+      break;
+    case "lion":
+      box(0, -fd * 0.3, fw * 0.7, 10);
+      box(0, -fd * 0.2, 10, fd * 0.6);
+      box(0, fd - 18, fw * 0.9, 15);
+      box(fw - 14, fd - 6, 6, 6, -0.6);
+      break;
+    case "slab":
+      box(0, -fd * 0.3, fw * 0.65, 11);
+      box(0, fd - 15, fw * 0.9, 13);
+      break;
+    case "eiffel":
+      box(0, -fd * 0.2, fw * 0.7, 15);
+      box(fw * 0.6, fd - 6, 1, 1);
+      // The tower's legs, out before the hotel toward the Strip, where the model has them a metre up.
+      for (const sx of [1, -1]) {
+        for (const sz of [1, -1]) {
+          const leg = EIFFEL.spread * Math.pow(1 - 1 / EIFFEL.height, 1.8) + 0.6;
+          round(sx * leg, -EIFFEL.dx + sz * leg, 1.5);
+        }
+      }
+      break;
+    case "wheel":
+      for (const sx of [1, -1]) for (const sz of [1, -1]) round(sx * WHEEL.feet, sz * 6, 1.6);
+      break;
+    case "venice":
+      box(-fw * 0.25, fd - 15.65, fw * 0.55, 7.35);
+      box(fw * 0.62, fd - 14, 4, 4);
+      box(0, -fd * 0.45, fw * 0.8, 11);
+      break;
+    case "bronze":
+      curve(3, 0.13, 90, 6.25, 10);
+      box(0, fd - 14, fw * 0.85, 13);
+      break;
+    case "sphere": {
+      // A ball sunk into the ground: as wide as it is where a truck's body meets it.
+      const radius = r.hw * SPHERE.size;
+      const above = radius * (1 - SPHERE.sunk);
+      round(0, 0, Math.sqrt(radius * radius - (above - BUMPER) ** 2));
+      break;
+    }
+    case "strat":
+      box(0, -fd * 0.1, fw * 0.8, fd * 0.7);
+      round(0, fd - STRAT.inset, STRAT.shaft);
+      break;
+    case "downtown":
+      box(0, 0, fw - 2, fd - 2);
+      break;
+  }
+  // The marquee's two legs.
+  if (MARQUEE_KINDS.has(r.kind)) {
+    const m = marqueeAt(r);
+    for (const s of [1, -1]) round(m.x + s * 1.6, m.z, 0.45);
+  }
+  return { boxes, rounds };
+}
+
+/** The skyline's thin towers, where each stands across and along its lot, how tall, and its colour. */
+export const SKYLINE_TOWERS = [[-0.6, -0.4, 52, 0], [-0.2, -0.5, 70, 1], [0.25, -0.35, 86, 2], [0.6, -0.5, 60, 3], [-0.45, 0.15, 44, 1], [0.05, 0.1, 58, 4], [0.5, 0.2, 40, 2]] as const;
 
 /** The F1 circuit's line, the Grand Prix's: up Koval, along Sands, down the Strip, along Harmon. Its corners are rounded. */
 function circuitLine(): Pt[] {
@@ -261,6 +416,7 @@ export type VegasParts = {
   roads: Road[];
   /** Distance to the nearest kerb, as bytes (`kerbOf` in city.ts), KERB_N square, north row first. */
   kerb: Uint8Array;
+  /** The resorts' lots, as walls: what the map shades. A truck runs into what's drawn on them (`resortMasses`). */
   walls: Walls;
   resorts: Resort[];
   /** The lake before the fountains: its rectangle and its water's height. */
@@ -368,27 +524,28 @@ export function buildVegas(seed = 20261023): VegasWorld {
   // Nothing grows on the pad's paving, between it and the helicopter's stand, nor under the rotor.
   markNear(siteDist, pad, standAt(pad), 30, 5);
 
-  // The walls of everything built: the resorts' blocks, as boxes.
+  // What's built: the resorts' lots, which the courses, the palms and the scatter keep clear
+  // of and the map shades; and what's drawn on them (resortMasses), which is what a truck
+  // runs into. Between the two is open ground: plazas, courtyards, the sides of the pyramid.
+  const lots = new Walls();
   const walls = new Walls();
   const solid = obstacleIndex();
   for (const r of resorts) {
-    if (r.kind === "sphere") solid.add({ x: r.x, z: r.z, r: r.hw, h: Infinity });
-    else if (r.kind === "wheel") {
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) solid.add({ x: r.x + sx * 6, z: r.z + sz * WHEEL.feet, r: 1.6, h: Infinity });
-    } else {
-      walls.addBox(r.x, r.z, 0, r.hw, r.hd);
-      if (r.kind === "eiffel") {
-        const tx = r.x + EIFFEL.dx;
-        for (const sx of [-1, 1]) for (const sz of [-1, 1]) solid.add({ x: tx + sx * EIFFEL.spread, z: r.z + sz * EIFFEL.spread, r: 2.4, h: Infinity });
-      }
+    if (r.kind !== "sphere" && r.kind !== "wheel") lots.addBox(r.x, r.z, 0, r.hw, r.hd);
+    const { rot } = resortFrame(r);
+    const { boxes, rounds } = resortMasses(r);
+    for (const b of boxes) {
+      const c = fromResort(r, b.x, b.z);
+      walls.addBox(c.x, c.z, rot + b.rot, b.hw, b.hd);
     }
+    for (const o of rounds) solid.add({ ...fromResort(r, o.x, o.z), r: o.r, h: Infinity });
   }
   // Fremont's canopy stands on columns along both pavements.
   for (let x = CANOPY.x0; x <= CANOPY.x1 + 0.1; x += 25) for (const side of [-1, 1]) solid.add({ x, z: CROSS.fremont + side * CANOPY.half, r: 0.7, h: Infinity });
   // The Welcome sign, on its island in the middle of the Strip.
   const sign = { x: STRIP_X, z: 1010, y: ground(STRIP_X, 1010) };
   solid.add({ x: sign.x, z: sign.z, r: 3.2, h: Infinity });
-  const wallFrom = (x: number, z: number) => walls.distance(x, z);
+  const wallFrom = (x: number, z: number) => lots.distance(x, z);
 
   // The courses.
   const slope = (x: number, z: number) => Math.hypot(ground(x + 2, z) - ground(x - 2, z), ground(x, z + 2) - ground(x, z - 2)) / 4;
@@ -533,7 +690,7 @@ export function buildVegas(seed = 20261023): VegasWorld {
     addObstacles: (list: readonly Obstacle[]) => list.forEach(solid.add),
     setTide: () => {},
     vegas: {
-      ground: kinds, roads, kerb, walls, resorts, pool: { x0: POOL.x0, x1: POOL.x1, z0: POOL.z0, z1: POOL.z1, y: poolY },
+      ground: kinds, roads, kerb, walls: lots, resorts, pool: { x0: POOL.x0, x1: POOL.x1, z0: POOL.z0, z1: POOL.z1, y: poolY },
       circuit, sign, canopy: { x0: CANOPY.x0, x1: CANOPY.x1, z: CROSS.fremont, y: ground((CANOPY.x0 + CANOPY.x1) / 2, CROSS.fremont) },
       fire, canyon: shape.canyon, lookout,
     },

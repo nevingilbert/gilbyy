@@ -1,7 +1,10 @@
 import * as THREE from "three";
 import { Kit, lambert } from "./garages";
 import { PALETTE } from "./palette";
-import { CANOPY, CROSS, EIFFEL, GRID, KOVAL_X, STRAT, STRIP_X, WHEEL, type Resort, type VegasWorld } from "./vegas";
+import {
+  CANOPY, CROSS, EIFFEL, GRID, KOVAL_X, MARQUEE_KINDS, SKYLINE_TOWERS, SPHERE, STRAT, STRIP_X, WHEEL,
+  marqueeAt, resortFrame, type Resort, type VegasWorld,
+} from "./vegas";
 
 /**
  * Drawing Las Vegas (ADR 0023): the Strip's resorts, each after a famous one but none by
@@ -11,7 +14,7 @@ import { CANOPY, CROSS, EIFFEL, GRID, KOVAL_X, STRAT, STRIP_X, WHEEL, type Resor
  * game that glows. Everything solid here is solid in vegas.ts already.
  */
 
-type Neon = THREE.MeshLambertMaterial[];
+export type Neon = THREE.MeshLambertMaterial[];
 type Built = { object: THREE.Group; update?: (time: number, night: number) => void };
 /** Builds one resort in its own space: the origin on its lot's ground, its front toward +z, `fw` and `fd` half its frontage and depth. */
 type Build = (k: Kit, root: THREE.Group, fw: number, fd: number, kit: { windows: THREE.Material; lamps: THREE.Material; neon: Neon; r: Resort }) => Built["update"] | void;
@@ -95,8 +98,7 @@ const castle: Build = (k, _root, fw, fd, { windows, neon }) => {
 
 /** The skyline: a cluster of thin towers, one stepped to a mast and one with a pointed crown, the statue at its corner. */
 const skyline: Build = (k, _root, fw, fd, { windows, neon }) => {
-  const towers = [[-0.6, -0.4, 52, 0], [-0.2, -0.5, 70, 1], [0.25, -0.35, 86, 2], [0.6, -0.5, 60, 3], [-0.45, 0.15, 44, 1], [0.05, 0.1, 58, 4], [0.5, 0.2, 40, 2]];
-  for (const [fx, fz, h, c] of towers) slab(k, stucco(c), windows, 12, h, 12, fx * fw, fz * fd, 3.4);
+  for (const [fx, fz, h, c] of SKYLINE_TOWERS) slab(k, stucco(c), windows, 12, h, 12, fx * fw, fz * fd, 3.4);
   // The stepped one, its mast; the pointed one, its crown.
   const tallest = k.at(0.25 * fw, 86, -0.35 * fd);
   tallest.box(stucco(2), 8, 6, 8, 0, 3, 0);
@@ -184,7 +186,7 @@ const volcano: Build = (k, root, fw, fd, { windows }) => {
   const p = cone.getAttribute("position") as THREE.BufferAttribute;
   for (let i = 0; i < p.count; i++) {
     const y = p.getY(i);
-    if (y > 8.9) continue;
+    if (y > 8.9 || y < -8.9) continue;
     const a = Math.atan2(p.getZ(i), p.getX(i));
     const s = 1 + 0.18 * Math.sin(a * 5 + y);
     p.setXYZ(i, p.getX(i) * s, y, p.getZ(i) * s);
@@ -410,8 +412,8 @@ function cowboy(root: THREE.Group, fw: number, fd: number, neon: Neon): (time: n
 /** The Sphere: a ball the size of a stadium, its whole skin a screen. Its pictures are drawn in its shader. */
 function sphere(r: Resort): Built {
   const object = new THREE.Group();
-  const radius = r.hw * 1.12;
-  const sunk = radius * 0.42;
+  const radius = r.hw * SPHERE.size;
+  const sunk = radius * SPHERE.sunk;
   const time = { value: 0 };
   const night = { value: 0 };
   const mat = new THREE.MeshLambertMaterial({ color: PALETTE.vegas.sphere });
@@ -460,8 +462,6 @@ function sphere(r: Resort): Built {
   };
 }
 
-/** The resorts with a marquee out front. */
-const MARQUEES = new Set<Resort["kind"]>(["pyramid", "castle", "skyline", "glass", "fountains", "palace", "volcano", "bigtop", "lion", "slab", "venice", "bronze", "strat"]);
 
 const BUILDERS: Partial<Record<Resort["kind"], Build>> = {
   pyramid, castle, skyline, glass, fountains, palace, volcano, bigtop, lion, slab: slabResort, eiffel, wheel, venice, bronze, strat, downtown,
@@ -652,41 +652,49 @@ function stripLamps(world: VegasWorld, lamps: THREE.Material): THREE.Group {
   return object;
 }
 
+/**
+ * One resort, placed on its lot and facing its street (`resortFrame`): the Strip's from
+ * either side, downtown's Fremont Street from either side. What a truck runs into on it is
+ * `resortMasses` in vegas.ts, which has the same numbers.
+ */
+export function buildResort(r: Resort, pool: VegasWorld["vegas"]["pool"], mats: { windows: THREE.Material; lamps: THREE.Material; neon: Neon }): Built | null {
+  if (r.kind === "sphere") {
+    const built = sphere(r);
+    built.object.position.set(r.x, r.y, r.z);
+    return built;
+  }
+  const build = BUILDERS[r.kind];
+  if (!build) return null;
+  const { rot, fw, fd } = resortFrame(r);
+  const root = new THREE.Group();
+  if (r.kind === "fountains") {
+    // Where the pool is in the resort's own space: along its front, between it and the Strip.
+    root.userData.pool = { near: pool.x0 - r.x, far: pool.x1 - r.x, across: (pool.z1 - pool.z0) / 2 - 6, y: pool.y };
+  }
+  const k = new Kit();
+  const update = build(k, root, fw, fd, { ...mats, r });
+  // A marquee at the front corner of every resort on the Strip, inside its lot.
+  if (MARQUEE_KINDS.has(r.kind)) {
+    const m = marqueeAt(r);
+    marquee(k, mats.neon, Math.floor(r.tone * 60), m.x, m.z);
+  }
+  k.build(root);
+  root.position.set(r.x, r.y, r.z);
+  root.rotation.y = rot;
+  return { object: root, update: update ?? undefined };
+}
+
 /** Everything in Vegas the renderer draws over its ground: resorts, screens, the sign, the circuit, lamps. */
 export function buildVegasTown(world: VegasWorld, windows: THREE.Material, lamps: THREE.Material) {
   const group = new THREE.Group();
   litMats = new Map();
   const neon: Neon = PALETTE.vegas.neon.map((c) => new THREE.MeshLambertMaterial({ color: c, emissive: c, emissiveIntensity: 0.25 }));
   const updates: NonNullable<Built["update"]>[] = [];
-  const pool = world.vegas.pool;
   for (const r of world.vegas.resorts) {
-    if (r.kind === "sphere") {
-      const built = sphere(r);
-      built.object.position.set(r.x, r.y, r.z);
-      group.add(built.object);
-      if (built.update) updates.push(built.update);
-      continue;
-    }
-    const build = BUILDERS[r.kind];
-    if (!build) continue;
-    // Faces the street it's on: the Strip from either side, Fremont Street from either side.
-    const downtown = r.kind === "downtown";
-    const rot = downtown ? (r.z < CROSS.fremont ? 0 : Math.PI) : r.x < STRIP_X ? Math.PI / 2 : -Math.PI / 2;
-    const [fw, fd] = downtown ? [r.hw, r.hd] : [r.hd, r.hw];
-    const root = new THREE.Group();
-    if (r.kind === "fountains") {
-      // Where the pool is in the resort's own space: along its front, between it and the Strip.
-      root.userData.pool = { near: pool.x0 - r.x, far: pool.x1 - r.x, across: (pool.z1 - pool.z0) / 2 - 6, y: pool.y };
-    }
-    const k = new Kit();
-    const update = build(k, root, fw, fd, { windows, lamps, neon, r });
-    // A marquee at the front corner of every resort on the Strip, inside its lot.
-    if (!downtown && MARQUEES.has(r.kind)) marquee(k, neon, Math.floor(r.tone * 60), (r.z > 0 ? 1 : -1) * (r.x < STRIP_X ? -1 : 1) * (fw - 7), fd - 2.5);
-    k.build(root);
-    root.position.set(r.x, r.y, r.z);
-    root.rotation.y = rot;
-    group.add(root);
-    if (update) updates.push(update);
+    const built = buildResort(r, world.vegas.pool, { windows, lamps, neon });
+    if (!built) continue;
+    group.add(built.object);
+    if (built.update) updates.push(built.update);
   }
   const screens = [canopy(world), welcomeSign(world, lamps)];
   for (const s of screens) {
