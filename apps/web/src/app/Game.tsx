@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { achievementFor } from "./achievements";
 import { CONVOY_MAX, Convoys, GATHER_REACH, lineUp, type ConvoyEvent } from "./convoy";
-import { secondsUntil } from "./daylight";
+import { DAY_LENGTH, secondsUntil } from "./daylight";
+import { clearSpot, devSpots, driveCourse, spawnSpots, spotProblems, wayThrough } from "./dev";
+import { DevChip, DevPanel, type DevControls, type DevFinding, type DevInfo } from "./DevPanel";
+import { FOG_CELLS } from "./fog";
 import { cityData, loadCityData } from "./city-streets";
 import { DOCK_REACH, PIER, dockBoard, dockLeave, fromDock } from "./dock";
 import { LAND, SAIL, ferryBase, sailIn, sailOut, type FerryFrame } from "./ferry";
@@ -16,7 +19,7 @@ import { currentGoal } from "./goals";
 import { buildWorldOf } from "./island";
 import { LANDMARKS, type LandmarkKind } from "./landmarks";
 import { createMap } from "./map";
-import { fmtAir, fmtTime, missionAt, startRun, tick, type Run } from "./mission-run";
+import { fmtAir, fmtTime, lineUpAlone, missionAt, startRun, tick, type Run } from "./mission-run";
 import { stackTags, type TagBox } from "./name-tags";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
 import { LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker, TripCard } from "./Panels";
@@ -24,7 +27,7 @@ import { PALETTE } from "./palette";
 import { KEY_TURN, clampOrbit, dragOrbit, photoName, zoomOrbit, type Orbit } from "./photo";
 import { between, makeCar, noInput, step, yawRateOf, type Input } from "./physics";
 import { markFor, onPin, pinAt, reached, type Spot } from "./pin";
-import { countFound, eggKey, foundLine } from "./places";
+import { PLACES, countFound, eggKey, foundLine } from "./places";
 import { createView, type Film, type Garage, type Rope, type Shot, type TowDrawn } from "./scene";
 import { METRES_PER_MILE, STOCK_LOADOUT, itemKey, specFor, type Loadout } from "./shop";
 import { GARAGE_NAMES } from "./showroom";
@@ -42,6 +45,11 @@ import { WINCH_LIMIT, WINCH_REACH, WINCH_STILL, WINCH_TAKES, canWinch, hasWinch,
 import type { Ground, Mission, Obstacle, SiteStyle, WorldId } from "./world";
 import { WORLDS, isWorld, wayFrom, type Way } from "./worlds";
 
+/**
+ * A development build (`pnpm dev`): the dev panel is there, behind the backtick key
+ * (DevPanel.tsx). A production build leaves it out altogether, so gilbyy.com never has it.
+ */
+const DEV = process.env.NODE_ENV !== "production";
 /** Physics runs at a fixed rate, independent of the display's refresh rate. */
 const STEP = 1 / 120;
 const ENTER_TIME = 2.3;
@@ -145,6 +153,8 @@ type Actions = {
   zoomPhoto(factor: number): void;
   /** Takes the picture. */
   snap(): void;
+  /** A shift-click on the open map in a development build: the truck goes there. */
+  devJumpMap(fx: number, fy: number): void;
 };
 const noop = () => {};
 /** At a start line before "go". Not the brake: held at a standstill, that reverses. */
@@ -216,7 +226,7 @@ export function Game() {
   /** Things the UI asks the game loop to do; the loop owns all the state. */
   const actions = useRef<Actions>({
     act: noop, leave: noop, toggleMap: noop, pin: noop, look: noop, pick: noop, preview: noop, fit: noop, say: noop,
-    photo: noop, turnPhoto: noop, zoomPhoto: noop, snap: noop,
+    photo: noop, turnPhoto: noop, zoomPhoto: noop, snap: noop, devJumpMap: noop,
     buy: async () => null, fly: async () => null, setName: async () => null, leaderboard: async () => [], chatOpen: () => false,
   });
   const turnRef = useRef(0);
@@ -245,6 +255,9 @@ export function Game() {
   const [towFrom, setTowFrom] = useState<string | null>(null);
   const [canPhoto, setCanPhoto] = useState(true);
   const [pinned, setPinned] = useState(false);
+  const [devOpen, setDevOpen] = useState(false);
+  /** The dev panel's controls, which the loop hands over once it's running. Development builds only. */
+  const [dev, setDev] = useState<DevControls | null>(null);
 
   useEffect(() => {
     typingRef.current = typing;
@@ -324,7 +337,7 @@ export function Game() {
     const at = (params.get("at") ?? "").split(",").map(Number);
     const startHour = Number(params.get("hour"));
     /** How far out the tide is held, in metres below high water, or null to let it come and go. */
-    const heldTide = params.get("tide") === "low" ? TIDE.fall : params.get("tide") === "high" ? 0 : null;
+    let heldTide = params.get("tide") === "low" ? TIDE.fall : params.get("tide") === "high" ? 0 : null;
     let placeAsAsked = () => {};
 
     // The physics sees the train and other players' trucks as obstacles on top of the static world.
@@ -364,6 +377,9 @@ export function Game() {
     const carDrawn = { ...car };
     let shared = false;
     let time = params.has("hour") && Number.isFinite(startHour) ? secondsUntil(startHour) : 0;
+    /** The dev panel's: how far its clock is put on from the shared one, and whether rocks can catch the truck in single player. */
+    let devShift = 0;
+    let devStuck = false;
     let first = true;
     let lastDistance = 0;
     let unbanked = 0;
@@ -844,23 +860,31 @@ export function Game() {
       const err = await store.fly(to);
       if (err || cancelled) return err;
       if (store.online) hintWorld(to);
-      // Aboard. The others here see the truck go: each world's players have their own channel.
-      if (net) {
-        net.leave();
-        net = null;
-        tent = -1;
-        forgetRopes();
-        peers.clear();
-        view.remotes.sync([]);
-        setPeople(1);
-        present("joining");
-      }
+      leaveNet();
       trip = { way, to, leg: "out", t: 0, from: { x: car.x, z: car.z, heading: car.heading } };
       setPrompt(null);
       shownPrompt = "";
       setBoarding(null);
       setModeBoth("flying");
       return null;
+    };
+    /** Aboard, or gone some other way: the others here see the truck go. Each world's players have their own channel. */
+    const leaveNet = () => {
+      if (!net) return;
+      net.leave();
+      net = null;
+      tent = -1;
+      forgetRopes();
+      peers.clear();
+      view.remotes.sync([]);
+      setPeople(1);
+      present("joining");
+    };
+    /** And arrived: a tent in this world, with its players. */
+    const joinNet = () => {
+      if (!netFor || !store.get().name) return;
+      net = netFor(world.id);
+      void join();
     };
     /** Which way the card that's open is for: the plane or the train. */
     let boardingWay: Way | null = null;
@@ -925,7 +949,8 @@ export function Game() {
         // Under the sea for now: the prompt says how long until it isn't.
         if (tideWait(m) > 0) return;
         // Line up just behind the start arch, facing the first gate.
-        placeOnGround(m.start.x - Math.sin(m.start.heading) * 7, m.start.z - Math.cos(m.start.heading) * 7, m.start.heading, 0);
+        const at = lineUpAlone(m);
+        placeOnGround(at.x, at.z, at.heading, 0);
         running = startRun(m);
         runIndex = world.missions.indexOf(m);
         lastPose = { x: car.x, z: car.z };
@@ -1319,6 +1344,11 @@ export function Game() {
     };
     const onKeyDown = (e: KeyboardEvent) => {
       const m = modeRef.current;
+      if (DEV && (e.code === "Backquote" || e.key === "`") && !typingRef.current) {
+        setDevOpen((open) => !open);
+        e.preventDefault();
+        return;
+      }
       // The menus, panels and chat box have their own keys.
       if (m === "garage" || m === "pick" || typingRef.current || panelRef.current) return;
       const k = e.key;
@@ -1406,6 +1436,140 @@ export function Game() {
     };
     placeAsAsked();
 
+    // ——— The dev panel (development builds only) ———
+
+    if (DEV) {
+      /** Why not: signed in, this is the real game, saved on the server. */
+      const blocked = () => (store instanceof LocalStore ? null : "Signed in, so this is the real game, saved on the server. The panel only works in single player, where nothing is kept: sign out to use it.");
+      const busy = () => (trip ? "Not during a trip." : modeRef.current !== "drive" && modeRef.current !== "map" ? "Only while driving." : null);
+      const jump = (s: { x: number; z: number; heading: number }) => {
+        const why = blocked() ?? busy();
+        if (why) return why;
+        const spot = clearSpot(world, s.x, s.z, spec);
+        if (!spot) return "There's nowhere clear to put the truck near there.";
+        if (running || convoys.state) giveUp("Run abandoned.");
+        placeOnGround(spot.x, spot.z, s.heading, 0);
+        lastDistance = car.distance;
+        lastPose = { x: car.x, z: car.z };
+        view.cut();
+        shownPrompt = STALE;
+        return null;
+      };
+      actions.current.devJumpMap = (fx, fy) => {
+        if (modeRef.current !== "map") return;
+        const to = pinAt(fx, fy, world.mapSpan);
+        actions.current.toggleMap();
+        const err = jump({ x: to.x, z: to.z, heading: car.heading });
+        if (err) say(err);
+      };
+      const controls: DevControls = {
+        blocked,
+        info: (): DevInfo => {
+          const below = car.y - spec.ride - 0.5;
+          let nearest: DevInfo["nearest"] = null;
+          for (const o of ground.obstaclesNear(car.x, car.z)) {
+            const gap = Math.hypot(o.x - car.x, o.z - car.z) - o.r;
+            const what = o.r >= 25 ? "wall" : o.boulder ? "boulder" : !Number.isFinite(o.h) ? "post" : "rock or tree";
+            if (!nearest || gap < nearest.gap) nearest = { gap, what };
+          }
+          return {
+            world: world.id, x: car.x, z: car.z, heading: car.heading,
+            ground: world.height(car.x, car.z, below),
+            depth: Math.max(0, world.waterAt(car.x, car.z) - world.height(car.x, car.z, below)),
+            wade: spec.wade, paved: world.pavedAt?.(car.x, car.z) ?? false, slip: world.slipAt(car.x, car.z),
+            speed: car.speed, nearest, stuck: Boolean(car.stuck), hour: view.hour(),
+            tide: heldTide === null ? "live" : heldTide > 0 ? "low" : "high",
+          };
+        },
+        spots: () => ({ world: world.id, list: devSpots(world) }),
+        go: async (to) => {
+          const why = blocked() ?? busy();
+          if (why || to === world.id) return why;
+          if (running || convoys.state) giveUp("Run abandoned.");
+          if (to === "city") {
+            try {
+              await loadCityData();
+            } catch {
+              return "Couldn't load San Francisco's map data.";
+            }
+          }
+          if (cancelled) return null;
+          // Through the store, as a trip would go, with the fare given first: no route needed.
+          store.addMiles(WORLDS[to].fare);
+          const err = await store.fly(to);
+          if (err || cancelled) return err;
+          leaveNet();
+          enterWorld(to);
+          landed = true;
+          lastDistance = car.distance;
+          lastPose = { x: car.x, z: car.z };
+          joinNet();
+          return null;
+        },
+        jump,
+        fit: async (v, l) => {
+          const s = store;
+          if (!(s instanceof LocalStore)) return blocked();
+          s.ownEverything();
+          const err = await s.equip(v, l);
+          if (!err) fitRig(v, l);
+          return err;
+        },
+        hour: (h) => {
+          // Signed in or across tabs the clock is shared, so the panel's is put on from it.
+          if (shared) devShift = secondsUntil(h) - ((((Date.now() / 1000 - SHARED_EPOCH) % DAY_LENGTH) + DAY_LENGTH) % DAY_LENGTH);
+          else time = secondsUntil(h);
+        },
+        tide: (t) => void (heldTide = t === "low" ? TIDE.fall : t === "high" ? 0 : null),
+        miles: (n) => store.addMiles(n),
+        clearFog: () => {
+          for (let c = 0; c < FOG_CELLS; c++) store.explore(c);
+          map.setExplored(store.explored(), true);
+        },
+        findAll: () => {
+          for (const [key, place] of Object.entries(PLACES)) if (place.world === world.id) store.discover(key);
+        },
+        colliders: (on) => view.showColliders(on),
+        stuck: (on) => void (devStuck = on),
+        check: async (progress) => {
+          const why = blocked();
+          if (why) return why;
+          const w = world;
+          const found: DevFinding[] = [];
+          // The garages' doors are the scene's: where a truck is let out after the shop.
+          const doors = view.garages.map((g) => ({ name: `${GARAGE_NAMES[g.style]}'s door`, x: g.approach.x, z: g.approach.z, heading: g.heading }));
+          const seen = new Set<string>();
+          for (const v of VEHICLES) {
+            const rig = specFor(v.id, STOCK_LOADOUT);
+            for (const s of spawnSpots(w, doors)) {
+              for (const p of spotProblems(w, s, rig)) {
+                const what = `${s.name}: ${p.why.replace(/, [\d.]+ m into it$/, "")}`;
+                if (!seen.has(what)) found.push({ what: `${what}, for the ${v.name}`, x: s.x, z: s.z, heading: s.heading });
+                seen.add(what);
+              }
+            }
+          }
+          // The bot's rig goes anywhere a course does: the rivers, the snow.
+          const kitted = specFor("summit", { ...STOCK_LOADOUT, tyres: "big33", snorkel: "snorkel", winter: "chains" });
+          for (let i = 0; i < w.missions.length; i++) {
+            progress(i, w.missions.length);
+            // A course at a time, so the game keeps drawing while it drives them.
+            await new Promise((r) => window.setTimeout(r, 0));
+            if (cancelled || world !== w) return "The world changed while it was being checked.";
+            const r = driveCourse(w, w.missions[i], kitted);
+            if (r.stuck) found.push({ what: `${r.name}: ${r.stuck.why}, ${r.passed} of ${r.of} gates passed`, x: r.stuck.x, z: r.stuck.z, heading: car.heading });
+          }
+          progress(w.missions.length, w.missions.length);
+          return found;
+        },
+      };
+      setDev(controls);
+      // For the browser's console: the world as built, the truck, the panel's controls, and the sweep's tools to run on them.
+      Object.assign(window, {
+        gilbyyDev: { world: () => world, car, spec: () => spec, specFor, panel: controls, tools: { clearSpot, devSpots, driveCourse, spawnSpots, spotProblems, wayThrough } },
+      });
+    }
+
     // ——— The plane and the train ———
 
     /** What the truck's wheels stand on during the plane's film: the ramp and the hold's floor, as well as the apron. */
@@ -1456,10 +1620,7 @@ export function Game() {
       if (cloudRef.current) cloudRef.current.style.opacity = "0";
       setModeBoth("drive");
       say(welcome(way), 8);
-      if (netFor && store.get().name) {
-        net = netFor(world.id);
-        void join();
-      }
+      joinNet();
     };
 
     /** Puts the truck where the film has it, its wheels turning as if it were driven there. */
@@ -1959,7 +2120,7 @@ export function Game() {
       const now = nowMs / 1000;
       const m = modeRef.current;
       const garage = view.garages[cut.garage];
-      time = shared ? Date.now() / 1000 - SHARED_EPOCH : time + (m === "garage" || m === "photo" ? 0 : dt);
+      time = shared ? Date.now() / 1000 - SHARED_EPOCH + devShift : time + (m === "garage" || m === "photo" ? 0 : dt);
 
       onConvoy(convoys.tick(now));
       // Through the finish, waiting for the rest of the convoy.
@@ -2003,7 +2164,7 @@ export function Game() {
           const held = (running !== null && running.clock < 0) || winching !== null;
           const input = held ? HELD : inputRef.current;
           // Only where there are others to winch you off, or at least a tent to reload to.
-          const driven = store.online || localNet ? spec : loose;
+          const driven = store.online || localNet || devStuck ? spec : loose;
           while (acc >= STEP) {
             if (held) car.speed = car.side = 0;
             Object.assign(stepFrom, car);
@@ -2285,6 +2446,12 @@ export function Game() {
 
       {driving && solo && !run && <SoloBanner canSignIn={onlineConfigured} onSignIn={() => setSigningIn(true)} />}
 
+      {DEV && (driving || mode === "map") && dev && (devOpen ? (
+        <DevPanel dev={dev} vehicle={profile?.vehicle ?? null} loadout={profile?.loadout ?? STOCK_LOADOUT} onClose={() => setDevOpen(false)} />
+      ) : (
+        <DevChip onOpen={() => setDevOpen(true)} />
+      ))}
+
       {run && driving && (
         <div className="pointer-events-none absolute inset-x-4 top-11 text-center text-sm text-[rgba(255,246,232,0.9)] drop-shadow">
           <span className="font-semibold">{run.name}</span> · {run.air === null ? fmtTime(run.clock) : `${fmtAir(run.air)} in the air`} · {run.through ? "through" : `${Math.min(run.gate + 1, run.of)}/${run.of}`}
@@ -2468,7 +2635,9 @@ export function Game() {
             onClick={(e) => {
               e.stopPropagation();
               const box = e.currentTarget.getBoundingClientRect();
-              actions.current.pin((e.clientX - box.left) / box.width, (e.clientY - box.top) / box.height, box.width);
+              const [fx, fy] = [(e.clientX - box.left) / box.width, (e.clientY - box.top) / box.height];
+              if (DEV && e.shiftKey) actions.current.devJumpMap(fx, fy);
+              else actions.current.pin(fx, fy, box.width);
             }}
           />
           <p className="pointer-events-none absolute bottom-24 text-center text-xs text-[rgba(255,246,232,0.6)] sm:bottom-4">

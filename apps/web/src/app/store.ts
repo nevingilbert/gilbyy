@@ -3,10 +3,10 @@ import { CONVOY_MAX } from "./convoy";
 import { EXPLORE_MAX, FOG_CELLS, decodeCells } from "./fog";
 import type { Mission } from "./missions";
 import { countFound, type FoundCount } from "./places";
-import { STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, soldOnlyIn, type Loadout, type Progress } from "./shop";
+import { PARTS, STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, soldOnlyIn, type Loadout, type Progress } from "./shop";
 import type { WorldId } from "./terrain";
 import { TOW_FEE } from "./tow";
-import type { VehicleId } from "./vehicles";
+import { VEHICLES, type VehicleId } from "./vehicles";
 import { WORLDS, isWorld } from "./worlds";
 
 /**
@@ -118,6 +118,15 @@ export class LocalStore implements Store {
     if (this.p.balance < WORLDS[to].fare) return "Not enough miles yet.";
     this.set({ balance: this.p.balance - WORLDS[to].fare, world: to });
     return null;
+  }
+
+  /**
+   * For the dev panel (DevPanel.tsx, development builds only): every rig and part owned,
+   * for nothing. Signed in there's no such thing; the server decides what's owned.
+   */
+  ownEverything() {
+    const keys = [...VEHICLES.map((v) => itemKey("vehicle", v.id)), ...Object.entries(PARTS).flatMap(([cat, list]) => list.map((u) => `${cat}:${u.id}`))];
+    this.set({ owned: [...new Set([...this.p.owned, ...keys])] });
   }
 
   async tow() {

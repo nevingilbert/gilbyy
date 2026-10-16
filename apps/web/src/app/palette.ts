@@ -52,6 +52,8 @@ export const PALETTE = {
   snow: "#f4ede8",
 
   water: "#4f9fb2",
+  /** Bubbles coming up from a snorkelled truck's exhaust. */
+  bubble: "#eef8fb",
   waterSpecular: "#ffe2bd",
 
   // Trees: mostly near-black pines, with golden larches and a few autumn broadleaves.
@@ -545,4 +547,10 @@ export const PALETTE = {
   // HUD — quiet, low contrast, cornered.
   hudText: "rgba(255,246,232,0.78)",
   hudDim: "rgba(255,246,232,0.45)",
+
+  /** The dev panel's collider view (development builds only): loud on purpose, so nothing in the world is mistaken for it. */
+  dev: {
+    collider: "#ff2d55",
+    wall: "#ff9500",
+  },
 } as const;

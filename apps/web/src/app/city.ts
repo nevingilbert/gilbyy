@@ -17,6 +17,8 @@ import { courseDistOf, courseLength, courseLimits, gatesAlong, type Mission } fr
 import { makeRandom } from "./noise";
 import { CELL, FAR, HALF, ROW, WORLD, flood, gridX, gridZ, level, nearest, sampleGrid, type Pitch, type Site, type Track } from "./terrain";
 import { cableLine, type CableLine } from "./cable-car";
+import { CONVOY_MAX, lineUp } from "./convoy";
+import { lineUpAlone } from "./mission-run";
 import { BED, besideBed, clearBed, mouthAt, pastEnd } from "./rail";
 import { cityStation } from "./station";
 import { obstacleIndex, trunkRadius, type Bush, type Obstacle, type Rock, type Tree, type World } from "./world";
@@ -679,8 +681,23 @@ export function buildCity(seed = 20261015): CityWorld {
 
   // ——— Courses ———
 
-  const missions = planCityCourses(graph, decks, at, camp.pitches[0].parking);
+  // Room for a truck to wait: on dry, gentle ground, off the bridges and clear of the buildings.
+  const roomy = (x: number, z: number) =>
+    walls.distance(x, z) > 3.4 && ground(x, z) > sampleGrid(water, x, z) + 0.3 && !decksAt.roadAt(x, z) && slope(x, z) < 0.3;
+  // The camp's way out, where its lane meets the streets, and the pitches no course may run through.
+  const campGate = { x: graph.xs[gateNode], z: graph.zs[gateNode] };
+  const inCamp = (x: number, z: number) => sampleGrid(campDist, x, z) < 12;
+  const missions = planCityCourses(graph, decks, at, campGate, roomy, inCamp);
   const courseDist = courseDistOf(missions, 20);
+  // Nothing growing or lying where a truck is put down: in a tent's bay, or where a course
+  // lines up its drivers, ten deep for friends. The scatter came first, so it gives way.
+  const putDown = [
+    ...camp.pitches.map((p) => p.parking),
+    ...missions.flatMap((m) => (m.crew > 1 ? Array.from({ length: CONVOY_MAX }, (_, slot) => lineUp(m, slot)) : [lineUpAlone(m)])),
+  ];
+  const inTheWay = (x: number, z: number, r: number) => putDown.some((p) => Math.hypot(p.x - x, p.z - z) < r + 3.4);
+  for (let i = trees.length - 1; i >= 0; i--) if (inTheWay(trees[i].x, trees[i].z, trunkRadius(trees[i]))) trees.splice(i, 1);
+  for (let i = rocks.length - 1; i >= 0; i--) if (inTheWay(rocks[i].x, rocks[i].z, Math.max(rocks[i].sx, rocks[i].sz))) rocks.splice(i, 1);
 
   // ——— Who can get where ———
 
@@ -831,19 +848,42 @@ function layRail(graph: StreetGraph, heights: Float32Array, at: (s: Spot) => Pt)
  * beach the way the footrace goes; a race down the Great Highway beside Ocean Beach; a race
  * along the Embarcadero under the palms; and a convoy through the Presidio's woods.
  */
-function planCityCourses(graph: StreetGraph, decks: Deck[], at: (s: Spot) => Pt, camp: Pt): Mission[] {
+function planCityCourses(
+  graph: StreetGraph, decks: Deck[], at: (s: Spot) => Pt, campGate: Pt, roomy: (x: number, z: number) => boolean, inCamp: (x: number, z: number) => boolean,
+): Mission[] {
   const out: Mission[] = [];
   const flags = (pts: Pt[], every: number) => resample(pts, every).slice(1);
+  /** The start arch stands a few metres short of the line's first point. */
+  const startOf = (line: Pt[], pts: Pt[]) => {
+    const first = line[0];
+    const dir = Math.atan2(pts[0].x - first.x, pts[0].z - first.z);
+    return { x: first.x - Math.sin(dir) * 4, z: first.z - Math.cos(dir) * 4, heading: dir };
+  };
+  /** The line, starting `d` metres along it. */
+  const from = (line: Pt[], d: number): Pt[] => {
+    for (let i = 1; i < line.length; i++) {
+      const [a, b] = [line[i - 1], line[i]];
+      const seg = Math.hypot(b.x - a.x, b.z - a.z);
+      if (d < seg) return [{ x: a.x + ((b.x - a.x) * d) / seg, z: a.z + ((b.z - a.z) * d) / seg }, ...line.slice(i)];
+      d -= seg;
+    }
+    return line.slice(-2);
+  };
   const course = (
     id: string, name: string, blurb: string, line: Pt[], every: number, width: number,
     pay: { reward: number; repeatReward: number }, crew = 1, race = false,
   ) => {
     if (line.length < 2) return;
+    // Friends line up behind the arch, two abreast and up to five rows deep: it stands far
+    // enough along the line for every one of them to wait on the street, not in a building.
+    for (let d = 0, along = line; crew > 1 && d <= 120; d += 5, along = from(along, 5)) {
+      const start = startOf(along, flags(along, every));
+      if (!Array.from({ length: CONVOY_MAX }, (_, slot) => lineUp({ start }, slot)).every((p) => roomy(p.x, p.z))) continue;
+      line = along;
+      break;
+    }
     const pts = flags(line, every);
-    const first = line[0];
-    const dir = Math.atan2(pts[0].x - first.x, pts[0].z - first.z);
-    // The start arch stands a few metres short of the line's first point.
-    const start = { x: first.x - Math.sin(dir) * 4, z: first.z - Math.cos(dir) * 4, heading: dir };
+    const start = startOf(line, pts);
     out.push({
       id, name, blurb, start, gates: gatesAlong(start, pts, width), cooldown: 600, ...courseLimits(courseLength(start, pts)), crew, race, ...pay,
     });
@@ -886,7 +926,8 @@ function planCityCourses(graph: StreetGraph, decks: Deck[], at: (s: Spot) => Pt,
   course("great-highway", "Great Highway", "Two to ten friends, flat out beside Ocean Beach. Every finisher is paid the same.", highway, 50, 15, { reward: 25, repeatReward: 8 }, 2, true);
   const embarcadero = via(["The Embarcadero", "Beach St"], ["The Embarcadero", "Broadway"], ["The Embarcadero", "Howard St"], ["King St", "3rd St"]);
   course("embarcadero", "Embarcadero", "Two to ten friends, down the waterfront under the palms. Every finisher is paid the same.", embarcadero, 45, 15, { reward: 30, repeatReward: 10 }, 2, true);
-  const presidio = graph.route([camp, at(["Lincoln Blvd", "Merchant Rd"]), at(["Mason St", "Crissy Field Ave"]), at(["Marina Blvd", "Lyon St"])]);
+  // From the camp's way out, never back through its pitches: the tents stand where Rob Hill's own lanes ran.
+  const presidio = graph.route([campGate, at(["Lincoln Blvd", "Merchant Rd"]), at(["Mason St", "Crissy Field Ave"]), at(["Marina Blvd", "Lyon St"])], inCamp);
   course("presidio", "Presidio", "For two to ten friends: down through the Presidio's woods to Crissy Field and the Marina, together.", presidio, 50, 12, { reward: 30, repeatReward: 10 }, 2, false);
   return out;
 }

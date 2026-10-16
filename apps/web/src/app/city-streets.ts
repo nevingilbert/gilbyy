@@ -189,8 +189,11 @@ export function streetGraph(streets: Street[]) {
     return best;
   };
 
-  /** The shortest way along the streets from one spot to another, as the points of the streets it follows. */
-  const path = (from: Pt, to: Pt): Pt[] => {
+  /**
+   * The shortest way along the streets from one spot to another, as the points of the
+   * streets it follows; never through a corner `avoid` rules out, bar the two ends.
+   */
+  const path = (from: Pt, to: Pt, avoid?: (x: number, z: number) => boolean): Pt[] => {
     const a = nearestNode(from);
     const b = nearestNode(to);
     const best = new Float64Array(xs.length).fill(Infinity);
@@ -230,6 +233,7 @@ export function streetGraph(streets: Street[]) {
       if (id === b) break;
       if (d > best[id]) continue;
       for (const n of next[id]) {
+        if (avoid && n !== b && avoid(xs[n], zs[n])) continue;
         const nd = d + dist(id, n);
         if (nd < best[n]) {
           best[n] = nd;
@@ -247,11 +251,11 @@ export function streetGraph(streets: Street[]) {
     return out.reverse();
   };
 
-  /** The way through each spot in turn. */
-  const route = (stops: Pt[]) => {
+  /** The way through each spot in turn, round anywhere `avoid` rules out. */
+  const route = (stops: Pt[], avoid?: (x: number, z: number) => boolean) => {
     const out: Pt[] = [];
     for (let i = 1; i < stops.length; i++) {
-      const leg = path(stops[i - 1], stops[i]);
+      const leg = path(stops[i - 1], stops[i], avoid);
       out.push(...(out.length ? leg.slice(1) : leg));
     }
     return out;

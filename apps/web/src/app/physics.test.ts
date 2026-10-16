@@ -192,6 +192,15 @@ describe("step against the world", () => {
     expect(lake.waterAt(c.x, c.z) - lake.height(c.x, c.z)).toBeLessThan(STOCK.wade + 0.1);
   });
 
+  it("fords at a fair pace, not a crawl", () => {
+    // Flat, under water half as deep as it can go, and then as deep as it can go.
+    for (const [share, pace] of [[0.5, 0.6], [1, 0.3]] as const) {
+      const ford = ground(() => 0, [], STOCK.wade * share);
+      const c = run(makeCar(ford, 0, 0, 0), ford, { gas: true }, 12);
+      expect(c.speed, `at ${share} of its depth`).toBeGreaterThan(STOCK.maxSpeed * pace);
+    }
+  });
+
   it("wades deeper with a snorkel", () => {
     const lake = ground((_, z) => (z < 10 ? 1 : 1 - (z - 10) * 0.2), [], 0);
     const stock = run(makeCar(lake, 0, 0, 0), lake, { gas: true }, 15);

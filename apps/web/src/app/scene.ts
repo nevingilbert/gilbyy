@@ -20,6 +20,7 @@ import { LOOK_UP, cameraAt, easeOrbit, orbitFrom, type Orbit } from "./photo";
 import type { Car, CarSpec } from "./physics";
 import { buildPlane } from "./plane-model";
 import { buildRailway } from "./railway";
+import { courseGround } from "./missions";
 import { rampPoint } from "./ramp";
 import { buildRamp } from "./ramp-model";
 import { createRemotes } from "./remote";
@@ -32,7 +33,9 @@ import { buildBuildings, buildClosure, buildCrookedLane, buildDeck, buildFogBank
 import { carsOn } from "./rail";
 import type { TrainFrame } from "./rail-trip";
 import { buildCityStation, buildPoints, buildPortal, buildRailLine, buildStationTrain, buildValleyStation } from "./station-model";
-import type { Loadout } from "./shop";
+import { snorkelOf, specFor, type Loadout } from "./shop";
+import { buildBubbles } from "./bubbles";
+import { buildColliderView } from "./colliders-view";
 import { buildShowroom } from "./showroom";
 import { buildSky } from "./sky";
 import { buildGrass, buildTerrainMesh, buildWaterMesh, makeSurface } from "./terrain-mesh";
@@ -111,10 +114,12 @@ function placer(world: World, group: THREE.Group, colliders: Obstacle[]) {
   };
 }
 
-/** The ground's height along local x of a model placed at (x, z) turned by `rot`, relative to its origin. */
-function across(world: World, x: number, z: number, rot: number) {
-  const y = world.height(x, z);
-  return (lx: number) => world.height(x + lx * Math.cos(rot), z - lx * Math.sin(rot)) - y;
+/**
+ * The ground's height along local x of a model placed at (x, z) turned by `rot`, relative
+ * to its origin: on the surface `y` high, where a bridge crosses over, or the higher one.
+ */
+function across(world: World, x: number, z: number, rot: number, y = world.height(x, z)) {
+  return (lx: number) => world.height(x + lx * Math.cos(rot), z - lx * Math.sin(rot), y + 1) - y;
 }
 
 function placeGarages(world: World, windows: THREE.Material) {
@@ -299,23 +304,26 @@ function placeMissions(world: World, glow: THREE.Material) {
   const colliders: Obstacle[] = [];
   const place = placer(world, group, colliders);
   const courses = world.missions.map((m) => {
-    // Courses cross open country, so each post stands on its own ground.
-    const arch = buildStartArch(glow, across(world, m.start.x, m.start.z, m.start.heading));
-    place(arch.object, arch.colliders, m.start.x, m.start.z, m.start.heading);
+    // Courses cross open country, so each post stands on its own ground: under a bridge
+    // the course runs beneath, not up on its deck.
+    const surface = courseGround((x, z, above) => world.height(x, z, above), m);
+    const arch = buildStartArch(glow, across(world, m.start.x, m.start.z, m.start.heading, surface.start));
+    place(arch.object, arch.colliders, m.start.x, m.start.z, m.start.heading, surface.start);
     const last = m.gates.length - 1;
     const end = m.gates[last];
     const loops = m.gates.slice(0, last).findIndex((g) => Math.hypot(g.x - end.x, g.z - end.z) < 5);
     const gates = m.gates.map((g, i) => {
       if (i === last && loops >= 0) return null;
-      const model = buildGate(g.width, across(world, g.x, g.z, g.heading));
-      place(model.object, [], g.x, g.z, g.heading);
+      const model = buildGate(g.width, across(world, g.x, g.z, g.heading, surface.gates[i]));
+      place(model.object, [], g.x, g.z, g.heading, surface.gates[i]);
       return model;
     });
     if (loops < 0) {
       // Just past the last gate, so the banner frames it as you come through.
       const [fx, fz] = [end.x + Math.sin(end.heading) * 6, end.z + Math.cos(end.heading) * 6];
-      const finish = buildFinishArch(glow, across(world, fx, fz, end.heading));
-      place(finish.object, finish.colliders, fx, fz, end.heading);
+      const y = world.height(fx, fz, surface.gates[last] + 1);
+      const finish = buildFinishArch(glow, across(world, fx, fz, end.heading, y));
+      place(finish.object, finish.colliders, fx, fz, end.heading, y);
     }
     const ramp = m.ramp;
     if (ramp) {
@@ -466,6 +474,18 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
   let car: CarModel = buildCar(vehicle);
   car.setLoadout(loadout);
   scene.add(car.object);
+  // Bubbles behind the truck where only its snorkel lets it go: as deep as it could go without one.
+  const bubbles = buildBubbles();
+  scene.add(bubbles.object);
+  const snorkelled = { on: false, dry: 0 };
+  const fitBubbles = (v: VehicleId, l: Loadout) => {
+    snorkelled.on = snorkelOf(l).fitted;
+    snorkelled.dry = specFor(v, { ...l, snorkel: "none" }).wade;
+  };
+  fitBubbles(vehicle, loadout);
+  // The dev panel's collider view (development builds only): hidden unless it's asked for.
+  const colliders = buildColliderView();
+  scene.add(colliders.object);
   const showroom = buildShowroom();
 
   // The plane stands on the airstrip of whichever world this is, until a flight moves it.
@@ -670,6 +690,16 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
 
     underTruck = state.y - spec.ride - 0.5;
     car.update(state, film?.ground ?? truckGround, dt, spec);
+    // Its exhaust under water deeper than it could ford without its snorkel: it bubbles, up
+    // from just behind the back bumper, where the exhaust comes out.
+    const water = world.waterAt(state.x, state.z);
+    const back = vehicleById(car.vehicle).length * 0.5 + 0.5;
+    const bubbling = snorkelled.on && !film && hover < 0 && water - world.height(state.x, state.z) > snorkelled.dry;
+    bubbles.update(dt, bubbling ? {
+      x: state.x - Math.sin(state.heading) * back, z: state.z - Math.cos(state.heading) * back, water,
+      rate: 16 + Math.min(1, Math.abs(state.speed) / 6) * 24,
+    } : null);
+    if (colliders.object.visible) colliders.update(world, state.x, state.z);
     stage.remotes.update(dt, performance.now() / 1000, night);
     drawTows(dt, time, night);
     drawCables(state, spec);
@@ -884,6 +914,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
 
   /** Swaps the rig (a new body) or just refits it. */
   function setRig(v: VehicleId, l: Loadout) {
+    fitBubbles(v, l);
     if (v !== car.vehicle) {
       scene.remove(car.object);
       car.dispose();
@@ -970,6 +1001,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     /** Tries a rig or part on the truck in the showroom without fitting it. */
     previewShowroom: (v: VehicleId, l: Loadout) => showroom.setRig(v, l),
     setRig,
+    /** The dev panel's collider view: what a truck runs into round it, drawn. */
+    showColliders: (on: boolean) => colliders.show(on),
     setDoor: (i: number, open: number) => stage.sites.models[i]?.setDoor(open),
     showRun: (mission: number, next: number, time: number) => stage.courses.show(mission, next, time),
     /** Which trucks have a winch cable between them just now. */

@@ -136,6 +136,11 @@ apps, you are in the wrong repo.
       to: where a click lands, when a click takes the pin up again, when you've got there,
       and what the compass mark follows (a course, then a friend's call, then the pin,
       then the first-time guidance). Not saved.
+    - `dev.ts`: the dev panel's places and the sweep (`docs/dev-panel.md`): where the game
+      puts a truck down and whether every rig has room there (`spawnSpots`,
+      `spotProblems`), a way a truck could drive between two points (`wayThrough`, a 2 m
+      grid search on whichever surface it's on), and a bot that drives a course
+      (`driveCourse`). `sweep.test.ts` runs it on every world.
   - Online, also unit-tested:
     - `store.ts`: progress, either `LocalStore` (in memory) or `SupabaseStore`
       (database functions).
@@ -172,7 +177,8 @@ apps, you are in the wrong repo.
     that show through it, and the player's pin. `fog.ts` (pure, unit-tested) is the grid
     the fog is saved as (ADR 0013), kept per world.
   - React: `Game.tsx` (loop, modes, HUD), `GarageMenu.tsx` (the shop), `Panels.tsx`
-    (starter picker, banner, sign-in, name, leaderboard).
+    (starter picker, banner, sign-in, name, leaderboard), `DevPanel.tsx` (the dev panel,
+    development builds only, with `colliders-view.ts` for what a truck runs into).
 - `supabase/`: the migrations (schema, RLS, the functions every write goes through,
   realtime policies) and their SQL tests.
 - `packages/` — empty. Add a package only when two directories *in this repo* need the same thing, which is now a high bar.
@@ -196,6 +202,9 @@ Next.js (App Router) + TypeScript + Tailwind, on Vercel free tier, plus one free
 - `pnpm lint` — eslint
 - `pnpm typecheck` — tsc --noEmit
 - `pnpm test` — vitest
+- In `pnpm dev`, the backtick key opens the dev panel: any world, anywhere in it, any rig,
+  the clock and the tide, colliders shown, two drivers in two tabs, and a sweep of the
+  world as built. No sign-in. Never in a production build. See `docs/dev-panel.md`.
 
 ## Conventions
 
