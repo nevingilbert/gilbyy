@@ -547,4 +547,10 @@ export const PALETTE = {
   // HUD — quiet, low contrast, cornered.
   hudText: "rgba(255,246,232,0.78)",
   hudDim: "rgba(255,246,232,0.45)",
+
+  /** The dev panel's collider view (development builds only): loud on purpose, so nothing in the world is mistaken for it. */
+  dev: {
+    collider: "#ff2d55",
+    wall: "#ff9500",
+  },
 } as const;

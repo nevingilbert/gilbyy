@@ -35,6 +35,7 @@ import type { TrainFrame } from "./rail-trip";
 import { buildCityStation, buildPoints, buildPortal, buildRailLine, buildStationTrain, buildValleyStation } from "./station-model";
 import { snorkelOf, specFor, type Loadout } from "./shop";
 import { buildBubbles } from "./bubbles";
+import { buildColliderView } from "./colliders-view";
 import { buildShowroom } from "./showroom";
 import { buildSky } from "./sky";
 import { buildGrass, buildTerrainMesh, buildWaterMesh, makeSurface } from "./terrain-mesh";
@@ -482,6 +483,9 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     snorkelled.dry = specFor(v, { ...l, snorkel: "none" }).wade;
   };
   fitBubbles(vehicle, loadout);
+  // The dev panel's collider view (development builds only): hidden unless it's asked for.
+  const colliders = buildColliderView();
+  scene.add(colliders.object);
   const showroom = buildShowroom();
 
   // The plane stands on the airstrip of whichever world this is, until a flight moves it.
@@ -695,6 +699,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
       x: state.x - Math.sin(state.heading) * back, z: state.z - Math.cos(state.heading) * back, water,
       rate: 16 + Math.min(1, Math.abs(state.speed) / 6) * 24,
     } : null);
+    if (colliders.object.visible) colliders.update(world, state.x, state.z);
     stage.remotes.update(dt, performance.now() / 1000, night);
     drawTows(dt, time, night);
     drawCables(state, spec);
@@ -996,6 +1001,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     /** Tries a rig or part on the truck in the showroom without fitting it. */
     previewShowroom: (v: VehicleId, l: Loadout) => showroom.setRig(v, l),
     setRig,
+    /** The dev panel's collider view: what a truck runs into round it, drawn. */
+    showColliders: (on: boolean) => colliders.show(on),
     setDoor: (i: number, open: number) => stage.sites.models[i]?.setDoor(open),
     showRun: (mission: number, next: number, time: number) => stage.courses.show(mission, next, time),
     /** Which trucks have a winch cable between them just now. */
