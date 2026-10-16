@@ -114,6 +114,12 @@ export type CarSpec = {
 
 /** Off tarmac, a car that needs it all (`road` 1) keeps this much of its push and of its top speed. */
 export const OFF_ROAD = { accel: 0.4, speed: 0.35 } as const;
+/**
+ * What water costs a truck, by how deep it is against how deep the truck can go (its
+ * `wade`, which a snorkel raises): at that depth, this share of its push and of its top
+ * speed, and this much drag. Water is slow going, but a ford is still driven, not crept.
+ */
+export const WATER = { push: 0.4, drag: 0.6, top: 0.45 } as const;
 
 /** The original overlander on road tyres: what tests drive unless they say otherwise. */
 export const STOCK: CarSpec = {
@@ -215,15 +221,15 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
 
     // Better tyres keep more of the push on a climb; on the flat they change nothing.
     const climb = Math.min(1, Math.abs(Math.sin(slopePitch)) * 4);
-    if (input.gas) drive = spec.accel * (1 + (spec.grip - 1) * climb) * (1 - wading * 0.7) * grip.bite * (1 - rough * (1 - OFF_ROAD.accel));
+    if (input.gas) drive = spec.accel * (1 + (spec.grip - 1) * climb) * (1 - wading * WATER.push) * grip.bite * (1 - rough * (1 - OFF_ROAD.accel));
     else if (input.brake) drive = (car.speed > 0.5 ? -BRAKE : -spec.accel * 0.8) * grip.bite;
     car.speed += drive * dt;
     if (!input.gas && !input.brake) {
       // Rolling resistance and engine braking. Enough to hold the car on a gentle slope.
       car.speed -= Math.sign(car.speed) * Math.min(Math.abs(car.speed), (1.4 + Math.abs(car.speed) * 0.2) * grip.bite * dt);
     }
-    if (wading > 0) car.speed *= Math.exp(-wading * 2.2 * dt);
-    const top = spec.maxSpeed * (1 - wading * 0.75) * (1 - rough * (1 - OFF_ROAD.speed));
+    if (wading > 0) car.speed *= Math.exp(-wading * WATER.drag * dt);
+    const top = spec.maxSpeed * (1 - wading * WATER.top) * (1 - rough * (1 - OFF_ROAD.speed));
     car.speed = Math.max(MAX_REVERSE, Math.min(top, car.speed));
   }
 
