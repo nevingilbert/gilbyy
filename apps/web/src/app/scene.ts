@@ -20,6 +20,7 @@ import { LOOK_UP, cameraAt, easeOrbit, orbitFrom, type Orbit } from "./photo";
 import type { Car, CarSpec } from "./physics";
 import { buildPlane } from "./plane-model";
 import { buildRailway } from "./railway";
+import { courseGround } from "./missions";
 import { rampPoint } from "./ramp";
 import { buildRamp } from "./ramp-model";
 import { createRemotes } from "./remote";
@@ -112,10 +113,12 @@ function placer(world: World, group: THREE.Group, colliders: Obstacle[]) {
   };
 }
 
-/** The ground's height along local x of a model placed at (x, z) turned by `rot`, relative to its origin. */
-function across(world: World, x: number, z: number, rot: number) {
-  const y = world.height(x, z);
-  return (lx: number) => world.height(x + lx * Math.cos(rot), z - lx * Math.sin(rot)) - y;
+/**
+ * The ground's height along local x of a model placed at (x, z) turned by `rot`, relative
+ * to its origin: on the surface `y` high, where a bridge crosses over, or the higher one.
+ */
+function across(world: World, x: number, z: number, rot: number, y = world.height(x, z)) {
+  return (lx: number) => world.height(x + lx * Math.cos(rot), z - lx * Math.sin(rot), y + 1) - y;
 }
 
 function placeGarages(world: World, windows: THREE.Material) {
@@ -300,23 +303,26 @@ function placeMissions(world: World, glow: THREE.Material) {
   const colliders: Obstacle[] = [];
   const place = placer(world, group, colliders);
   const courses = world.missions.map((m) => {
-    // Courses cross open country, so each post stands on its own ground.
-    const arch = buildStartArch(glow, across(world, m.start.x, m.start.z, m.start.heading));
-    place(arch.object, arch.colliders, m.start.x, m.start.z, m.start.heading);
+    // Courses cross open country, so each post stands on its own ground: under a bridge
+    // the course runs beneath, not up on its deck.
+    const surface = courseGround((x, z, above) => world.height(x, z, above), m);
+    const arch = buildStartArch(glow, across(world, m.start.x, m.start.z, m.start.heading, surface.start));
+    place(arch.object, arch.colliders, m.start.x, m.start.z, m.start.heading, surface.start);
     const last = m.gates.length - 1;
     const end = m.gates[last];
     const loops = m.gates.slice(0, last).findIndex((g) => Math.hypot(g.x - end.x, g.z - end.z) < 5);
     const gates = m.gates.map((g, i) => {
       if (i === last && loops >= 0) return null;
-      const model = buildGate(g.width, across(world, g.x, g.z, g.heading));
-      place(model.object, [], g.x, g.z, g.heading);
+      const model = buildGate(g.width, across(world, g.x, g.z, g.heading, surface.gates[i]));
+      place(model.object, [], g.x, g.z, g.heading, surface.gates[i]);
       return model;
     });
     if (loops < 0) {
       // Just past the last gate, so the banner frames it as you come through.
       const [fx, fz] = [end.x + Math.sin(end.heading) * 6, end.z + Math.cos(end.heading) * 6];
-      const finish = buildFinishArch(glow, across(world, fx, fz, end.heading));
-      place(finish.object, finish.colliders, fx, fz, end.heading);
+      const y = world.height(fx, fz, surface.gates[last] + 1);
+      const finish = buildFinishArch(glow, across(world, fx, fz, end.heading, y));
+      place(finish.object, finish.colliders, fx, fz, end.heading, y);
     }
     const ramp = m.ramp;
     if (ramp) {

@@ -552,15 +552,18 @@ function planJapanCourses(kit: CourseKit): Mission[] {
   course("bamboo-grove", "Bamboo Grove", "Once round under the bamboo, the light coming down green.", { x: loop[0].x, z: loop[0].z - 30 }, loop.slice(1), 12, { reward: 25, repeatReward: 8 });
 
   // Round the lake, by the gentlest ground near its shore: from the camp's side, west, round
-  // under the mountain, and back by the east.
+  // under the mountain, and back by the east. It starts on the shore below the camp, not in
+  // it, and keeps out of its pitches and away from its fire.
   const lake = JAPAN.lake;
-  const around = [0.5, 0.9, 1.3, 1.7, 0.1].map((turn) => ({
-    x: lake.x + Math.cos(Math.PI * turn) * (lake.r + 100), z: lake.z + Math.sin(Math.PI * turn) * (lake.r + 100),
+  const c = kit.campCentre;
+  const inCamp = (x: number, z: number) => Math.abs(x - c.x) < 82 && Math.abs(z - c.z) < 52;
+  const around = [0.5, 0.9, 1.3, 1.7, 0.1].map((turn, i) => ({
+    x: lake.x + Math.cos(Math.PI * turn) * (lake.r + (i ? 100 : 60)), z: lake.z + Math.sin(Math.PI * turn) * (lake.r + (i ? 100 : 60)),
   }));
   const shoreLegs: Pt[] = [];
   let whole = true;
   for (let i = 0; i < around.length && whole; i++) {
-    const leg = routeAcross(heights, water, around[i], around[(i + 1) % around.length], 0.36, 70, (x, z) => shape.fromLake(x, z) < 25);
+    const leg = routeAcross(heights, water, around[i], around[(i + 1) % around.length], 0.36, 70, (x, z) => shape.fromLake(x, z) < 25 || inCamp(x, z));
     if (leg) shoreLegs.push(...(i ? leg.slice(1) : leg));
     else whole = false;
   }

@@ -108,7 +108,7 @@ export const LINE_UP_BACK = 8 + (CONVOY_MAX / 2 - 1) * ROW_GAP;
  * Where each truck waits behind the start arch: two abreast, the gatherer on the right,
  * clear of the arch's posts, in as many rows as it takes.
  */
-export function lineUp(m: Mission, slot: number) {
+export function lineUp(m: Pick<Mission, "start">, slot: number) {
   const side = slot % 2 ? 2.2 : -2.2;
   const back = 8 + Math.floor(slot / 2) * ROW_GAP;
   const { x, z, heading } = m.start;

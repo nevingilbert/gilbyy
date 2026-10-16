@@ -9,6 +9,15 @@ export const COUNTDOWN = 3;
 export const START_REACH = 14;
 /** Wander this far from the next gate and the run is given up. */
 export const GIVE_UP = 320;
+/** How far behind its start arch a course lines up a truck driving it alone. */
+export const LINE_UP_ALONE = 7;
+
+/** Where a truck driving a course alone waits to start: just behind the arch, facing the first gate. */
+export const lineUpAlone = (m: Pick<Mission, "start">) => ({
+  x: m.start.x - Math.sin(m.start.heading) * LINE_UP_ALONE,
+  z: m.start.z - Math.cos(m.start.heading) * LINE_UP_ALONE,
+  heading: m.start.heading,
+});
 
 export type Run = {
   mission: Mission;

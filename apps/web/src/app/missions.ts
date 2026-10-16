@@ -110,6 +110,24 @@ const secondsFor = (metres: number) => Math.floor(metres / TOO_QUICK);
  * drove the course doesn't.
  */
 const milesFor = (metres: number) => Math.floor(((metres * 0.6) / METRES_PER_MILE) * 100) / 100;
+/**
+ * The height of what a course's start arch and each of its gates stand on. Where a bridge
+ * crosses over (ADR 0022) a course may run on its deck or under it, so the course is
+ * followed from its start a couple of metres at a time, staying on whichever it was on.
+ */
+export function courseGround(height: (x: number, z: number, above?: number) => number, m: Pick<Mission, "start" | "gates">) {
+  let y = height(m.start.x, m.start.z);
+  const start = y;
+  let at: Pt = m.start;
+  const gates = m.gates.map((g) => {
+    const n = Math.max(1, Math.ceil(Math.hypot(g.x - at.x, g.z - at.z) / 2));
+    for (let i = 1; i <= n; i++) y = height(at.x + ((g.x - at.x) * i) / n, at.z + ((g.z - at.z) * i) / n, y + 1);
+    at = g;
+    return y;
+  });
+  return { start, gates };
+}
+
 /** The limits that follow from how long a course's line is. */
 export const courseLimits = (metres: number) => ({ minSeconds: secondsFor(metres), minMiles: milesFor(metres) });
 const limits = courseLimits;
