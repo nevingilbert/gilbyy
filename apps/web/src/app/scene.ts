@@ -32,7 +32,8 @@ import { buildBuildings, buildClosure, buildCrookedLane, buildDeck, buildFogBank
 import { carsOn } from "./rail";
 import type { TrainFrame } from "./rail-trip";
 import { buildCityStation, buildPoints, buildPortal, buildRailLine, buildStationTrain, buildValleyStation } from "./station-model";
-import type { Loadout } from "./shop";
+import { snorkelOf, specFor, type Loadout } from "./shop";
+import { buildBubbles } from "./bubbles";
 import { buildShowroom } from "./showroom";
 import { buildSky } from "./sky";
 import { buildGrass, buildTerrainMesh, buildWaterMesh, makeSurface } from "./terrain-mesh";
@@ -466,6 +467,15 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
   let car: CarModel = buildCar(vehicle);
   car.setLoadout(loadout);
   scene.add(car.object);
+  // Bubbles behind the truck where only its snorkel lets it go: as deep as it could go without one.
+  const bubbles = buildBubbles();
+  scene.add(bubbles.object);
+  const snorkelled = { on: false, dry: 0 };
+  const fitBubbles = (v: VehicleId, l: Loadout) => {
+    snorkelled.on = snorkelOf(l).fitted;
+    snorkelled.dry = specFor(v, { ...l, snorkel: "none" }).wade;
+  };
+  fitBubbles(vehicle, loadout);
   const showroom = buildShowroom();
 
   // The plane stands on the airstrip of whichever world this is, until a flight moves it.
@@ -670,6 +680,15 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
 
     underTruck = state.y - spec.ride - 0.5;
     car.update(state, film?.ground ?? truckGround, dt, spec);
+    // Its exhaust under water deeper than it could ford without its snorkel: it bubbles, up
+    // from just behind the back bumper, where the exhaust comes out.
+    const water = world.waterAt(state.x, state.z);
+    const back = vehicleById(car.vehicle).length * 0.5 + 0.5;
+    const bubbling = snorkelled.on && !film && hover < 0 && water - world.height(state.x, state.z) > snorkelled.dry;
+    bubbles.update(dt, bubbling ? {
+      x: state.x - Math.sin(state.heading) * back, z: state.z - Math.cos(state.heading) * back, water,
+      rate: 16 + Math.min(1, Math.abs(state.speed) / 6) * 24,
+    } : null);
     stage.remotes.update(dt, performance.now() / 1000, night);
     drawTows(dt, time, night);
     drawCables(state, spec);
@@ -884,6 +903,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
 
   /** Swaps the rig (a new body) or just refits it. */
   function setRig(v: VehicleId, l: Loadout) {
+    fitBubbles(v, l);
     if (v !== car.vehicle) {
       scene.remove(car.object);
       car.dispose();

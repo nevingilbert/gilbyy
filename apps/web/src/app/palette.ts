@@ -52,6 +52,8 @@ export const PALETTE = {
   snow: "#f4ede8",
 
   water: "#4f9fb2",
+  /** Bubbles coming up from a snorkelled truck's exhaust. */
+  bubble: "#eef8fb",
   waterSpecular: "#ffe2bd",
 
   // Trees: mostly near-black pines, with golden larches and a few autumn broadleaves.
