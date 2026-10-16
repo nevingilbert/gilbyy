@@ -34,8 +34,10 @@ without signing in, and a sweep of all five worlds with it, fixing what it found
   in the camp's third row of tents (it starts on the shore below the camp and keeps out of
   it). The valley, the island and Las Vegas were clean.
 - **`20261016120000_course_starts.sql`**: those four courses are a little shorter, so
-  their `min_seconds` and `min_miles` follow. Written, not applied: the live values are a
-  touch stricter, never looser, so honest runs pass either way.
+  their `min_seconds` and `min_miles` follow. Applied to the live project on 2026-10-16,
+  after a rolled-back dry run with every check in `game.test.sql` and one that the four
+  rows have their new limits; recorded with `migration repair`, and the checks pass
+  against the migrated project too.
 
 ## Files changed
 
@@ -47,9 +49,11 @@ without signing in, and a sweep of all five worlds with it, fixing what it found
 
 ## Open questions
 
-- The migration needs the usual rolled-back dry run against the live project, then applying.
 - Real-device frame rate is still unmeasured.
+- Open-sourcing (the repo is public but has no license): the steps were written up for the
+  owner, not acted on. The first is taking two real players' names out of
+  `docs/sessions/2026-10-10-anticheat-honest-crews.md`.
 
 ## Next step
 
-Apply `20261016120000_course_starts.sql` after a dry run, with the owner's go-ahead.
+Merged as pull request 28 and the migration is live. Play the moved courses signed in.
