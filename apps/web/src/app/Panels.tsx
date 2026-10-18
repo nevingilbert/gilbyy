@@ -60,9 +60,12 @@ export function StarterPicker({ onLook, onPick }: { onLook: (id: VehicleId) => v
   );
 }
 
-/** The one line that says your progress won't keep, and how to make it keep. */
-export function SoloBanner({ canSignIn, onSignIn }: { canSignIn: boolean; onSignIn: () => void }) {
-  const [open, setOpen] = useState(true);
+/**
+ * The one line that says your progress won't keep, and how to make it keep. Whether it's
+ * `open` is the game's to keep: the banner goes with the HUD under a map, a garage or a
+ * course, and once hidden it stays hidden for the visit, bar a small "Sign in".
+ */
+export function SoloBanner({ canSignIn, open, onSignIn, onHide }: { canSignIn: boolean; open: boolean; onSignIn: () => void; onHide: () => void }) {
   if (!open) {
     return canSignIn ? (
       <button onClick={onSignIn} className="pointer-events-auto absolute right-4 top-4 hidden rounded-full border border-white/20 bg-black/25 px-3 py-1 text-xs text-[rgba(255,246,232,0.8)] backdrop-blur sm:block">
@@ -83,7 +86,7 @@ export function SoloBanner({ canSignIn, onSignIn }: { canSignIn: boolean; onSign
             Sign in
           </button>
         )}
-        <button aria-label="Hide" onClick={() => setOpen(false)} className="shrink-0 rounded-full px-2 py-1 text-[rgba(255,246,232,0.5)] hover:text-[rgba(255,246,232,0.9)]">
+        <button aria-label="Hide" onClick={onHide} className="shrink-0 rounded-full px-2 py-1 text-[rgba(255,246,232,0.5)] hover:text-[rgba(255,246,232,0.9)]">
           ✕
         </button>
       </div>
