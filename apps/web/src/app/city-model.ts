@@ -190,10 +190,24 @@ function unitBay() {
   return new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false }).rotateX(-Math.PI / 2).translate(0, 0, 0);
 }
 
+/** How far out the houses reach at most, in metres: so a phone isn't drawing the whole city. */
+export const HOUSES_REACH = 1800;
+/** Where they start thinning out, as a share of how far they reach. */
+export const HOUSES_THIN = 0.75;
+
+/**
+ * How far the houses reach in the haze `density` (the scene's fog's): out to where it has
+ * taken two thirds of a house's colour, exp(-(density·d)²) = 1/3, but no further than
+ * `HOUSES_REACH`. By day that's the most; at dusk and at night, a little less.
+ */
+export const housesReach = (density: number) => Math.min(HOUSES_REACH, Math.sqrt(Math.log(3)) / Math.max(density, 1e-9));
+
 /**
  * The city's buildings, in tiles: the blocks, the Victorians' bay windows and the cornices
  * along the tops. Near tiles are drawn, far ones left to the haze; the tall buildings are
- * one more set, drawn from anywhere, so the skyline stands across the city.
+ * one more set, drawn from anywhere, so the skyline stands across the city. Toward the edge
+ * of the houses' reach a tile thins out a few houses at a time, rather than going all at
+ * once: its buildings are in no order, and only the first so many of them are drawn.
  */
 export function buildBuildings(buildings: Building[], u: CityUniforms) {
   const TILE = 400;
@@ -202,6 +216,14 @@ export function buildBuildings(buildings: Building[], u: CityUniforms) {
   for (const b of buildings) {
     const k = b.top - b.base >= SKYLINE ? "sky" : `${Math.floor(b.x / TILE)},${Math.floor(b.z / TILE)}`;
     (tiles.get(k) ?? tiles.set(k, []).get(k)!).push(b);
+  }
+  // Shuffled the same way every time, so the houses a tile keeps as it thins are scattered over it.
+  const rand = makeRandom(5309);
+  for (const list of tiles.values()) {
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
   }
   const material = buildingMaterial(u);
   const plain = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
@@ -215,7 +237,22 @@ export function buildBuildings(buildings: Building[], u: CityUniforms) {
   const v = new THREE.Vector3();
   const s = new THREE.Vector3();
   const c = new THREE.Color();
-  const parts: { mesh: THREE.InstancedMesh; x: number; z: number; always: boolean }[] = [];
+  /**
+   * A tile: where its buildings are on average, how many, and its meshes. A bay or a cornice
+   * is drawn with its building: `bayUpTo[n]` is how many bays the first n buildings have.
+   */
+  type Tile = {
+    x: number;
+    z: number;
+    n: number;
+    always: boolean;
+    blocks: THREE.InstancedMesh;
+    bays: THREE.InstancedMesh | null;
+    cornices: THREE.InstancedMesh | null;
+    bayUpTo: Uint32Array;
+    corniceUpTo: Uint32Array;
+  };
+  const parts: Tile[] = [];
   for (const [key, list] of tiles) {
     const geo = block.clone();
     const looks = new Float32Array(list.length * 4);
@@ -224,6 +261,8 @@ export function buildBuildings(buildings: Building[], u: CityUniforms) {
     const bayMesh = bays.length ? new THREE.InstancedMesh(bayGeo, plain, bays.length) : null;
     const corniced = new Set(list.filter((b) => b.district === "rows" || b.district === "marina" || b.district === "chinatown" || b.district === "midrise"));
     const cornices = corniced.size ? new THREE.InstancedMesh(slab, plain, corniced.size) : null;
+    const bayUpTo = new Uint32Array(list.length + 1);
+    const corniceUpTo = new Uint32Array(list.length + 1);
     let bi = 0;
     let ci = 0;
     let cx = 0;
@@ -253,6 +292,8 @@ export function buildBuildings(buildings: Building[], u: CityUniforms) {
         cornices.setMatrixAt(ci, m);
         cornices.setColorAt(ci++, colour(pick(PALETTE.city.trim, b.tone)));
       }
+      bayUpTo[i + 1] = bi;
+      corniceUpTo[i + 1] = ci;
     });
     geo.setAttribute("aLook", new THREE.InstancedBufferAttribute(looks, 4));
     for (const im of [mesh, bayMesh, cornices]) {
@@ -261,15 +302,31 @@ export function buildBuildings(buildings: Building[], u: CityUniforms) {
       im.receiveShadow = true;
       im.computeBoundingSphere();
       group.add(im);
-      parts.push({ mesh: im, x: cx / list.length, z: cz / list.length, always: key === "sky" });
     }
+    parts.push({ x: cx / list.length, z: cz / list.length, n: list.length, always: key === "sky", blocks: mesh, bays: bayMesh, cornices, bayUpTo, corniceUpTo });
   }
-  /** Tiles further than this from the camera are left out: a few storeys are lost in the haze by then. */
-  const FAR = 1600;
+  const draw = (im: THREE.InstancedMesh | null, count: number) => {
+    if (!im) return;
+    im.count = count;
+    im.visible = count > 0;
+  };
   return {
     object: group,
-    cull(camera: THREE.Vector3) {
-      for (const p of parts) p.mesh.visible = p.always || Math.hypot(p.x - camera.x, p.z - camera.z) < FAR;
+    /**
+     * Draws the tiles within the houses' reach in the haze `density` (`housesReach`). A tile
+     * whose middle is past `HOUSES_THIN` of the reach keeps fewer and fewer of its buildings,
+     * and none at the reach itself: the city's air is too clear to hide a tile going at once.
+     */
+    cull(camera: THREE.Vector3, density: number) {
+      const far = housesReach(density);
+      const thin = far * (1 - HOUSES_THIN);
+      for (const t of parts) {
+        const left = Math.min(1, Math.max(0, (far - Math.hypot(t.x - camera.x, t.z - camera.z)) / thin));
+        const n = t.always ? t.n : Math.round(t.n * left);
+        draw(t.blocks, n);
+        draw(t.bays, t.bayUpTo[n]);
+        draw(t.cornices, t.corniceUpTo[n]);
+      }
     },
   };
 }

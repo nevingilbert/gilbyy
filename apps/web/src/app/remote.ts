@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { buildCar, type CarModel } from "./car-model";
 import { guessPose, staleAfter, type Peer, type Pose } from "./net";
 import { makeCar, type Car, type CarSpec } from "./physics";
-import { specFor } from "./shop";
-import type { Obstacle, World } from "./world";
+import { STOCK_LOADOUT, specFor, type Loadout } from "./shop";
+import type { Ground, Obstacle, World } from "./world";
 
 /** How fast a correction fades, per second: the truck drifts back onto its true path rather than jumping. */
 const SETTLE = 6;
@@ -25,6 +25,10 @@ type Remote = {
 
 const lookOf = (p: Peer) => p.vehicle + JSON.stringify(p.loadout);
 const angleBetween = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+/** What a player has fitted, any part they didn't say stock: a presence with no loadout at all still draws a truck. */
+const loadoutOf = (p: Peer): Loadout => ({ ...STOCK_LOADOUT, ...p.loadout });
+/** How far under a truck's middle its surface is asked for from: its ride, and a little slack, as scene.ts's truckGround. */
+const underOf = (y: number, spec: CarSpec) => y - spec.ride - 0.5;
 
 /**
  * Everyone else's trucks. Poses arrive a few times a second at most, and only every few
@@ -37,6 +41,15 @@ export function createRemotes(scene: THREE.Scene, world: World) {
   const remotes = new Map<string, Remote>();
   /** Where each player was last heard of, kept after they drop out in case they reconnect. */
   const lastKnown = new Map<string, Pose>();
+  /** The ground for a truck's wheels: the deck it's on or the ground under it, by how high it is. Set before each truck is posed. */
+  let under = 0;
+  const surface: Ground = {
+    height: (x, z) => world.height(x, z, under),
+    waterAt: (x, z) => world.waterAt(x, z),
+    slipAt: (x, z) => world.slipAt(x, z),
+    obstaclesNear: (x, z) => world.obstaclesNear(x, z),
+    limit: world.limit,
+  };
 
   /** At their last known spot, or at their tent if they've not been heard from yet. */
   function place(r: Remote) {
@@ -52,13 +65,15 @@ export function createRemotes(scene: THREE.Scene, world: World) {
     }
   }
 
+  /** No beams of its own (car-model.ts). Into the scene only once it's built, so a truck that can't be built leaves nothing behind. */
   function add(peer: Peer) {
-    const model = buildCar(peer.vehicle);
-    model.setLoadout(peer.loadout);
-    scene.add(model.object);
-    const spec = specFor(peer.vehicle, peer.loadout);
+    const loadout = loadoutOf(peer);
+    const model = buildCar(peer.vehicle, false);
+    model.setLoadout(loadout);
+    const spec = specFor(peer.vehicle, loadout);
     const r: Remote = { peer, model, spec, car: makeCar(world, 0, 0, 0, spec), last: null, heardAt: 0, off: still(), look: lookOf(peer) };
     place(r);
+    scene.add(model.object);
     remotes.set(peer.id, r);
   }
 
@@ -70,25 +85,35 @@ export function createRemotes(scene: THREE.Scene, world: World) {
     remotes.delete(id);
   }
 
+  /** Brings one player's truck in line with what they're driving. */
+  function bring(p: Peer) {
+    const r = remotes.get(p.id);
+    if (!r) add(p);
+    else if (r.peer.vehicle !== p.vehicle) {
+      const keep = { car: r.car, last: r.last, heardAt: r.heardAt, off: r.off };
+      drop(p.id);
+      add(p);
+      Object.assign(remotes.get(p.id)!, keep);
+    } else {
+      if (lookOf(p) !== r.look) {
+        const loadout = loadoutOf(p);
+        r.model.setLoadout(loadout);
+        r.spec = specFor(p.vehicle, loadout);
+        r.look = lookOf(p);
+      }
+      r.peer = p;
+    }
+  }
+
   /** Brings the trucks in line with who's here and what they're driving. */
   function sync(peers: Peer[]) {
     const ids = new Set(peers.map((p) => p.id));
     for (const id of [...remotes.keys()]) if (!ids.has(id)) drop(id);
     for (const p of peers) {
-      const r = remotes.get(p.id);
-      if (!r) add(p);
-      else if (r.peer.vehicle !== p.vehicle) {
-        const keep = { car: r.car, last: r.last, heardAt: r.heardAt, off: r.off };
-        drop(p.id);
-        add(p);
-        Object.assign(remotes.get(p.id)!, keep);
-      } else {
-        if (lookOf(p) !== r.look) {
-          r.model.setLoadout(p.loadout);
-          r.spec = specFor(p.vehicle, p.loadout);
-          r.look = lookOf(p);
-        }
-        r.peer = p;
+      try {
+        bring(p);
+      } catch {
+        // Someone whose truck can't be drawn is left out, not everyone after them as well.
       }
     }
   }
@@ -135,14 +160,19 @@ export function createRemotes(scene: THREE.Scene, world: World) {
         const age = Math.min(now - r.heardAt, stale);
         const g = guessPose(p, age);
         const o = r.off;
+        // Where a bridge crosses over (ADR 0022) there are two surfaces. The guess stays on the
+        // one it's on, a deck or the ground under it, asked for from where it was a frame ago
+        // (less the correction fading off it), the way the player's own truck is (scene.ts's
+        // truckGround). And it keeps the height it had over whichever the pose was sent from.
+        const on = world.height(g.x, g.z, underOf(c.y - o.y, r.spec));
+        const over = p.y - world.height(p.x, p.z, underOf(p.y, r.spec));
         o.x *= fade;
         o.y *= fade;
         o.z *= fade;
         o.heading *= fade;
         c.x = g.x + o.x;
         c.z = g.z + o.z;
-        // Keep the height it had above the ground, wherever the guess has carried it.
-        c.y = world.height(g.x, g.z) + (p.y - world.height(p.x, p.z)) + o.y;
+        c.y = on + over + o.y;
         c.heading = g.heading + o.heading;
         c.pitch += (p.pitch - c.pitch) * ease;
         c.roll += (p.roll - c.roll) * ease;
@@ -150,7 +180,8 @@ export function createRemotes(scene: THREE.Scene, world: World) {
         c.steer = p.steer;
       }
       c.grounded = true;
-      r.model.update(c, world, dt, r.spec);
+      under = underOf(c.y, r.spec);
+      r.model.update(c, surface, dt, r.spec);
       r.model.setLights(night);
     }
   }

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { isShared } from "./garages";
 import { PALETTE } from "./palette";
 import { wheelGround, type Car, type CarSpec } from "./physics";
 import { STOCK_LOADOUT, lightsOf, paintColour, snorkelOf, tyresOf, winchOf, winterOf, type Loadout } from "./shop";
@@ -95,8 +96,13 @@ const GLINT_SIZE = 0.95;
  * plus wheels, paint, extras and headlight beams that follow the fitted loadout.
  * Origin is the body centre; it faces +z. Used for your truck, other players', and the
  * one in the garage showroom.
+ *
+ * With `beams`, its headlights are real lights that light the ground ahead. Only your own
+ * truck has them: every lit material in the scene is compiled for the number of lights
+ * there are, so a truck coming or going with lights of its own would recompile them all at
+ * once. Other trucks' lamps glow, and light nothing.
  */
-export function buildCar(vehicle: VehicleId) {
+export function buildCar(vehicle: VehicleId, beams = true) {
   const v = vehicleById(vehicle);
   const root = new THREE.Group();
   root.rotation.order = "YXZ";
@@ -107,15 +113,19 @@ export function buildCar(vehicle: VehicleId) {
   root.add(parts.body);
 
   // Two beams: low (headlights and driving lamps) and high (the bar). No shadows; too costly.
+  // They hang in a group of their own beside the body, so hiding the truck leaves them in the
+  // scene (`show`). Body space is the root's: the body sits at its origin.
+  const lit = new THREE.Group();
+  root.add(lit);
   const beam = (at: THREE.Vector3) => {
     const light = new THREE.SpotLight(PALETTE.headlight, 0, 40, 0.45, 0.5, 1.6);
     light.position.copy(at);
     light.target.position.set(at.x, at.y - 2.2, at.z + 20);
-    parts.body.add(light, light.target);
+    lit.add(light, light.target);
     return light;
   };
-  const low = beam(parts.beams.low);
-  const high = beam(parts.beams.high);
+  const low = beams ? beam(parts.beams.low) : null;
+  const high = beams ? beam(parts.beams.high) : null;
 
   // The winch bolts on ahead of the bumper, at about axle height. Hidden until one is fitted.
   const dark = new THREE.MeshLambertMaterial({ color: PALETTE.bumperBlack, flatShading: true });
@@ -172,6 +182,7 @@ export function buildCar(vehicle: VehicleId) {
   let twinkle = 0;
   let lights = lightsOf(STOCK_LOADOUT);
   let glow = 0;
+  let shown = true;
 
   function setLoadout(l: Loadout) {
     paint.color.set(paintColour(vehicle, l));
@@ -249,12 +260,28 @@ export function buildCar(vehicle: VehicleId) {
   function setLights(level: number) {
     glow = level;
     lamp.emissiveIntensity = 0.4 + level * 2.2;
-    low.intensity = level * 260 * lights.power;
+    if (!low || !high) return;
+    // A hidden truck's beams stay in the scene, dark.
+    const on = shown ? level : 0;
+    low.intensity = on * 260 * lights.power;
     low.distance = lights.reach * 1.4;
     low.angle = lights.spread;
-    high.intensity = lights.bar ? level * 420 * lights.power : 0;
+    high.intensity = lights.bar ? on * 420 * lights.power : 0;
     high.distance = lights.reach * 1.8;
     high.angle = lights.spread * 0.8;
+  }
+
+  /**
+   * Shows the truck or hides it. Hidden, its beams go dark but stay where they are, so the
+   * count of lights in the scene doesn't change (see `beams`): for the opening shot, before
+   * the truck is put down, and the films it's out of sight in.
+   */
+  function show(on: boolean) {
+    if (on === shown) return;
+    shown = on;
+    parts.body.visible = on;
+    for (const w of wheels) w.pivot.visible = on;
+    setLights(glow);
   }
 
   let rolled = 0;
@@ -298,7 +325,7 @@ export function buildCar(vehicle: VehicleId) {
     for (const m of [paint, lamp, tyreMat, rimMat, chainMat, goldMat, ...stoneMats, starMat, dark, cable, hook]) m.dispose();
   }
 
-  return { object: root, vehicle, top: parts.top, update, setLoadout, setLights, glint, park, dispose };
+  return { object: root, vehicle, top: parts.top, update, setLoadout, setLights, show, glint, park, dispose };
 }
 
 export type CarModel = ReturnType<typeof buildCar>;
@@ -306,10 +333,11 @@ export type CarModel = ReturnType<typeof buildCar>;
 /**
  * BBB's tow truck (ADR 0021): the little pickup in white with a winch on its bumper, a
  * recovery boom over the bed and an amber lamp turning on the roof. It can be faded, for
- * coming into sight and going out of it.
+ * coming into sight and going out of it. Like other players' trucks it has no beams of its
+ * own, only lamps that glow.
  */
 export function buildTowTruck() {
-  const model = buildCar(TOW_RIG);
+  const model = buildCar(TOW_RIG, false);
   model.setLoadout(TOW_LOADOUT);
   const dark = new THREE.MeshLambertMaterial({ color: PALETTE.bumperBlack, flatShading: true });
   const lamp = new THREE.MeshLambertMaterial({ color: PALETTE.beacon, emissive: PALETTE.beacon, emissiveIntensity: 1, flatShading: true });
@@ -325,6 +353,19 @@ export function buildTowTruck() {
   add(new THREE.BoxGeometry(0.12, 0.12, 1.5), dark, 0, model.top - 0.3, -v.length / 2 + 0.95, 0.5);
   add(new THREE.BoxGeometry(0.9, 0.5, 0.1), dark, 0, model.top - 0.45, -0.55);
   add(new THREE.BoxGeometry(0.4, 0.12, 0.16), lamp, 0, model.top + 0.06, 0.35);
+  // Its glass, bumpers and trim are the kit's (garages.ts), which every truck and much of the
+  // world are built with. Fading those would fade everything else too, so it has its own
+  // copies: one of each, so its parts still share them the way the kit's do.
+  const own = new Map<THREE.Material, THREE.Material>();
+  const ownOf = (m: THREE.Material) => {
+    if (!isShared(m)) return m;
+    let copy = own.get(m);
+    if (!copy) own.set(m, (copy = m.clone()));
+    return copy;
+  };
+  model.object.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.material = Array.isArray(o.material) ? o.material.map(ownOf) : ownOf(o.material);
+  });
   let shown = 1;
   return {
     ...model,
@@ -333,14 +374,23 @@ export function buildTowTruck() {
     /** 1 is solid; less, and it's on its way into or out of sight. */
     setFade(fade: number) {
       if (fade === shown) return;
+      const see = fade < 1;
+      const flips = see !== (shown < 1);
       shown = fade;
       model.object.traverse((o) => {
         if (!(o instanceof THREE.Mesh)) return;
         for (const m of [o.material].flat()) {
-          m.transparent = fade < 1;
           m.opacity = fade;
+          if (!flips) continue;
+          m.transparent = see;
+          // Solid and see-through are drawn by different shaders.
+          m.needsUpdate = true;
         }
       });
+    },
+    dispose() {
+      model.dispose();
+      for (const m of [dark, lamp, ...own.values()]) m.dispose();
     },
   };
 }

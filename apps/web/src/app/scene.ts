@@ -99,6 +99,25 @@ export type Film =
   | { way: "boat"; frame: FerryFrame; ground: Ground }
   | { way: "heli"; frame: HeliFrame; ground: Ground };
 
+/**
+ * Gives back the graphics memory of everything under `object`: each mesh's geometry, an
+ * instanced mesh's own buffers (where its instances stand, and their colours), and every
+ * material `keep` doesn't claim, with its textures, which a material's own dispose leaves
+ * alone. Geometry in `keptGeometry` is drawn by something else as well, so it stays.
+ */
+export function release(object: THREE.Object3D, keep: (m: THREE.Material) => boolean, keptGeometry: ReadonlySet<THREE.BufferGeometry> = new Set()) {
+  object.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    if (!keptGeometry.has(o.geometry)) o.geometry.dispose();
+    if (o instanceof THREE.InstancedMesh) o.dispose();
+    for (const m of [o.material].flat()) {
+      if (keep(m)) continue;
+      for (const value of Object.values(m)) if (value instanceof THREE.Texture) value.dispose();
+      m.dispose();
+    }
+  });
+}
+
 /** Puts a model on the ground at (x, z) turned by `rot`, and its colliders into the world. */
 function placer(world: World, group: THREE.Group, colliders: Obstacle[]) {
   return (object: THREE.Object3D, circles: readonly Circle[], x: number, z: number, rot: number, y = world.height(x, z)) => {
@@ -284,8 +303,9 @@ function placeCity(world: CityWorld, windows: THREE.Material, lamps: THREE.Mater
   group.add(cables.object, fog.object);
   return {
     group,
-    update(camera: THREE.Vector3, time: number, hour: number) {
-      buildings.cull(camera);
+    /** `density` is the haze's, which says how far out the houses are drawn. */
+    update(camera: THREE.Vector3, density: number, time: number, hour: number) {
+      buildings.cull(camera, density);
       for (const t of turning) t(time);
       cables.update(time);
       fog.update(hour, time);
@@ -297,7 +317,8 @@ function placeCity(world: CityWorld, windows: THREE.Material, lamps: THREE.Mater
 
 /**
  * Every mission's start arch, gates and finish. Gates have no colliders, so a clipped
- * flag never stops you; the arches do. A loop that finishes where it began reuses that gate.
+ * flag never stops you; the arches do. A loop that finishes where it began reuses that gate,
+ * and one that comes home to its start arch finishes under it.
  */
 function placeMissions(world: World, glow: THREE.Material) {
   const group = new THREE.Group();
@@ -318,7 +339,10 @@ function placeMissions(world: World, glow: THREE.Material) {
       place(model.object, [], g.x, g.z, g.heading, surface.gates[i]);
       return model;
     });
-    if (loops < 0) {
+    // A loop that comes home to its own start arch finishes under it: a second arch just
+    // past it would stand in the way of the start.
+    const home = Math.hypot(end.x - m.start.x, end.z - m.start.z) < 8;
+    if (loops < 0 && !home) {
       // Just past the last gate, so the banner frames it as you come through.
       const [fx, fz] = [end.x + Math.sin(end.heading) * 6, end.z + Math.cos(end.heading) * 6];
       const y = world.height(fx, fz, surface.gates[last] + 1);
@@ -387,12 +411,20 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
   sun.shadow.normalBias = 0.3;
   sun.shadow.radius = 2.5;
   scene.add(hemi, sun, sun.target);
+  // The real lights are the same all session: the sky, the sun, the truck's two beams and
+  // the train's lamp. Every lit material is compiled for how many there are, so one coming or
+  // going would recompile them all at once. So other trucks have no beams (car-model.ts), and
+  // the train's lamp stays in the scene in every world, dark where there's no train.
+  const trainLamp = new THREE.SpotLight(PALETTE.headlight, 0, 120, 0.5, 0.6, 1.6);
+  scene.add(trainLamp, trainLamp.target);
 
   // Shared glowing materials: lit windows, lamps on the train, embers and lanterns.
   const windows = new THREE.MeshLambertMaterial({ color: PALETTE.windowGlow, emissive: PALETTE.windowGlow, emissiveIntensity: 0.1 });
   const lamps = new THREE.MeshLambertMaterial({ color: PALETTE.headlight, emissive: PALETTE.headlight, emissiveIntensity: 0.4 });
   const embers = new THREE.MeshLambertMaterial({ color: PALETTE.ember, emissive: PALETTE.ember, emissiveIntensity: 0.6 });
   const kept = new Set<THREE.Material>([windows, lamps, embers]);
+  /** Geometry a world's models share with what outlives it: the valley's train is built from the same cars as the station's (train-model.ts). */
+  const keptGeometry = new Set<THREE.BufferGeometry>();
 
   const sky = buildSky(FAR * 0.92);
   scene.add(sky.object);
@@ -413,7 +445,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     const terrain = buildTerrainMesh(world, surface, streets);
     const grass = buildGrass(world, surface);
     const water = buildWaterMesh(world);
-    const railway = world.track.xs.length ? buildRailway(world, lamps) : null;
+    const railway = world.track.xs.length ? buildRailway(world, lamps, trainLamp) : null;
     const sites = placeGarages(world, windows);
     const camp = placeCamp(world, windows, embers);
     const courses = placeMissions(world, lamps);
@@ -446,16 +478,12 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     scene.add(group);
     const remotes = createRemotes(scene, world);
 
-    /** Gives back the graphics memory. Materials shared with what outlives this world are left alone. */
+    /** Gives back the graphics memory. What's shared with what outlives this world is left alone. */
     function dispose() {
       remotes.dispose();
       scene.remove(group);
       streets?.dispose();
-      group.traverse((o) => {
-        if (!(o instanceof THREE.Mesh)) return;
-        o.geometry.dispose();
-        for (const m of [o.material].flat()) if (!kept.has(m) && !isShared(m)) m.dispose();
-      });
+      release(group, (m) => kept.has(m) || isShared(m), keptGeometry);
     }
     return { world, terrain, grass, water, railway, sites, camp, courses, landmarks, airport, station, town, strip, nippon, wildlife, remotes, dispose };
   }
@@ -505,6 +533,9 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
   // one that always stands at the platform, the way the plane always stands on its stand.
   const stationTrain = buildStationTrain(lamps, CONSIST.map((c) => c.kind));
   scene.add(stationTrain.object);
+  stationTrain.object.traverse((o) => {
+    if (o instanceof THREE.Mesh) keptGeometry.add(o.geometry);
+  });
   const standTrain = () => {
     const st = world.station;
     stationTrain.object.visible = Boolean(st && world.id === "city");
@@ -750,7 +781,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     }
     wasRiding = Boolean(ride);
     stage.railway?.showTrain(!ride);
-    stage.town?.update(camera.position, time, hour);
+    stage.town?.update(camera.position, fog.density, time, hour);
     stage.strip?.update(time, night);
     stage.nippon?.update(time);
     cityUniforms.night.value = night;
@@ -797,7 +828,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
       camera.position.copy(camPos);
       camera.lookAt(aim);
     };
-    car.object.visible = hover < 0 && (!film || film.frame.truck !== null);
+    // Hidden, its beams stay in the scene, dark: the lights mustn't come and go (see `trainLamp`).
+    car.show(hover < 0 && (!film || film.frame.truck !== null));
     if (film) {
       const c = film.frame.camera;
       look.set(c.to.x, c.to.y, c.to.z);
@@ -888,7 +920,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     const k = 1 - Math.exp(-12 * dt);
     centre.set(state.x, state.y + LOOK_UP, state.z);
     shown = easeOrbit(shown ?? want, want, k);
-    const at = cameraAt(shown, centre, (x, z) => Math.max(world.height(x, z), world.waterAt(x, z)));
+    // The floor is what the truck's own wheels stand on: under a bridge it's the ground, not the deck over it.
+    const at = cameraAt(shown, centre, (x, z) => Math.max(truckGround.height(x, z), world.waterAt(x, z)));
     camPos.set(at.x, at.y, at.z);
     // From where the chase camera was looking, a little ahead of the truck, to the truck.
     aim.lerp(centre, k);
@@ -901,7 +934,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     cityUniforms.camera.value.copy(camera.position);
     cityUniforms.truck.value.set(state.x, state.y + 0.6, state.z);
     // Only what's drawn changes with the camera: the cars, the sails and the fog stay where they stopped.
-    stage.town?.cull(camera.position);
+    stage.town?.cull(camera.position, fog.density);
     sky.object.position.copy(camera.position);
     renderer.render(scene, camera);
   }
@@ -928,6 +961,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
   /** Takes this world down and puts another up, the plane on its airstrip. The camera starts over. */
   function setWorld(next: World) {
     stage.dispose();
+    // Dark until a train in the new world, if there is one, takes it.
+    trainLamp.intensity = 0;
     world = next;
     stage = stageFor(world);
     fitView(world);

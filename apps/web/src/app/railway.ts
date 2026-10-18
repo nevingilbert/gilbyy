@@ -157,7 +157,11 @@ function bridgeEnd(kit: Kit, world: World, end: BridgeEnd, spacing: number, mats
   }
 }
 
-export function buildRailway(world: World, lampMaterial: THREE.MeshLambertMaterial) {
+/**
+ * `lamp` is the loco's headlight. The view keeps it in the scene in every world, dark where
+ * there's no train (scene.ts): a light that comes and goes recompiles every lit material.
+ */
+export function buildRailway(world: World, lampMaterial: THREE.MeshLambertMaterial, lamp = new THREE.SpotLight(PALETTE.headlight, 0, 120, 0.5, 0.6, 1.6)) {
   const { track } = world;
   const fr = frames(track);
   const spacing = track.length / fr.length;
@@ -239,17 +243,17 @@ export function buildRailway(world: World, lampMaterial: THREE.MeshLambertMateri
   }
   world.addObstacles(crossingColliders);
 
-  // The train, and a lamp on the front that matters after dark.
+  // The train, and a lamp on the front that matters after dark. The lamp isn't the loco's to
+  // carry: it's put where the loco's headlight is each frame, so it stays in the scene while
+  // the train is put away (`showTrain`), only dark.
   const cars = trainCars(track, 0).map((c) => {
     const built = buildTrainCar(c.kind, lampMaterial);
     built.object.rotation.order = "YXZ";
     group.add(built.object);
     return built;
   });
-  const lamp = new THREE.SpotLight(PALETTE.headlight, 0, 120, 0.5, 0.6, 1.6);
-  lamp.position.copy(LOCO_LAMP);
-  lamp.target.position.set(LOCO_LAMP.x, LOCO_LAMP.y - 3, LOCO_LAMP.z + 30);
-  cars[0].object.add(lamp, lamp.target);
+  const beam = new THREE.Vector3(LOCO_LAMP.x, LOCO_LAMP.y - 3, LOCO_LAMP.z + 30);
+  let shown = true;
 
   let poses: TrainCar[] = [];
 
@@ -259,7 +263,12 @@ export function buildRailway(world: World, lampMaterial: THREE.MeshLambertMateri
       cars[i].object.position.set(p.x, p.y, p.z);
       cars[i].object.rotation.set(-p.pitch, p.yaw, 0);
     });
-    lamp.intensity = night * 900;
+    const loco = cars[0].object;
+    loco.updateWorldMatrix(true, false);
+    lamp.position.copy(LOCO_LAMP).applyMatrix4(loco.matrixWorld);
+    lamp.target.position.copy(beam).applyMatrix4(loco.matrixWorld);
+    lamp.target.updateMatrixWorld();
+    lamp.intensity = shown ? night * 900 : 0;
     for (const c of crossings) {
       const closed = crossingClosed(track, c.s, time);
       c.down += Math.sign((closed ? 1 : 0) - c.down) * Math.min(Math.abs((closed ? 1 : 0) - c.down), dt * 0.7);
@@ -267,9 +276,11 @@ export function buildRailway(world: World, lampMaterial: THREE.MeshLambertMateri
     }
   }
 
-  /** The timetable's train is put away while the train's film shows its own (ADR 0022). */
+  /** The timetable's train is put away while the train's film shows its own (ADR 0022). Its lamp stays, dark. */
   const showTrain = (on: boolean) => {
+    shown = on;
     for (const c of cars) c.object.visible = on;
+    if (!on) lamp.intensity = 0;
   };
   return { object: group, update, cars: () => poses, showTrain };
 }

@@ -517,6 +517,8 @@ export function buildGrass(world: World, surface: SurfaceAt) {
   let cx = Infinity;
   let cz = Infinity;
   const ramps = world.missions.flatMap((mission) => (mission.ramp ? [mission.ramp] : []));
+  /** The ground as the terrain is drawn, under any bridge over it. */
+  const ground = (x: number, z: number) => sampleGrid(world.heights, x, z);
 
   function relay(x: number, z: number) {
     cx = x;
@@ -533,8 +535,12 @@ export function buildGrass(world: World, surface: SurfaceAt) {
         if (d > RADIUS) continue;
         // Nothing grows through a ramp's boards.
         if (ramps.length && rampLift(ramps, tx, tz) > 0) continue;
-        const y = world.height(tx, tz);
-        const ny = 2 / Math.hypot(world.height(tx + 1, tz) - world.height(tx - 1, tz), 2, world.height(tx, tz + 1) - world.height(tx, tz - 1));
+        // Tufts grow on the ground. Where a bridge's deck (ADR 0022) or a causeway lies over it,
+        // too low for a tuft to stand under, none grows; under a deck high over the ground, the
+        // tufts are down on the ground below it.
+        const y = ground(tx, tz);
+        if (world.height(tx, tz, y) > y + 0.05) continue;
+        const ny = 2 / Math.hypot(ground(tx + 1, tz) - ground(tx - 1, tz), 2, ground(tx, tz + 1) - ground(tx, tz - 1));
         const [kind, tone] = surface(tx, y, tz, ny);
         const tuft = tufts[kind];
         if (!tuft || hash(gx, gz, 3) >= tuft.share) continue;
