@@ -57,7 +57,7 @@ export const TYRES: Tyre[] = [
   { id: "mud", name: "Mud-terrain", blurb: "Chunky lugs. Steeper hills.", price: 20, radiusAdd: 0.06, width: 0.39, lugs: 10, lift: 0.08, gripAdd: 0.16, clearanceAdd: 0.3, snowGrip: 0.4 },
   { id: "studded", name: "Studded snow tyres", blurb: "Bite on snow and ice. Small rocks only.", price: 25, radiusAdd: 0.02, width: 0.34, lugs: 14, lift: 0.02, gripAdd: 0.04, clearanceAdd: 0.05, snowGrip: 0.95 },
   { id: "big33", name: "33-inch mud", blurb: "Lifted. Rolls over boulders.", price: 45, radiusAdd: 0.12, width: 0.44, lugs: 10, lift: 0.18, gripAdd: 0.24, clearanceAdd: 0.65, snowGrip: 0.45 },
-  { id: "crawler37", name: "37-inch crawlers", blurb: "Climbs nearly anything.", price: 75, radiusAdd: 0.18, width: 0.5, lugs: 9, lift: 0.3, gripAdd: 0.32, clearanceAdd: 1.05, snowGrip: 0.5 },
+  { id: "crawler37", name: "37-inch crawlers", blurb: "The surest grip on the steepest a truck can climb.", price: 75, radiusAdd: 0.18, width: 0.5, lugs: 9, lift: 0.3, gripAdd: 0.32, clearanceAdd: 1.05, snowGrip: 0.5 },
 ];
 
 export const LIGHTS: Lights[] = [

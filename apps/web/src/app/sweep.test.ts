@@ -86,6 +86,25 @@ describe.each(IDS)("%s, swept", (id) => {
     expect([...new Set(into)]).toEqual([]);
   });
 
+  // A truck comes to each gate from the last one, or to the first from the arch: met more
+  // than 60 degrees off square, its flags stand nearly in line along the way, or with the
+  // way in on their far side, and driving through them doesn't count.
+  it("meets every course's gates within 60 degrees of square on the way in to them", () => {
+    const askew: string[] = [];
+    for (const m of world.missions) {
+      const path = [m.start, ...m.gates];
+      m.gates.forEach((g, i) => {
+        // From the last point that isn't on the same spot, for a course that ends on its last point twice.
+        let k = i;
+        while (k > 0 && Math.hypot(path[k].x - g.x, path[k].z - g.z) < 0.01) k--;
+        const into = Math.atan2(g.x - path[k].x, g.z - path[k].z);
+        const off = Math.abs(Math.atan2(Math.sin(g.heading - into), Math.cos(g.heading - into)));
+        if (off > Math.PI / 3) askew.push(`${m.id}, gate ${i + 1} at ${g.x.toFixed(0)}, ${g.z.toFixed(0)}: ${Math.round((off * 180) / Math.PI)} degrees off`);
+      });
+    }
+    expect(askew).toEqual([]);
+  });
+
   it("can be driven round every course, start to finish", () => {
     const stuck = world.missions
       .map((m) => driveCourse(world, m, KITTED))
@@ -95,6 +114,20 @@ describe.each(IDS)("%s, swept", (id) => {
   });
 
   // San Francisco's own.
+  it.runIf(id === "city")("finds somewhere clear in the corners of the city's square, not only in a circle round its middle", () => {
+    // Dry ground further out than the circle that fits in the square, by more than the search reaches.
+    const corners: { x: number; z: number }[] = [];
+    for (let x = -world.limit + 40; x <= world.limit - 40; x += 40) {
+      for (let z = -world.limit + 40; z <= world.limit - 40; z += 40) {
+        if (Math.hypot(x, z) > world.limit + 80 && world.height(x, z) > world.waterAt(x, z) + 1) corners.push({ x, z });
+      }
+    }
+    expect(corners.length).toBeGreaterThan(20);
+    const found = corners.filter((p) => clearSpot(world, p.x, p.z, KITTED));
+    expect(found.length / corners.length).toBeGreaterThan(0.8);
+    for (const p of found.slice(0, 20)) expect(spotProblems(world, { name: "a corner", heading: 0, ...clearSpot(world, p.x, p.z, KITTED)! }, KITTED)).toEqual([]);
+  });
+
   it.runIf(id === "city")("finds a way under the Bay Bridge on the Embarcadero, not up on its deck", () => {
     // From the waterfront to where its approach crosses over, eighteen metres up.
     const deck = world.height(1675.7, -797);

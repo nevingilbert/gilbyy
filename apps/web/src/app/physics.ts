@@ -6,8 +6,9 @@ import type { Ground, Obstacle } from "./world";
  * The body is a point with a velocity, with three springs on top — height, pitch and
  * roll — chasing what the four wheels feel underneath. That is enough for the things
  * that matter here: hills slow you down, you roll back down them, the body sways over
- * bumps and leans in corners, and a crest taken fast puts you in the air. Rocks low
- * enough for the tyres are bumps under the wheels; taller ones, and trees, stop you.
+ * bumps and leans in corners, and a crest taken fast puts you in the air. Nothing climbs
+ * ground steeper than 40 degrees, whatever its tyres. Rocks low enough for the tyres are
+ * bumps under the wheels; taller ones, and trees, stop you.
  *
  * One thing can end a drive (ADR 0021): a rock only a little too tall for the tyres, rammed
  * square and fast, is one the truck rides up onto. There it sits with its wheels off the
@@ -36,6 +37,14 @@ export const RAM = 8.94;
 /** How fast a winch hauls a stuck truck in, and how near to the winch it stops. */
 export const WINCH_SPEED = 1.6;
 const WINCH_SHORT = 6;
+/**
+ * The steepest ground any truck climbs, whatever its tyres and its engine: 40 degrees.
+ * Past it the tyres can't push it any higher, so it slides back down. Going down is free.
+ */
+export const MAX_CLIMB = 0.7;
+const STEEP = Math.tan(MAX_CLIMB);
+/** How fast a truck going up ground that steep loses its way, a share a second: taken flat out, it's stopped within a few metres. */
+const SCRUB = 12;
 /** How far a stuck truck's nose is held up by the rock under it, radians. */
 const NOSE_UP = 0.16;
 /** And how far clear of the rock it's hauled, so its tail doesn't scrape past on the way off. */
@@ -154,15 +163,18 @@ function bump(x: number, z: number, near: readonly Obstacle[], clearance: number
   return top;
 }
 
-/** Ground height under each wheel, rocks included: front-left, front-right, rear-left, rear-right. */
-export function wheelGround(car: Car, ground: Ground, spec: CarSpec = STOCK, near = ground.obstaclesNear(car.x, car.z)) {
+/**
+ * Ground height under each wheel, rocks included: front-left, front-right, rear-left,
+ * rear-right. With `rocks` false, the bare ground, which is how steep the going is.
+ */
+export function wheelGround(car: Car, ground: Ground, spec: CarSpec = STOCK, near = ground.obstaclesNear(car.x, car.z), rocks = true) {
   const fx = Math.sin(car.heading);
   const fz = Math.cos(car.heading);
   const lx = fz;
   const lz = -fx;
   const f = spec.wheelbase / 2;
   const l = spec.track / 2;
-  const at = (x: number, z: number) => ground.height(x, z) + bump(x, z, near, spec.clearance);
+  const at = (x: number, z: number) => ground.height(x, z) + (rocks ? bump(x, z, near, spec.clearance) : 0);
   return [
     at(car.x + fx * f + lx * l, car.z + fz * f + lz * l),
     at(car.x + fx * f - lx * l, car.z + fz * f - lz * l),
@@ -185,8 +197,19 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
   const near = ground.obstaclesNear(car.x, car.z);
   const [fl, fr, rl, rr] = wheelGround(car, ground, spec, near);
   const groundY = (fl + fr + rl + rr) / 4;
-  const slopePitch = clampTilt(Math.atan2((fl + fr - rl - rr) / 2, spec.wheelbase));
+  // The slope under the wheels, nose up. Gravity and the going are the ground's own; only
+  // the body is drawn tipped no further than MAX_TILT.
+  const slope = Math.atan2((fl + fr - rl - rr) / 2, spec.wheelbase);
+  const slopePitch = clampTilt(slope);
   const slopeRoll = clampTilt(Math.atan2((fl + rl - fr - rr) / 2, spec.track));
+  // How steep the bare ground under it is, rocks aside: past MAX_CLIMB nothing takes the
+  // truck any higher, whichever way it's pointed, so a hillside is no easier slantwise.
+  // On a road it's the road's own grade that counts, however the ground falls away
+  // across it. `rise` is how steeply it goes up along the truck, nose up.
+  const [bfl, bfr, brl, brr] = wheelGround(car, ground, spec, near, false);
+  const rise = (bfl + bfr - brl - brr) / 2 / spec.wheelbase;
+  const across = ground.pavedAt?.(car.x, car.z) ? 0 : (bfl + brl - bfr - brr) / 2 / spec.track;
+  const steep = Math.hypot(rise, across) > STEEP;
   // How fast the ground under the body is rising. Capped, so a facet edge on a steep
   // outcrop can't fling the car skyward.
   const lift = Math.abs(car.speed) * 0.6 + 1;
@@ -217,12 +240,16 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
 
   if (car.grounded) {
     // Gravity along the slope: hills cost speed going up and give it back coming down.
-    car.speed -= G * Math.sin(slopePitch) * dt;
+    car.speed -= G * Math.sin(slope) * dt;
 
     // Better tyres keep more of the push on a climb; on the flat they change nothing.
-    const climb = Math.min(1, Math.abs(Math.sin(slopePitch)) * 4);
+    const climb = Math.min(1, Math.abs(Math.sin(slope)) * 4);
     if (input.gas) drive = spec.accel * (1 + (spec.grip - 1) * climb) * (1 - wading * WATER.push) * grip.bite * (1 - rough * (1 - OFF_ROAD.accel));
     else if (input.brake) drive = (car.speed > 0.5 ? -BRAKE : -spec.accel * 0.8) * grip.bite;
+    // Too steep for any tyres: they can't push it up or hold it there, and a run at it is
+    // soon spent. It slides back down.
+    if (steep && drive * rise > 0) drive = 0;
+    if (steep && car.speed * rise > 0) car.speed *= Math.exp(-SCRUB * dt);
     car.speed += drive * dt;
     if (!input.gas && !input.brake) {
       // Rolling resistance and engine braking. Enough to hold the car on a gentle slope.
@@ -250,7 +277,10 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
   car.side = vx * fz - vz * fx;
   if (car.grounded) car.side *= Math.exp(-grip.rate * dt);
 
-  const k = Math.cos(slopePitch) * dt;
+  // On the ground, up or down a slope covers less of the map than the flat. In the air
+  // nothing slows it across the map, unless the ground under it rises the way it's going:
+  // flying at a cliff, it gets no further into it than it could drive.
+  const k = (car.grounded || car.speed * slope > 0 ? Math.cos(slope) : 1) * dt;
   const nx = car.x + (fx * car.speed + fz * car.side) * k;
   const nz = car.z + (fz * car.speed - fx * car.side) * k;
   // Fording is fine; driving into the deep end is not. The car stops at the edge but

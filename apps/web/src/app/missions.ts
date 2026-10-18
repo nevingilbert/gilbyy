@@ -82,14 +82,33 @@ function helpers(t: Terrain) {
   return { h, f, slope, zone, clearAt, lineOk, awayFrom };
 }
 
-/** Each gate faces along the path: from the point before it toward the point after it. */
+/**
+ * Each gate faces along the path, from the point before it toward the point after it, so
+ * it stands square to the way through. Where the path turns back on itself at a gate, by
+ * more than a right angle, that line would stand its flags edge-on to the way in, or with
+ * the way in on their far side: so a gate there faces the way in, and a truck coming
+ * through it counts. The last faces the way in. The points before and after a gate are
+ * the nearest that aren't on the same spot as it, so a course that ends on its last point
+ * twice still finishes facing the way it comes.
+ */
 export function gatesAlong(start: Pt, pts: Pt[], width: number): Gate[] {
+  const path = [start, ...pts];
+  /** The nearest point to the `i`th of the path, `by` one at a time (-1 is back), that isn't on the same spot. */
+  const apart = (i: number, by: number) => {
+    for (let k = i + by; k >= 0 && k < path.length; k += by) if (Math.hypot(path[k].x - path[i].x, path[k].z - path[i].z) > 0.01) return path[k];
+    return null;
+  };
+  const bearing = (a: Pt, b: Pt) => Math.atan2(b.x - a.x, b.z - a.z);
   return pts.map((p, i) => {
-    const prev = i === 0 ? start : pts[i - 1];
-    const next = pts[i + 1] ?? p;
-    const dx = (next === p ? p.x - prev.x : next.x - prev.x);
-    const dz = (next === p ? p.z - prev.z : next.z - prev.z);
-    return { x: p.x, z: p.z, heading: Math.atan2(dx, dz), width };
+    const prev = apart(i + 1, -1);
+    const next = apart(i + 1, 1);
+    let heading = 0;
+    if (prev && next) {
+      const turn = bearing(p, next) - bearing(prev, p);
+      heading = Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn))) > Math.PI / 2 ? bearing(prev, p) : bearing(prev, next);
+    } else if (prev) heading = bearing(prev, p);
+    else if (next) heading = bearing(p, next);
+    return { x: p.x, z: p.z, heading, width };
   });
 }
 

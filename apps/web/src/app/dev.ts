@@ -3,7 +3,7 @@ import { dockBoard, dockLeave } from "./dock";
 import { boardSpot, leaveSpot } from "./flight";
 import { padBoard, padLeave } from "./heli";
 import { lineUpAlone, startRun, tick } from "./mission-run";
-import { makeCar, step, type Car, type CarSpec, type Input } from "./physics";
+import { MAX_CLIMB, makeCar, step, type Car, type CarSpec, type Input } from "./physics";
 import { TIDE } from "./tide";
 import type { Ground, Mission, Obstacle, World } from "./world";
 
@@ -51,7 +51,7 @@ const reachOf = (spec: CarSpec) => spec.wheelbase * 0.46 + spec.radius;
 export function clearSpot(world: World, x: number, z: number, spec: CarSpec, reach = 60) {
   const size = reachOf(spec) + 0.3;
   const ok = (px: number, pz: number) => {
-    if (Math.hypot(px, pz) > world.limit - 20) return false;
+    if ((world.square ? Math.max(Math.abs(px), Math.abs(pz)) : Math.hypot(px, pz)) > world.limit - 20) return false;
     if (world.waterAt(px, pz) - world.height(px, pz) > spec.wade * 0.8) return false;
     return !world.obstaclesNear(px, pz).some((o) => o.h > spec.clearance && Math.hypot(o.x - px, o.z - pz) < o.r + size);
   };
@@ -145,6 +145,8 @@ const CELL = 2;
 const LOOK = 7;
 /** The most ways the bot finds to each gate, on average, before it calls itself lost. */
 const PLANS_A_GATE = 6;
+/** The steepest ground the bot plans over, rise over run: no steeper than any truck climbs (physics.ts). */
+const STEEPEST = Math.tan(MAX_CLIMB);
 
 /**
  * Whether a truck could stand at (x, z) on ground `h` high: inside the world, no deeper
@@ -155,7 +157,7 @@ function standable(world: World, x: number, z: number, h: number, spec: CarSpec,
   if ((world.square ? Math.max(Math.abs(x), Math.abs(z)) : Math.hypot(x, z)) > world.limit - 6) return false;
   if (world.waterAt(x, z) - h > spec.wade * 0.9) return false;
   const up = h + 1;
-  if (Math.hypot(world.height(x + 1, z, up) - world.height(x - 1, z, up), world.height(x, z + 1, up) - world.height(x, z - 1, up)) / 2 > 0.9) return false;
+  if (Math.hypot(world.height(x + 1, z, up) - world.height(x - 1, z, up), world.height(x, z + 1, up) - world.height(x, z - 1, up)) / 2 > STEEPEST) return false;
   for (const o of world.obstaclesNear(x, z)) {
     if (o.h <= spec.clearance) continue;
     if (o.top !== undefined && h > o.top) continue;

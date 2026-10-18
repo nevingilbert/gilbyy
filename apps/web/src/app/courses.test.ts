@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { fieldDist } from "./airport";
-import { startRun, tick } from "./mission-run";
-import { TOO_QUICK } from "./missions";
+import { driveCourse } from "./dev";
+import { crossed, startRun, tick } from "./mission-run";
+import { TOO_QUICK, gatesAlong } from "./missions";
 import { makeCar, noInput, step } from "./physics";
 import { buildIsland } from "./island";
 import { RAMP, rampLocal } from "./ramp";
@@ -59,6 +60,15 @@ function driveNow(m: Mission, loadout: Loadout, rig: VehicleId, ground: World) {
     if (e?.kind === "lost") break;
   }
   return null;
+}
+
+/** The dev panel's bot round `m` in a starter rig, finding its way round whatever is in the way (dev.ts), as a person would. */
+function botDrive(m: Mission, rig: VehicleId = "bluff") {
+  let metres = 0;
+  const run = driveCourse(world, m, specFor(rig, STOCK_LOADOUT), 400, (car) => {
+    metres = car.distance;
+  });
+  return run.stuck ? null : { seconds: run.seconds, miles: metres / METRES_PER_MILE };
 }
 
 describe("the courses", () => {
@@ -126,12 +136,15 @@ describe("the courses", () => {
 
   // The server refuses a claim quicker than `minSeconds` or that banked less than
   // `minMiles`, so an honest run must clear both comfortably. Lakeshore Loop is left out:
-  // the straight line to its fifth flag crosses a bay, which a person drives round.
+  // the straight line to its fifth flag crosses a bay, which a person drives round. Three
+  // loops' straight lines cross a few metres of ground steeper than any truck climbs
+  // (physics.ts), which a person drives round too: the dev panel's bot drives those.
+  const ROUND = ["grand-tour", "southern-shore", "lakehead-race"];
   it.each(world.missions.filter((m) => m.id !== "lakeshore-loop").map((m) => [m.id, m] as const))(
     "%s can be driven by a starter rig, slower than the limit and banking more than it asks",
     (_, m) => {
       // Snowfield needs snow gear; everything else is driven on what a starter comes with.
-      const run = drive(m, m.id === "snowfield" ? { ...STOCK_LOADOUT, winter: "chains" } : STOCK_LOADOUT);
+      const run = ROUND.includes(m.id) ? botDrive(m) : drive(m, m.id === "snowfield" ? { ...STOCK_LOADOUT, winter: "chains" } : STOCK_LOADOUT);
       expect(run).not.toBeNull();
       expect(run!.seconds).toBeGreaterThan(m.minSeconds);
       expect(run!.miles).toBeGreaterThan(m.minMiles * 1.4);
@@ -162,6 +175,31 @@ describe("the courses", () => {
     // And the limit is near what's possible: the racing car up the Strip, flat out, isn't far off it.
     const strip = vegas.missions.find((m) => m.id === "the-strip")!;
     expect(drive(strip, STOCK_LOADOUT, "slipstream", vegas)!.seconds).toBeLessThan(strip.minSeconds * 1.2);
+  });
+});
+
+// Every world's gates are checked against the way in to them in sweep.test.ts.
+describe("the gates", () => {
+  it("stand square to the way through, and face the way in where the course turns back at one", () => {
+    // A gentle bend: from the flag before to the flag after, as they always have.
+    const bend = gatesAlong({ x: 0, z: 0 }, [{ x: 0, z: 100 }, { x: 10, z: 200 }], 10);
+    expect(bend[0].heading).toBeCloseTo(Math.atan2(10, 200));
+    // A hairpin at the first flag, coming from the arch: facing from the arch to the flag
+    // after, it would stand edge-on to the way in, and nobody driving it would count.
+    const [turn, end] = gatesAlong({ x: 0, z: 0 }, [{ x: 0, z: 100 }, { x: 30, z: 0 }], 10);
+    expect(turn.heading).toBeCloseTo(0);
+    // Through it four metres off its middle, the way the course comes.
+    expect(crossed(turn, { x: 4, z: 99 }, { x: 4, z: 101 })).toBe(true);
+    expect(end.heading).toBeCloseTo(Math.atan2(30, -100));
+  });
+
+  it("finish facing the way in when the last point comes twice", () => {
+    const gates = gatesAlong({ x: 0, z: 0 }, [{ x: 0, z: 100 }, { x: 50, z: 150 }, { x: 50, z: 150 }], 10);
+    expect(gates).toHaveLength(3);
+    expect(gates[1].heading).toBeCloseTo(Math.PI / 4);
+    expect(gates[2].heading).toBeCloseTo(Math.PI / 4);
+    // Through the finish four metres off its middle, the way the course comes.
+    expect(crossed(gates[2], { x: 52.12, z: 146.46 }, { x: 53.54, z: 147.88 })).toBe(true);
   });
 });
 
