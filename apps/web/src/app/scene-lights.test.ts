@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { buildCar, buildTowTruck } from "./car-model";
+import { buildCar, buildTowTruck, createBeamPool } from "./car-model";
+import { STOCK as STOCK_SPEC, makeCar } from "./physics";
 import { buildRailway } from "./railway";
 import { createRemotes } from "./remote";
 import { STOCK_LOADOUT } from "./shop";
@@ -54,6 +55,54 @@ describe("the scene's real lights", () => {
     remotes.update(0.016, 1, 1);
     expect(scene.children.length).toBeGreaterThanOrEqual(3);
     expect(counted(scene).length).toBe(before);
+    remotes.dispose();
+  });
+
+  it("include three beams lent to the nearest other trucks at night, whoever comes and goes", () => {
+    const world = buildWorld();
+    const scene = new THREE.Scene();
+    const pool = createBeamPool(scene);
+    const count = counted(scene).length;
+    expect(count).toBe(3);
+    // Five friends at their tents, side by side down a row; the camera at the first one.
+    const remotes = createRemotes(scene, world);
+    remotes.sync(["a", "b", "c", "d", "e"].map((id, tent) => ({ id, name: id, vehicle: "prairie", loadout: STOCK_LOADOUT, tent, joined: 0 })));
+    remotes.update(0.016, 1, 1);
+    const trucks = remotes.models().map((model) => ({ model, fade: 1 }));
+    const from = trucks[0].model.object.position.clone();
+    const byNearness = [...trucks].sort((p, q) => p.model.object.position.distanceTo(from) - q.model.object.position.distanceTo(from));
+
+    pool.lend(trucks, from, 1);
+    expect(counted(scene).length).toBe(count);
+    const lit = pool.lights.filter((l) => l.intensity > 0);
+    expect(lit).toHaveLength(3);
+    // Each on the nose of one of the three nearest, shining ahead of it and down.
+    for (const [i, light] of lit.entries()) {
+      const truck = byNearness[i].model.object;
+      expect(light.position.distanceTo(truck.position)).toBeLessThan(4);
+      expect(light.target.position.distanceTo(truck.position)).toBeGreaterThan(15);
+      expect(light.target.position.y).toBeLessThan(light.position.y);
+    }
+
+    // By day they're dark; with fewer trucks, the rest are; BBB's fades in and out with it.
+    pool.lend(trucks, from, 0);
+    expect(pool.lights.every((l) => l.intensity === 0)).toBe(true);
+    pool.lend(trucks.slice(0, 1), from, 1);
+    expect(pool.lights.filter((l) => l.intensity > 0)).toHaveLength(1);
+    const tow = buildTowTruck();
+    tow.update(makeCar(world, from.x + 30, from.z, 0), world, 0.016, STOCK_SPEC);
+    pool.lend([{ model: tow, fade: 1 }], from, 1);
+    const full = pool.lights[0].intensity;
+    pool.lend([{ model: tow, fade: 0.5 }], from, 1);
+    expect(pool.lights[0].intensity).toBeCloseTo(full / 2);
+    pool.lend([{ model: tow, fade: 0 }], from, 1);
+    expect(pool.lights[0].intensity).toBe(0);
+
+    // Everyone leaving changes nothing the renderer counts.
+    remotes.sync([]);
+    pool.lend(remotes.models().map((model) => ({ model, fade: 1 })), from, 1);
+    expect(counted(scene).length).toBe(count);
+    expect(pool.lights.every((l) => l.intensity === 0)).toBe(true);
     remotes.dispose();
   });
 

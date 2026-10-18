@@ -209,6 +209,9 @@ export function createRemotes(scene: THREE.Scene, world: World) {
       id: r.peer.id, x: r.car.x, z: r.car.z, heading: r.car.heading, speed: r.car.speed, stuck: Boolean(r.last?.stuck), hooked: Boolean(r.last?.hooked),
     }));
 
+  /** Each player's truck as drawn, for lending the nearest a real beam at night (car-model.ts's `createBeamPool`). */
+  const models = () => [...remotes.values()].map((r) => r.model);
+
   /** One player's truck as drawn, and its size, for running a winch cable to it. */
   const truck = (id: string) => {
     const r = remotes.get(id);
@@ -219,7 +222,7 @@ export function createRemotes(scene: THREE.Scene, world: World) {
     for (const id of [...remotes.keys()]) drop(id);
   }
 
-  return { sync, pose, jump, update, obstacles, tags, positions, truck, dispose };
+  return { sync, pose, jump, update, obstacles, tags, positions, models, truck, dispose };
 }
 
 export type Remotes = ReturnType<typeof createRemotes>;

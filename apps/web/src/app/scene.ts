@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { buildAirport } from "./airport-model";
 import { buildWildlife } from "./animal-models";
 import { buildCampCentre, buildCampGate, buildTentSite, mergeByMaterial } from "./campground-model";
-import { buildCar, buildTowTruck, type CarModel, type TowTruck } from "./car-model";
+import { buildCar, buildTowTruck, createBeamPool, type BeamPool, type CarModel, type TowTruck } from "./car-model";
 import { buildCoffeeShop, buildDiner, buildTeahouse } from "./coffee-shop-model";
 import { hourAt, skyAt } from "./daylight";
 import { PIER, dockBoard, fromDock, pierTop } from "./dock";
@@ -606,6 +606,20 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
   let tows: TowDrawn[] = [];
   /** Something for the chase camera to turn and look at past the truck, such as a tow truck driving in. */
   let facing: { x: number; z: number } | null = null;
+  // Other trucks' headlights: a few real beams, lent each frame to the nearest of them
+  // (car-model.ts). Made the first time another truck is drawn, so single player, which
+  // never has one, doesn't pay for them; that once, the lit materials compile again.
+  let beamPool: BeamPool | null = null;
+  const others: { model: CarModel; fade: number }[] = [];
+  function lendBeams(night: number) {
+    others.length = 0;
+    for (const model of stage.remotes.models()) others.push({ model, fade: 1 });
+    tows.forEach((t, i) => void (towTrucks[i] && others.push({ model: towTrucks[i], fade: t.fade })));
+    if (!beamPool && !others.length) return;
+    beamPool ??= createBeamPool(scene);
+    beamPool.lend(others, camera.position, night);
+  }
+
   function drawTows(dt: number, time: number, night: number) {
     tows.forEach((t, i) => {
       let model = towTrucks[i];
@@ -733,6 +747,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     if (colliders.object.visible) colliders.update(world, state.x, state.z);
     stage.remotes.update(dt, performance.now() / 1000, night);
     drawTows(dt, time, night);
+    lendBeams(night);
     drawCables(state, spec);
     stage.grass.update(state.x, state.z, time);
     stage.water.update(time);

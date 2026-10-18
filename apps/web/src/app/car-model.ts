@@ -100,7 +100,8 @@ const GLINT_SIZE = 0.95;
  * With `beams`, its headlights are real lights that light the ground ahead. Only your own
  * truck has them: every lit material in the scene is compiled for the number of lights
  * there are, so a truck coming or going with lights of its own would recompile them all at
- * once. Other trucks' lamps glow, and light nothing.
+ * once. Other trucks' lamps glow, and the nearest few borrow a real beam from a pool that
+ * stays in the scene (`createBeamPool`).
  */
 export function buildCar(vehicle: VehicleId, beams = true) {
   const v = vehicleById(vehicle);
@@ -325,10 +326,64 @@ export function buildCar(vehicle: VehicleId, beams = true) {
     for (const m of [paint, lamp, tyreMat, rimMat, chainMat, goldMat, ...stoneMats, starMat, dark, cable, hook]) m.dispose();
   }
 
-  return { object: root, vehicle, top: parts.top, update, setLoadout, setLights, show, glint, park, dispose };
+  const lampAt = new THREE.Vector3();
+  const lampAim = new THREE.Vector3();
+  /**
+   * Where its low beam shines from and toward, in the world, and how far and wide, for
+   * lending it a real one while it's near (`createBeamPool`). Null while it's hidden.
+   */
+  function headlamp() {
+    if (!shown) return null;
+    root.updateMatrixWorld();
+    const at = parts.beams.low;
+    lampAt.copy(at).applyMatrix4(root.matrixWorld);
+    lampAim.set(at.x, at.y - 2.2, at.z + 20).applyMatrix4(root.matrixWorld);
+    return { at: lampAt, aim: lampAim, reach: lights.reach, spread: lights.spread, power: lights.power };
+  }
+
+  return { object: root, vehicle, top: parts.top, update, setLoadout, setLights, show, headlamp, glint, park, dispose };
 }
 
 export type CarModel = ReturnType<typeof buildCar>;
+
+/**
+ * Real headlight beams for other players' trucks and BBB's, a few of them. Trucks can't each
+ * bring their own (see `buildCar`), so these are made once and stay in the scene, and each
+ * frame they're lent to the nearest trucks that are showing: dark by day, and when there are
+ * fewer trucks than beams. Further off, a truck's lamps only glow, as its pool of light
+ * would barely show from there anyway.
+ */
+export function createBeamPool(scene: THREE.Scene, count = 3) {
+  const lights = Array.from({ length: count }, () => {
+    const light = new THREE.SpotLight(PALETTE.headlight, 0, 40, 0.45, 0.5, 1.6);
+    scene.add(light, light.target);
+    return light;
+  });
+  /**
+   * `trucks` are the others drawn this frame, each with how solid it is (1, or less while
+   * BBB's fades in or out), and `from` is where the nearest are counted from: the camera.
+   */
+  function lend(trucks: readonly { model: CarModel; fade: number }[], from: THREE.Vector3, night: number) {
+    const near = trucks
+      .filter((t) => t.fade > 0 && t.model.object.visible)
+      .map((t) => ({ t, d: t.model.object.position.distanceToSquared(from) }))
+      .sort((a, b) => a.d - b.d);
+    lights.forEach((light, i) => {
+      const lent = near[i]?.t;
+      const b = night > 0 && lent ? lent.model.headlamp() : null;
+      if (!b || !lent) return void (light.intensity = 0);
+      light.position.copy(b.at);
+      light.target.position.copy(b.aim);
+      light.target.updateMatrixWorld();
+      light.intensity = night * 260 * b.power * lent.fade;
+      light.distance = b.reach * 1.4;
+      light.angle = b.spread;
+    });
+  }
+  return { lights, lend };
+}
+
+export type BeamPool = ReturnType<typeof createBeamPool>;
 
 /**
  * BBB's tow truck (ADR 0021): the little pickup in white with a winch on its bumper, a
