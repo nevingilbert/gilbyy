@@ -212,6 +212,13 @@ export class Convoys {
     const me = this.me();
     const s = this.state?.id === msg.id ? this.state : null;
     const out: ConvoyEvent[] = [];
+    // I never hear what I say myself, so a message in my name is someone else's doing: a
+    // count that has me through the finish before I am, or a leave that takes me out of my
+    // own convoy.
+    if ("from" in msg && msg.from === me) return out;
+    // Only the one gathering a convoy calls it out and sets it off, so a call or a go for one
+    // I'm gathering is someone else's too: the crew I set off with is the one I took.
+    if ((msg.kind === "open" || msg.kind === "go") && s?.leader === me) return out;
     if (msg.kind === "open") {
       const leader = msg.crew[0];
       const mission = this.missions.find((m) => m.id === msg.mission);
@@ -251,12 +258,16 @@ export class Convoys {
         if (msg.from !== s.leader || !s.crew.some((d) => d.id === me)) return out;
         out.push(this.start(now));
       }
+      // Counts go to everyone in the world, and anyone can send one in any name, so only
+      // those who set off with us are counted. A stranger's count would have the convoy
+      // wait for them at the finish, and never come home.
+      if (msg.from !== s.leader && !s.with.includes(msg.from)) return out;
       let d = s.crew.find((c) => c.id === msg.from);
-      // Someone the gatherer took just before setting off, or back after going quiet.
+      // Back after going quiet.
       if (!d && s.crew.length < CONVOY_MAX) {
         d = { id: msg.from, passed: 0, heard: now };
         s.crew.push(d);
-        if (!s.with.includes(msg.from)) s.with.push(msg.from);
+        if (!s.with.includes(msg.from) && s.with.length < CONVOY_MAX - 1) s.with.push(msg.from);
       }
       if (d) {
         d.passed = Math.max(d.passed, msg.passed);

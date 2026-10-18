@@ -54,6 +54,10 @@ function valley(ids: string[], friends: [string, string][], courses: Mission[] =
     dropWhen(f: typeof drop) {
       drop = f;
     },
+    /** Puts `msg` on the channel as `from` says it: anyone in the world can send anything, in any name. */
+    forge(from: string, msg: ConvoyMsg) {
+      queue.push([from, msg]);
+    },
   };
 }
 
@@ -184,6 +188,20 @@ describe("gathering a convoy", () => {
     expect(calls).toBeGreaterThanOrEqual(Math.floor((CONVOY_SILENCE + 1) / CALL_EVERY) - 1);
   });
 
+  it("sets off with the crew its gatherer took, whatever anyone else calls out for it", () => {
+    const v = gathered();
+    const ana = v.p("ana");
+    const id = ana.state!.id;
+    // Calls and the word to go only ever come from the gatherer, so these, for Ana's own
+    // convoy, are someone else's.
+    ana.hear({ kind: "open", id, mission: course.id, crew: ["ben", "cy"] }, v.now, () => true);
+    ana.hear({ kind: "go", id, mission: course.id, crew: ["ana", "cy"] }, v.now, () => true);
+    expect(ana.state).toMatchObject({ phase: "gathering", leader: "ana" });
+    expect(ana.state!.crew.map((d) => d.id)).toEqual(["ana", "ben"]);
+    ana.go(v.now);
+    expect(ana.state!.with).toEqual(["ben"]);
+  });
+
   it("gets a joiner in even if their first ask is lost", () => {
     const v = valley(["ana", "ben"], [["ana", "ben"]]);
     v.p("ana").gather(course, v.now);
@@ -266,6 +284,52 @@ describe("driving as a convoy", () => {
     v.p("ben").passed(1, v.now);
     expect(v.p("ana").others()).toEqual([expect.objectContaining({ id: "ben", passed: 1 })]);
     expect(v.p("ana").state!.with).toEqual(["ben"]);
+  });
+
+  it("doesn't wait for a stranger who counts in it, however long they keep it up", () => {
+    const v = gathered();
+    v.p("ana").go(v.now);
+    const id = v.p("ana").state!.id;
+    for (const who of ["ana", "ben", "cy"]) v.seen(who);
+    // Cy is a friend of neither, but every call goes to everyone, so she has the convoy's
+    // id. She counts in it every five seconds, in her own name and a few made-up ones.
+    const forge = () => {
+      for (const name of ["cy", "eve", "mallory", "trent"]) v.forge("cy", { kind: "pass", id, from: name, passed: 0 });
+    };
+    for (let i = 0; i < 4; i++) {
+      forge();
+      v.wait(5);
+    }
+    expect(v.p("ana").others().map((d) => d.id)).toEqual(["ben"]);
+    expect(v.p("ana").state!.with).toEqual(["ben"]);
+    expect(v.p("ben").state!.with).toEqual(["ana"]);
+    // So it's home when the two of them are through.
+    for (let n = 1; n <= course.gates.length; n++) v.p("ana").passed(n, v.now);
+    forge();
+    for (let n = 1; n < course.gates.length; n++) v.p("ben").passed(n, v.now);
+    expect(v.p("ben").passed(course.gates.length, v.now)).toEqual([{ kind: "home", mission: course, with: ["ana"], times: [] }]);
+    expect(v.seen("ana")).toContainEqual({ kind: "home", mission: course, with: ["ben"], times: [] });
+  });
+
+  it("takes no count in my name but my own, nor a leave", () => {
+    const v = gathered();
+    v.p("ana").go(v.now);
+    const id = v.p("ana").state!.id;
+    for (const who of ["ana", "ben"]) v.seen(who);
+    // Someone tells Ana she's through the finish before she has passed a flag.
+    expect(v.p("ana").hear({ kind: "pass", id, from: "ana", passed: course.gates.length }, v.now, () => false)).toEqual([]);
+    expect(v.p("ana").mine()?.passed).toBe(0);
+    // So it isn't home when Ben is through: Ana still has the course to drive.
+    for (let n = 1; n <= course.gates.length; n++) v.p("ben").passed(n, v.now);
+    expect(v.seen("ana")).toEqual([]);
+    expect(v.p("ana").state?.phase).toBe("running");
+    // Nor can anyone else take her out of it, so its end isn't claimed as a run alone.
+    v.p("ana").hear({ kind: "leave", id, from: "ana" }, v.now, () => false);
+    expect(v.p("ana").mine()).not.toBeNull();
+    // It's home once she is through herself, and her claim names Ben.
+    for (let n = 1; n < course.gates.length; n++) v.p("ana").passed(n, v.now);
+    expect(v.p("ana").passed(course.gates.length, v.now)).toEqual([{ kind: "home", mission: course, with: ["ben"], times: [] }]);
+    expect(v.seen("ben")).toContainEqual({ kind: "home", mission: course, with: ["ana"], times: [] });
   });
 });
 

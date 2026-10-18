@@ -2,10 +2,11 @@
 
 `game.test.sql` plays three accounts against the game migration and checks every rule:
 miles can't be banked faster than driving, purchases are priced by the server, missions
-pay once per cooldown, players can't write their own profile, friending needs both
-players, only friends can use their chat channel, a flight to the island costs its fare
-and moves you there, only players on the island can use its channel, a winch has to be
-bought before it can be fitted, and a tow from BBB takes its fee.
+pay once per cooldown, players can't write their own profile, a player can read only
+their own profile and their friends', friending needs both players, a convoy pays only
+when a friend in it drove, only friends can use their chat channel, a flight to the island
+costs its fare and moves you there, only players on the island can use its channel, a
+winch has to be bought before it can be fitted, and a tow from BBB takes its fee.
 
 It runs on a plain local Postgres, with `local-stubs.sql` standing in for the bits of
 Supabase it needs (`auth.users`, `auth.uid()`, `realtime.messages`, `realtime.topic()`):
