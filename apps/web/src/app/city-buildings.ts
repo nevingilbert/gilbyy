@@ -89,6 +89,24 @@ export class Walls {
     }
   }
 
+  /** Adds a round: centre and radius. */
+  addRound(x: number, z: number, r: number) {
+    const reach = r + WALL_FAR;
+    const i0 = Math.max(0, Math.floor((x - reach + HALF) / WALL_CELL));
+    const i1 = Math.min(WALL_N - 1, Math.ceil((x + reach + HALF) / WALL_CELL));
+    const j0 = Math.max(0, Math.floor((z - reach + HALF) / WALL_CELL));
+    const j1 = Math.min(WALL_N - 1, Math.ceil((z + reach + HALF) / WALL_CELL));
+    for (let j = j0; j <= j1; j++) {
+      const pz = -HALF + (j + 0.5) * WALL_CELL - z;
+      for (let i = i0; i <= i1; i++) {
+        const d = Math.hypot(-HALF + (i + 0.5) * WALL_CELL - x, pz) - r;
+        const k = j * WALL_N + i;
+        const v = Math.max(-128, Math.min(127, Math.round(d * 10)));
+        if (v < this.field[k]) this.field[k] = v;
+      }
+    }
+  }
+
   /** Metres to the nearest wall, bilinear between the field's points. */
   distance(x: number, z: number) {
     const fx = Math.max(0, Math.min(WALL_N - 1.001, (x + HALF) / WALL_CELL - 0.5));

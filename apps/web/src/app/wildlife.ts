@@ -3,6 +3,7 @@ import { toGame } from "./city-streets";
 import { makeRandom } from "./noise";
 import { GROUNDS, VEGAS, type VegasWorld } from "./vegas";
 import { JAPAN, JAPAN_GROUNDS, type JapanWorld } from "./japan";
+import type { CityWorld } from "./city";
 import { CELL, sampleGrid, WORLD, type World, type WorldId } from "./world";
 
 /**
@@ -80,6 +81,8 @@ export type Species = {
   hide?: number;
   /** A bird that keeps to this height above high water, whatever's under it: the condors, over the canyon. */
   level?: number;
+  /** A bird that flies over a town's rooftops, as well as `cruise` over the ground: the city's parrots. */
+  roofs?: boolean;
 };
 
 export const SPECIES: Record<SpeciesId, Species> = {
@@ -140,7 +143,7 @@ export const SPECIES: Record<SpeciesId, Species> = {
   parrot: {
     world: "city", way: "soar", herds: 2, size: [8, 14], apart: 100, range: 55, spread: 6,
     walk: 0, run: 10, calm: 0, wary: 0, graze: [0, 0], radius: 0.2, wade: 0, stride: 1.4, drop: 0, see: 240,
-    cruise: 13,
+    cruise: 13, roofs: true,
   },
   // Las Vegas's (ADR 0023): bighorn on the canyon's walls and among Red Rock's mesas,
   // jackrabbits and roadrunners out on the desert, condors circling down in the canyon.
@@ -236,6 +239,8 @@ export type Herd = {
   drift: number;
   /** A loop's radius, for a herd that soars or swims. */
   loop: number;
+  /** For a flock over a town's rooftops, how high it keeps at each step round its loop (`roofline`); null for any other. */
+  roofs: Float32Array | null;
   animals: Animal[];
   /** Whether a truck is near enough for it to be moved and drawn. */
   active: boolean;
@@ -299,11 +304,15 @@ export function passable(world: World, id: SpeciesId, x: number, z: number) {
   const sp = SPECIES[id];
   if (Math.hypot(x, z) > world.limit - 150) return false;
   const y = world.height(x, z);
-  // A sea has a tide (tide.ts), and animals reckon by high water: nothing follows the sea out to be caught when it comes back.
-  // Japan's sea has none, and its lake and paddies are water as well.
-  const water = world.sea && world.id !== "japan" ? WORLD.water : world.waterAt(x, z);
+  // The island's sea has a tide (tide.ts), and animals there reckon by high water: nothing follows the sea out to be caught
+  // when it comes back. No other sea has one, and the city's lakes, and Japan's lake and paddies, are water as well.
+  const water = world.id === "island" ? WORLD.water : world.waterAt(x, z);
   const depth = water - y;
-  if (sp.water) return depth > 0.8 && Math.abs(water - WORLD.water) < 0.01 && sampleGrid(world.ice, x, z) < 0.02;
+  // Deep enough, on the lowest water (not up a river), and clear of whatever stands in it, as Pier 39 does in the sea lions' bay.
+  if (sp.water) {
+    return depth > 0.8 && Math.abs(water - WORLD.water) < 0.01 && sampleGrid(world.ice, x, z) < 0.02 &&
+      !world.obstaclesNear(x, z).some((o) => o.h >= 0.5 && Math.hypot(o.x - x, o.z - z) < o.r + sp.radius);
+  }
   if (depth > sp.wade) return false;
   if (sp.sand && (y > 3.6 || sampleGrid(world.forest, x, z) > 0.05)) return false;
   if (steep(world, x, z) > 0.65) return false;
@@ -424,11 +433,58 @@ function makeHerd(world: World, id: SpeciesId, x: number, z: number, rand: () =>
       stride: rand() * TAU, tuck: 0, tone: rand(), scale: 0.88 + rand() * 0.24, phase: start - i * (0.05 + rand() * 0.04),
     });
   }
+  const loop = looping ? sp.range * (0.65 + rand() * 0.35) : 0;
   return {
     species: id, home: { x, z }, focus: { x, z }, drift: 10 + rand() * 30,
-    loop: looping ? sp.range * (0.65 + rand() * 0.35) : 0,
+    loop, roofs: sp.roofs ? roofline(world, sp, { x, z }, loop) : null,
     animals, active: false, rand: makeRandom(Math.floor(rand() * 2 ** 31)),
   };
+}
+
+/** How many steps round its loop a flock over a town looks for roofs at, and how far over them it keeps. */
+const ROOF_STEPS = 72;
+const ROOF_CLEAR = 4;
+
+/** Where a soaring bird's loop takes it, `th` round it: it breathes in and out, so it isn't a perfect circle. */
+const loopRadius = (loop: number, th: number) => loop * (1 + 0.22 * Math.sin(th * 2 + loop));
+
+/**
+ * For a flock that flies over a town's rooftops, the height it keeps to at each step round
+ * its loop: `cruise` over the ground, or over the highest roof under that step and the steps
+ * either side of it, so it's up before it gets there and down again after. Only the city
+ * has roofs (city-buildings.ts); elsewhere, null.
+ */
+function roofline(world: World, sp: Species, home: { x: number; z: number }, loop: number): Float32Array | null {
+  const buildings = (world as Partial<CityWorld>).city?.buildings;
+  if (!buildings) return null;
+  // The loop at its widest, the flock's spread round it, and the biggest building's half-diagonal.
+  const near = buildings.filter((b) => Math.hypot(b.x - home.x, b.z - home.z) < loop * 1.22 + 40);
+  const roof = new Float32Array(ROOF_STEPS).fill(-Infinity);
+  const ground = new Float32Array(ROOF_STEPS);
+  for (let k = 0; k < ROOF_STEPS; k++) {
+    const th = (k / ROOF_STEPS) * TAU;
+    const r = loopRadius(loop, th);
+    const [x, z] = [home.x + Math.cos(th) * r, home.z + Math.sin(th) * r];
+    ground[k] = surface(world, x, z);
+    for (const b of near) {
+      // How far the spot is outside the building's footprint, in its own frame (`Walls.addBox`).
+      const [px, pz] = [x - b.x, z - b.z];
+      const lx = Math.abs(px * Math.cos(b.rot) - pz * Math.sin(b.rot)) - b.w / 2;
+      const lz = Math.abs(px * Math.sin(b.rot) + pz * Math.cos(b.rot)) - b.d / 2;
+      // A flock is a few metres across, and the steps are a few metres apart.
+      if (Math.hypot(Math.max(lx, 0), Math.max(lz, 0)) < 5) roof[k] = Math.max(roof[k], b.top);
+    }
+  }
+  return ground.map((g, k) =>
+    Math.max(g + (sp.cruise ?? 5), Math.max(roof[(k + ROOF_STEPS - 1) % ROOF_STEPS], roof[k], roof[(k + 1) % ROOF_STEPS]) + ROOF_CLEAR),
+  );
+}
+
+/** How high a flock over a town keeps, `th` round its loop: between the steps either side. */
+function roofAt(roofs: Float32Array, th: number) {
+  const f = ((((th / TAU) % 1) + 1) % 1) * ROOF_STEPS;
+  const k = Math.floor(f) % ROOF_STEPS;
+  return roofs[k] + (roofs[(k + 1) % ROOF_STEPS] - roofs[k]) * (f - Math.floor(f));
 }
 
 /**
@@ -776,16 +832,17 @@ function stepPercher(world: World, h: Herd, a: Animal, sp: Species, threats: rea
 
 /**
  * A bird on its loop, a macaw along the jungle's edge or a pelican off the shore: where it
- * is is a function of the time alone. Over the water it flies over the water, not the bed.
+ * is is a function of the time alone. Over the water it flies over the water, not the bed;
+ * over a town, over its roofs.
  */
 export function soarAt(world: World, h: Herd, a: Animal, time: number) {
   const sp = SPECIES[a.species];
   const at = (t: number) => {
     const th = a.phase + (t * sp.run) / h.loop;
-    // The loop breathes in and out, so it isn't a perfect circle.
-    const r = h.loop * (1 + 0.22 * Math.sin(th * 2 + h.loop)) + (a.tone - 0.5) * 4;
+    const r = loopRadius(h.loop, th) + (a.tone - 0.5) * 4;
     const [x, z] = [h.home.x + Math.cos(th) * r, h.home.z + Math.sin(th) * r];
-    const base = sp.level ?? surface(world, x, z) + (sp.cruise ?? 5);
+    const over = surface(world, x, z) + (sp.cruise ?? 5);
+    const base = sp.level ?? (h.roofs ? Math.max(over, roofAt(h.roofs, th)) : over);
     return { x, z, y: base + 1.8 * Math.sin(th * 3 + a.tone * 6) };
   };
   const now = at(time);

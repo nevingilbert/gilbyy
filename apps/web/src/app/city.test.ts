@@ -1,10 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { CABLE_CAR, CABLE_CARS, CABLE_SPEED, cableCars, cableCycle, cableRun } from "./cable-car";
-import { buildCity, inCrooked, kerbAt, type CityWorld } from "./city";
+import { LANDMARK_FOOTPRINT, buildCity, footprintPoints, inCrooked, kerbAt, type CityWorld } from "./city";
 import { deckPoint } from "./city-bridges";
 import { fogAt } from "./city-model";
-import { loadCityData, toGame } from "./city-streets";
-import { BED, linePoint } from "./rail";
+import { SIDEWALK, STREET_WIDTH, loadCityData, toGame } from "./city-streets";
+import { makeCar, step } from "./physics";
+import { BED, carsOn, linePoint } from "./rail";
+import { STOCK_LOADOUT, specFor } from "./shop";
+import { vehicleById } from "./vehicles";
 import { placeHerds, speciesIn } from "./wildlife";
 import { sampleGrid } from "./world";
 
@@ -42,6 +45,78 @@ describe("San Francisco", () => {
       expect(sampleGrid(city.siteDist, b.x, b.z)).toBeGreaterThan(12);
       expect(sampleGrid(city.trackDist, b.x, b.z)).toBeGreaterThan(6);
     }
+  });
+
+  it("stands its landmarks back off the streets and their pavements, solid where each is drawn", () => {
+    const { kerb, landmarks, walls } = city.city;
+    const onStreet: string[] = [];
+    for (const l of landmarks) {
+      const f = LANDMARK_FOOTPRINT[l.kind];
+      if (!f) continue;
+      // The walls are where the model is: both go by the landmark's own spot and turn.
+      expect(walls.distance(l.x, l.z), l.kind).toBeLessThan(-1);
+      const on = footprintPoints(l.rot, f, 0.5).find((p) => kerbAt(kerb, l.x + p.x, l.z + p.z) < SIDEWALK);
+      if (on) onStreet.push(`the ${l.kind} at ${(l.x + on.x).toFixed(0)}, ${(l.z + on.z).toFixed(0)}`);
+    }
+    expect(onStreet).toEqual([]);
+  });
+
+  it("leaves the Embarcadero open past Pier 39, which runs out over the water from it", () => {
+    const { walls, streets, landmarks } = city.city;
+    const pier = landmarks.find((l) => l.kind === "pier39")!;
+    let near = 0;
+    for (const s of streets.filter((q) => q.name === "The Embarcadero")) {
+      for (let k = 0; k < s.xs.length; k++) {
+        if (Math.hypot(s.xs[k] - pier.x, s.zs[k] - pier.z) > 160) continue;
+        near++;
+        // Nothing on the road, and the pier on the bay side of it.
+        expect(walls.distance(s.xs[k], s.zs[k]), `at ${s.xs[k].toFixed(0)}, ${s.zs[k].toFixed(0)}`).toBeGreaterThan(STREET_WIDTH[s.cls] / 2);
+        expect(pier.z).toBeLessThan(s.zs[k] - 30);
+      }
+    }
+    expect(near).toBeGreaterThan(4);
+    // Its deck over the water.
+    expect(pier.y).toBeGreaterThan(city.waterAt(pier.x, pier.z) + 1);
+  });
+
+  it("stands Fort Point under the Golden Gate's deck, as it is: a truck up on the bridge passes over it", () => {
+    const fort = city.city.landmarks.find((l) => l.kind === "fortPoint")!;
+    const gg = city.city.decks.find((d) => d.name === "golden-gate")!;
+    let over = 0;
+    for (let s = 0; s < gg.length; s += 2) {
+      const p = deckPoint(gg, s);
+      if (Math.hypot(p.x - fort.x, p.z - fort.z) > 40) continue;
+      for (const side of [-6, 0, 6]) {
+        const [x, z] = [p.x + p.fz * side, p.z - p.fx * side];
+        for (const o of city.obstaclesNear(x, z).filter((q) => q.r >= 25 && q.bottom === undefined)) {
+          over++;
+          // Under a truck on the deck, and over the fort's own walls, so one on the ground runs into them.
+          expect(o.top!).toBeLessThan(p.y - 2);
+          expect(o.top!).toBeGreaterThan(fort.y + 14);
+        }
+      }
+    }
+    expect(over).toBeGreaterThan(0);
+  });
+
+  it("has the train at Fourth and King standing solid at its platform, with room beside it and past it", () => {
+    const st = city.station!;
+    for (const c of carsOn(st.line, st.head, st.facing)) {
+      expect(city.obstaclesNear(c.x, c.z).some((o) => o.h > 5 && Math.hypot(o.x - c.x, o.z - c.z) < o.r), c.kind).toBe(true);
+    }
+    // Where a truck waits to board, and where it's left after a trip, there's nothing within a truck's length.
+    for (const p of [st.board, st.leave]) expect(city.obstaclesNear(p.x, p.z).some((o) => Math.hypot(o.x - p.x, o.z - p.z) < o.r + 4)).toBe(false);
+  });
+
+  it("paves the bridges' decks, so the racing car is as quick across the Golden Gate as along a street", () => {
+    for (const d of city.city.decks) for (let i = 0; i < d.xs.length; i++) expect(city.pavedAt!(d.xs[i], d.zs[i]), `${d.name}, ${d.s[i]} m along`).toBe(true);
+    const gg = city.city.decks.find((d) => d.name === "golden-gate")!;
+    const spec = specFor("slipstream", STOCK_LOADOUT);
+    const p = deckPoint(gg, 150);
+    const car = makeCar(city, p.x, p.z, Math.atan2(p.fx, p.fz), spec);
+    for (let t = 0; t < 12; t += 1 / 60) step(car, { left: false, right: false, gas: true, brake: false }, 1 / 60, city, spec);
+    expect(city.city.deckIndex.roadAt(car.x, car.z)).not.toBeNull();
+    expect(car.speed).toBeGreaterThan(vehicleById("slipstream").maxSpeed * 0.95);
   });
 
   it("carries a truck across the Golden Gate, high over the water, and lets it pass under", () => {

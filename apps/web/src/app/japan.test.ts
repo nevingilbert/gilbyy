@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LINE_UP_BACK } from "./convoy";
 import { JAPAN, buildJapan } from "./japan";
+import { crossed } from "./mission-run";
 import { METRES_PER_MILE } from "./shop";
 import { VEHICLES, vehicleById } from "./vehicles";
 import { placeHerds } from "./wildlife";
@@ -66,6 +67,19 @@ describe("Japan", () => {
       expect(m.repeatReward, m.id).toBeGreaterThanOrEqual(5 * miles(m));
       expect(m.reward, m.id).toBeGreaterThanOrEqual(2.5 * m.repeatReward);
     }
+  });
+
+  it("finishes Round the Lake back at its arch, through flags that face the way the course comes in", () => {
+    const m = japan.missions.find((q) => q.id === "lake-round")!;
+    const [end, before] = [m.gates.at(-1)!, m.gates.at(-2)!];
+    // Once round, and no two flags on one spot.
+    expect(Math.hypot(end.x - m.start.x, end.z - m.start.z)).toBeLessThan(1);
+    m.gates.forEach((g, i) => i && expect(Math.hypot(g.x - m.gates[i - 1].x, g.z - m.gates[i - 1].z), `gate ${i + 1}`).toBeGreaterThan(1));
+    // Driven in from the last flag but one, through the finish a few metres off its middle, it counts.
+    const len = Math.hypot(end.x - before.x, end.z - before.z);
+    const [dx, dz] = [(end.x - before.x) / len, (end.z - before.z) / len];
+    const [ox, oz] = [dz * 5, -dx * 5];
+    expect(crossed(end, { x: end.x + ox - dx * 2, z: end.z + oz - dz * 2 }, { x: end.x + ox + dx * 2, z: end.z + oz + dz * 2 })).toBe(true);
   });
 
   it("caps the mountain with snow as slippery as the valley's, and keeps it off the lowlands", () => {

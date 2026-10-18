@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { makeCar, step } from "./physics";
+import { STOCK_LOADOUT, specFor } from "./shop";
 import {
   buildWorld, campPitches, sampleGrid, gridX, gridZ, CAFE, FROZEN, START, WORLD, LAKES, ROW, CELL, HALF, STOCK_WADE,
 } from "./world";
@@ -75,6 +77,82 @@ describe("buildWorld", () => {
         expect(world.height(g.x, g.z)).toBeGreaterThan(world.waterAt(g.x, g.z));
         expect(world.trees.some((t) => Math.hypot(t.x - g.x, t.z - g.z) < 3)).toBe(false);
       }
+    }
+  });
+
+  it("runs a dirt road from the camp out to the station, round the garages' yards and the café, not through them", () => {
+    const st = world.station!;
+    const road = world.roads.find((r) => Math.hypot(r.xs.at(-1)! - st.x, r.zs.at(-1)! - st.z) < 1)!;
+    expect(road).toBeDefined();
+    expect(Math.hypot(road.xs[0] - world.camp.x, road.zs[0] - world.camp.z)).toBeLessThan(80);
+    for (let i = 1; i < road.xs.length; i++) {
+      const [ax, az, bx, bz] = [road.xs[i - 1], road.zs[i - 1], road.xs[i], road.zs[i]];
+      const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 2);
+      for (let k = 0; k <= n; k++) {
+        const [x, z] = [ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n];
+        for (const s of world.sites) expect(Math.hypot(s.x - x, s.z - z), `the ${s.style}'s yard at ${x.toFixed(0)}, ${z.toFixed(0)}`).toBeGreaterThan(30);
+        expect(Math.hypot(CAFE.x - x, CAFE.z - z), "the café").toBeGreaterThan(30);
+      }
+    }
+  });
+
+  it("lays the road on to the café and the road out to the station where any truck can drive them, both ways", () => {
+    const st = world.station!;
+    const roads = [
+      world.roads.find((r) => r.xs.at(-1) === CAFE.x && r.zs.at(-1) === CAFE.z + 12)!,
+      world.roads.find((r) => Math.hypot(r.xs.at(-1)! - st.x, r.zs.at(-1)! - st.z) < 1)!,
+    ];
+    const h = (x: number, z: number) => world.height(x, z);
+    const spec = specFor("bluff", STOCK_LOADOUT);
+    /** A stock truck along a line, gas on, steering for a point a little way ahead on it: whether it gets to the end. */
+    const drives = (pts: { x: number; z: number }[]) => {
+      const cum = pts.map((_, i) => (i ? Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z) : 0));
+      for (let i = 1; i < cum.length; i++) cum[i] += cum[i - 1];
+      const point = (s: number) => {
+        let i = 1;
+        while (i < pts.length - 1 && cum[i] < s) i++;
+        const t = Math.max(0, Math.min(1, (s - cum[i - 1]) / (cum[i] - cum[i - 1])));
+        return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, z: pts[i - 1].z + (pts[i].z - pts[i - 1].z) * t };
+      };
+      const along = (x: number, z: number) => {
+        let best = { s: 0, d: Infinity };
+        for (let i = 1; i < pts.length; i++) {
+          const [a, b] = [pts[i - 1], pts[i]];
+          const len = cum[i] - cum[i - 1];
+          const t = Math.max(0, Math.min(1, ((x - a.x) * (b.x - a.x) + (z - a.z) * (b.z - a.z)) / (len * len)));
+          const d = Math.hypot(a.x + (b.x - a.x) * t - x, a.z + (b.z - a.z) * t - z);
+          if (d < best.d) best = { s: cum[i - 1] + t * len, d };
+        }
+        return best.s;
+      };
+      const first = point(2);
+      const car = makeCar(world, pts[0].x, pts[0].z, Math.atan2(first.x - pts[0].x, first.z - pts[0].z), spec);
+      for (let t = 0; t < 300; t += 1 / 60) {
+        const s = along(car.x, car.z);
+        if (s > cum.at(-1)! - 3) return true;
+        const aim = point(s + 8);
+        const off = Math.atan2(Math.sin(Math.atan2(aim.x - car.x, aim.z - car.z) - car.heading), Math.cos(Math.atan2(aim.x - car.x, aim.z - car.z) - car.heading));
+        step(car, { gas: car.speed < 9, brake: car.speed > 12, left: off > 0.03, right: off < -0.03 }, 1 / 60, world, spec);
+      }
+      return false;
+    };
+    for (const road of roads) {
+      const pts = road.xs.map((x, i) => ({ x, z: road.zs[i] }));
+      // Every metre along, across the dirt's width: never steeper than 35 degrees, well short of the most any truck climbs.
+      for (let i = 1; i < pts.length; i++) {
+        const [a, b] = [pts[i - 1], pts[i]];
+        const len = Math.hypot(b.x - a.x, b.z - a.z);
+        const [ux, uz] = [(b.x - a.x) / len, (b.z - a.z) / len];
+        for (let d = 0; d < len; d += 1) {
+          for (const w of [-2.5, 0, 2.5]) {
+            const [x, z] = [a.x + ux * d + uz * w, a.z + uz * d - ux * w];
+            const slope = Math.hypot(h(x + 1, z) - h(x - 1, z), h(x, z + 1) - h(x, z - 1)) / 2;
+            expect(slope, `steep at ${x.toFixed(0)}, ${z.toFixed(0)}`).toBeLessThan(Math.tan((35 * Math.PI) / 180));
+          }
+        }
+      }
+      expect(drives(pts), `along to ${pts.at(-1)!.x.toFixed(0)}, ${pts.at(-1)!.z.toFixed(0)}`).toBe(true);
+      expect(drives([...pts].reverse()), `back from ${pts.at(-1)!.x.toFixed(0)}, ${pts.at(-1)!.z.toFixed(0)}`).toBe(true);
     }
   });
 
