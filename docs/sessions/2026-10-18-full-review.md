@@ -29,8 +29,12 @@ that didn't overlap, then put together and checked here.
 - **San Francisco's landmarks clear the streets**; Pier 39 stands over the water.
 - **The valley's roads**: the station road goes round the workshop, and it and the café
   road are graded, so a stock truck drives both both ways.
-- **Lights**: only your own truck has real beams, so the light count (and the shaders) stay
-  the same all session. Friends' trucks and BBB's glow but don't light the road at night.
+- **Lights**: the count of real lights (and so the shaders) stays the same all session. Your
+  own truck has its beams; three more (`createBeamPool` in `car-model.ts`) are lent each
+  night frame to the three other trucks nearest the camera, friends' or BBB's, and further
+  off a truck's lamps only glow. The pool is made the first time another truck is drawn,
+  so single player never pays for it. (The owner asked for nearby trucks to light the road
+  again after the first version took all other trucks' beams away.)
 
 ## Open questions
 
