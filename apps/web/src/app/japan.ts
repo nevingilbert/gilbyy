@@ -567,8 +567,9 @@ function planJapanCourses(kit: CourseKit): Mission[] {
     if (leg) shoreLegs.push(...(i ? leg.slice(1) : leg));
     else whole = false;
   }
+  // The legs come back round to where they began, so the last flag, the finish, is at the arch.
   if (whole) {
-    course("lake-round", "Round the Lake", "Once round the lake, the mountain over it all the way.", shoreLegs[0], [...shoreLegs.slice(1), shoreLegs[0]], 14, { reward: 30, repeatReward: 10 });
+    course("lake-round", "Round the Lake", "Once round the lake, the mountain over it all the way.", shoreLegs[0], shoreLegs.slice(1), 14, { reward: 30, repeatReward: 10 });
   }
 
   // For friends, together: up the mountain's road to where it ends, high on its flank. The

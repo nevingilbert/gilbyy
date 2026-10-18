@@ -7,7 +7,7 @@ import { DAY_LENGTH, secondsUntil } from "./daylight";
 import { clearSpot, devSpots, driveCourse, spawnSpots, spotProblems, wayThrough } from "./dev";
 import { DevChip, DevPanel, type DevControls, type DevFinding, type DevInfo } from "./DevPanel";
 import { FOG_CELLS } from "./fog";
-import { cityData, loadCityData } from "./city-streets";
+import { canOpenCity, cityData, loadCityData } from "./city-streets";
 import { DOCK_REACH, PIER, dockBoard, dockLeave, fromDock } from "./dock";
 import { LAND, SAIL, ferryBase, sailIn, sailOut, type FerryFrame } from "./ferry";
 import { ARRIVE, BOARD_REACH, DEPART, arrival, boardSpot, deckAt, departure, leaveSpot, rideOnDeck } from "./flight";
@@ -67,6 +67,24 @@ const CAFE_SLACK = 6;
 const FRIEND_REACH = 16;
 /** When the campground was full, try again this often. */
 const RETRY_JOIN = 60;
+/**
+ * When San Francisco's data fails to come (ADR 0022), the gap before the next try doubles
+ * from 2 s up to this; and after this many tries have failed, the line under the picture
+ * says a reload may be needed.
+ */
+const CITY_RETRY_MAX = 30;
+const CITY_TRIES = 3;
+/**
+ * A crew's claim is checked against the miles the others have banked (ADR 0018), and the
+ * last one through banks theirs only as they claim their own. Refused for that (the
+ * server's words, "the drivers who drove" or "a friend in it who drove"), a claim is sent
+ * again this many seconds on, and once more after the others' next bank: well inside the
+ * ten minutes the server looks back for a crew.
+ */
+const RECLAIM = 4;
+const CREW_SHORT = /who drove/;
+type Claimed = Awaited<ReturnType<Store["completeMission"]>>;
+const crewShort = (res: Claimed) => "error" in res && CREW_SHORT.test(res.error);
 /**
  * Where this browser last saw a signed-in player's truck, so a reload builds that world
  * first and not the valley and then the island. Only ever a guess: the profile decides.
@@ -255,14 +273,22 @@ export function Game() {
   const [towFrom, setTowFrom] = useState<string | null>(null);
   const [canPhoto, setCanPhoto] = useState(true);
   const [pinned, setPinned] = useState(false);
+  /** The line under the picture while a trip, or the opening, waits for San Francisco's data. */
+  const [cityWait, setCityWait] = useState<string | null>(null);
+  /** The single-player banner, hidden: kept here, as the banner comes and goes with the HUD. */
+  const [soloHidden, setSoloHidden] = useState(false);
   const [devOpen, setDevOpen] = useState(false);
   /** The dev panel's controls, which the loop hands over once it's running. Development builds only. */
   const [dev, setDev] = useState<DevControls | null>(null);
 
+  /** A panel up over the game: naming, signing in, the leaderboard, a landmark's card or a trip's. */
+  const panelOpen = naming || signingIn || board || visiting !== null || boarding !== null;
   useEffect(() => {
     typingRef.current = typing;
-    panelRef.current = naming || signingIn || board || visiting !== null || boarding !== null;
-  }, [typing, naming, signingIn, board, visiting, boarding]);
+    panelRef.current = panelOpen;
+    // The touch controls go while a panel is up, so a finger on one never lets go of it: let go here.
+    if (panelOpen) inputRef.current = noInput();
+  }, [typing, panelOpen]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -287,8 +313,36 @@ export function Game() {
     // The city's ground and streets are fetched on their own (ADR 0022): until they're in,
     // the valley stands in for it, and the city goes up as soon as they are.
     const guess: WorldId = isWorld(worldParam) ? worldParam : (onlineConfigured && !localNet && hintedWorld()) || "valley";
-    if (guess === "city") void loadCityData();
+    // Fetched straight away on a guess; if it fails, boot tries again should it need them.
+    if (guess === "city") void loadCityData().catch(noop);
     let world = buildWorldOf(guess === "city" && !cityData() ? "valley" : guess);
+    // They can fail to come: the network drops, or a deploy has moved them. Whatever waits
+    // on them (a trip held in the dark, or the opening) has them tried again, with a growing
+    // gap, until they do; and after a moment a line under the picture says so (`cityLine`).
+    let cityFailed = 0;
+    /** Since when a trip or the opening has been waiting on the city's data; null while nothing is. */
+    let cityWaitFrom: number | null = null;
+    let cityTrying: Promise<boolean> | null = null;
+    /** Resolves true once the city's data is in; false if this browser can't open it, or the game has gone. */
+    const cityArrives = () =>
+      (cityTrying ??= (async () => {
+        while (!cancelled && canOpenCity()) {
+          try {
+            await loadCityData();
+            return true;
+          } catch {
+            cityFailed++;
+          }
+          await new Promise((r) => window.setTimeout(r, Math.min(CITY_RETRY_MAX, 2 ** cityFailed) * 1000));
+        }
+        return false;
+      })());
+    /** What that line says. A browser that can't open the city meets it only in the opening: the train won't take it there. */
+    const cityLine = () =>
+      !canOpenCity() ? "Your truck is in San Francisco, and this browser can't open its map. A newer browser can."
+      : cityFailed >= CITY_TRIES ? "San Francisco couldn't be loaded. Reload the page to try again."
+      : "Waiting for San Francisco…";
+    let shownCityLine: string | null = null;
     let courses = world.missions.filter((m) => m.crew === 1);
     let crewCourses = world.missions.filter((m) => m.crew > 1);
     let store: Store = new LocalStore("local", null, soloWorld);
@@ -397,7 +451,7 @@ export function Game() {
     /**
      * A trip in progress, by plane (ADR 0014) or by train (ADR 0022): which half of its film
      * is showing (`out` of this world, or `in` to the next), how far into it, and where the
-     * truck was when it boarded. `held` is time spent in the dark waiting for the next world.
+     * truck was when it boarded.
      */
     let trip: { way: Way; to: WorldId; leg: "out" | "in"; t: number; from: { x: number; z: number; heading: number } } | null = null;
     /** The truck came here by plane or train, so it isn't moved to its tent when one is found. */
@@ -458,6 +512,11 @@ export function Game() {
     let convoyAct: (() => void) | null = null;
     let throughIn: number | null = null;
     let raceOver: string | null = null;
+    /**
+     * A race claimed at my finish, until it's answered. Refused because the others hadn't
+     * banked the course yet (`refused`), it's sent again once the race is `home`.
+     */
+    let raceClaim: { mission: Mission; seconds: number; crew: string[]; refused: boolean; home: boolean } | null = null;
     // The longest jump at each ramp since the page loaded. A line on screen, like a race's result: kept nowhere.
     const bestAir = new Map<string, number>();
     // Presence as the loop sees it, alongside the copy React renders.
@@ -734,9 +793,17 @@ export function Game() {
       touchedAt = Date.now();
       comeBack();
     };
+    /** What's been driven, banked: into the store now, and on to the server. */
+    const bank = () => {
+      store.addMiles(unbanked);
+      unbanked = 0;
+      void store.flush();
+    };
     const onVisibility = () => {
       hiddenAt = document.hidden ? Date.now() : 0;
       if (!document.hidden) touched();
+      // A hidden tab draws no frames, and a phone may close it without a word: bank it now.
+      else bank();
     };
     const awayCheck = window.setInterval(() => {
       const now = Date.now();
@@ -769,8 +836,14 @@ export function Game() {
       // The world that was built first was a guess. If the truck is somewhere else, go
       // there before anything more is shown.
       if (store.get().world !== world.id) {
-        // The city's data first, if that's where the truck is (ADR 0022).
-        if (store.get().world === "city") await loadCityData();
+        // The city's data first, if that's where the truck is (ADR 0022): tried until it comes,
+        // and said so under the picture. A browser that can't open it stays on the opening
+        // shot, and the line says why.
+        if (store.get().world === "city") {
+          cityWaitFrom = performance.now() / 1000;
+          if (!(await cityArrives())) return;
+          cityWaitFrom = null;
+        }
         if (cancelled) return;
         enterWorld(store.get().world);
         if (!store.online) placeAsAsked();
@@ -851,14 +924,18 @@ export function Game() {
       // The train only takes you while it's standing at the platform.
       const wait = way === "train" ? trainWait() : 0;
       if (wait > 0) return `The train's gone. ${trainLine(wait)}`;
+      // The city's map is unpacked by the browser, and an old one can't: said before the fare is taken, not in the tunnel.
+      if (to === "city" && !canOpenCity()) return "This browser can't open San Francisco's map, so the train can't take you there. A newer browser can.";
       // The city's streets and ground take a moment to fetch: start now, and they'll be in by the tunnel.
-      if (to === "city") void loadCityData();
+      if (to === "city") void loadCityData().catch(noop);
       inputRef.current = noInput();
       // What's been driven since the last bank counts toward the fare.
       store.addMiles(unbanked);
       unbanked = 0;
       const err = await store.fly(to);
       if (err || cancelled) return err;
+      // Paid for, so they're tried until they come, while the train goes.
+      if (to === "city") void cityArrives();
       if (store.online) hintWorld(to);
       leaveNet();
       trip = { way, to, leg: "out", t: 0, from: { x: car.x, z: car.z, heading: car.heading } };
@@ -1218,6 +1295,8 @@ export function Game() {
       running = null;
       runIndex = -1;
       throughIn = null;
+      // A race left before it's home is left unpaid, if its claim was waiting on the others.
+      raceClaim = null;
       convoys.leave();
       setRun(null);
       setCount(null);
@@ -1258,6 +1337,31 @@ export function Game() {
       sharePose(performance.now() / 1000, true);
     };
 
+    /**
+     * A crew's claim, sent again: `RECLAIM` seconds on, and once more after the others' next
+     * bank if it's still their miles that are short. Resolves to the last answer.
+     */
+    const claimAgain = async (m: Mission, seconds: number, crew: string[]) => {
+      let res: Claimed = { error: "" };
+      for (const gap of [RECLAIM, FLUSH_EVERY]) {
+        await new Promise((r) => window.setTimeout(r, gap * 1000));
+        if (cancelled) break;
+        res = await store.completeMission(m, seconds, crew);
+        if (!crewShort(res)) break;
+      }
+      return res;
+    };
+    /** A race claim the others' miles weren't in for, sent again now that it's home, and answered under its results. */
+    const reclaimRace = (claim: NonNullable<typeof raceClaim>) => {
+      const over = raceOver;
+      void claimAgain(claim.mission, claim.seconds, claim.crew).then((res) => {
+        if (raceClaim === claim) raceClaim = null;
+        if (cancelled) return;
+        const paid = "paid" in res ? `+${fmtMiles(res.paid)} mi` : res.error;
+        say(over ? `${over}. ${paid}` : paid, 9);
+      });
+    };
+
     /** What the convoy's (or race's) agreement has to say, as it happens. */
     const onConvoy = (events: ConvoyEvent[]) => {
       const me = store.get().id;
@@ -1277,14 +1381,26 @@ export function Game() {
           const places = e.times.map((t, i) => ({ mine: t.id === me, text: `${ordinal(i + 1)} ${t.id === me ? "you" : nameOf(t.id)} ${fmtTime(t.seconds)}` }));
           raceOver = `Race over: ${places.filter((p, i) => i < 3 || p.mine).map((p) => p.text).join(" · ")}`;
           say(raceOver, 9);
+          // Bar a claim that was refused for the others' miles: that one goes again now they're through.
+          const claim = raceClaim;
+          if (claim?.mission === e.mission) {
+            claim.home = true;
+            claim.crew = e.with;
+            if (claim.refused) reclaimRace(claim);
+          }
         } else if (e.kind === "home") {
           const m = e.mission;
           const seconds = throughIn ?? 0;
           throughIn = null;
           setRun(null);
           shownRun = "";
-          void store.completeMission(m, seconds, e.with).then((res) => {
+          void store.completeMission(m, seconds, e.with).then(async (first) => {
             goal("mission");
+            // The last one through banks the course as they claim it, which may not be in yet.
+            const short = crewShort(first);
+            if (short) say(`Convoy home together in ${fmtTime(seconds)}.`, 7);
+            const res = short ? await claimAgain(m, seconds, e.with) : first;
+            if (cancelled) return;
             if ("paid" in res) say(`Convoy home together in ${fmtTime(seconds)}. +${fmtMiles(res.paid)} mi`, 7);
             else say(`Convoy home in ${fmtTime(seconds)}. ${res.error}`, 7);
           });
@@ -1646,10 +1762,13 @@ export function Game() {
       const outLength = train && world.station ? outEnd(world.station) : boat ? SAIL.end : byHeli ? LIFT.end : DEPART.end;
       if (trip.leg === "out" && trip.t >= outLength) {
         if (trip.to === "city" && !cityData()) {
-          // Still fetching: hold the last frame, in the dark.
+          // Still fetching, or trying again: hold the last frame, in the dark, and after a
+          // moment the line under it says what for.
           trip.t = outLength;
-          void loadCityData();
+          cityWaitFrom ??= performance.now() / 1000;
+          void cityArrives();
         } else {
+          cityWaitFrom = null;
           enterWorld(trip.to);
           trip = { ...trip, leg: "in", t: 0 };
         }
@@ -1782,7 +1901,10 @@ export function Game() {
     /** Name tags and speech bubbles over the trucks, placed in screen space and kept apart. */
     const drawTags = (now: number) => {
       const layer = tagsRef.current;
-      if (!layer) return;
+      // Put away (the `hidden` on it below: under the map, in the opening, the picker, a trip
+      // or BBB's film), the layer isn't laid out. A tag measured then would be kept at no
+      // size at all, and never kept clear of another, so they wait until it's back.
+      if (!layer || layer.classList.contains("hidden")) return;
       const ease = 1 - Math.exp(-10 * Math.min(0.1, Math.max(0, now - tagsAt)));
       tagsAt = now;
       const me = store.get().id;
@@ -1826,12 +1948,12 @@ export function Game() {
         const x = Math.max(120, Math.min(layer.clientWidth - 120, at.x));
         shown.push({ id: t.id, x, y: Math.max(40, at.y), w: tag.w, h: tag.h, far: at.far });
       }
-      // Measured only when the words change, and only after every tag's words are in, so
-      // the page is laid out at most once a frame for it.
+      // Measured only when the words change (or until a tag has a size), and only after every
+      // tag's words are in, so the page is laid out at most once a frame for it.
       for (const b of shown) {
         const tag = tags.get(b.id)!;
         const text = tag.el.textContent ?? "";
-        if (tag.text !== text) {
+        if (tag.text !== text || !tag.w) {
           tag.text = text;
           tag.w = tag.el.offsetWidth;
           tag.h = tag.el.offsetHeight;
@@ -1995,16 +2117,19 @@ export function Game() {
         return offer({ kind: "winch", id: them.id, name: nameOf(them.id), can: true, pulling: winching !== null });
       }
 
-      let found = -1;
-      view.garages.forEach((g, i) => {
-        if (Math.hypot(car.x - g.approach.x, car.z - g.approach.z) < 7 && Math.abs(car.speed) < 5) found = i;
-      });
-      nearGarage = running || convoys.state ? -1 : found;
-      const m = !running && !convoys.state && found < 0 && Math.abs(car.speed) < 5 ? missionAt(courses, car.x, car.z) : null;
+      // On a course, or in a convoy or a race, the garages are shut: a door is just more road,
+      // and doesn't hide the convoy's own prompt (nor its check that you've driven off).
+      nearGarage = -1;
+      if (!running && !convoys.state && Math.abs(car.speed) < 5) {
+        view.garages.forEach((g, i) => {
+          if (Math.hypot(car.x - g.approach.x, car.z - g.approach.z) < 7) nearGarage = i;
+        });
+      }
+      const m = !running && !convoys.state && nearGarage < 0 && Math.abs(car.speed) < 5 ? missionAt(courses, car.x, car.z) : null;
       convoyAct = null;
-      const together = found < 0 && !m ? convoyPrompt() : null;
+      const together = nearGarage < 0 && !m ? convoyPrompt() : null;
 
-      const still = !running && !convoys.state && found < 0 && !m && !together && Math.abs(car.speed) < 5;
+      const still = !running && !convoys.state && nearGarage < 0 && !m && !together && Math.abs(car.speed) < 5;
       // Behind the plane's tail, beside the train's flat wagon, out on the causeway or on the helipad: what's on offer is a trip.
       const plane = world.airport && boardSpot(world.airport);
       const wagon = world.station?.board;
@@ -2020,7 +2145,7 @@ export function Game() {
 
       friendHere = null;
       const cafe = view.cafe;
-      if (cafe && !running && found < 0 && !m && !together && net && Math.hypot(car.x - cafe.x, car.z - cafe.z) < cafe.r + CAFE_SLACK) {
+      if (cafe && !running && nearGarage < 0 && !m && !together && net && Math.hypot(car.x - cafe.x, car.z - cafe.z) < cafe.r + CAFE_SLACK) {
         let best = FRIEND_REACH;
         for (const p of view.remotes.positions()) {
           const d = Math.hypot(p.x - car.x, p.z - car.z);
@@ -2032,7 +2157,7 @@ export function Game() {
       }
 
       const next: Prompt =
-        found >= 0 ? { kind: "garage", style: view.garages[found].style }
+        nearGarage >= 0 ? { kind: "garage", style: view.garages[nearGarage].style }
         : m ? { kind: "mission", mission: m, wait: tideWait(m) }
         : together ? together
         : tripHere && wayFrom(world.id, tripHere.way) ? { kind: "trip", way: tripHere.way, to: wayFrom(world.id, tripHere.way)!, wait: tripHere.wait }
@@ -2067,11 +2192,21 @@ export function Game() {
           // Through, and paid now; the results come when everyone is through (`onConvoy`).
           throughIn = seconds;
           const crew = convoys.state.with;
+          // Made before the events are heard: if I'm the last through, the race is home with them.
+          const claim = { mission: m, seconds, crew, refused: false, home: false };
+          raceClaim = claim;
           const events = convoys.passed(r.next, performance.now() / 1000, seconds);
           const place = convoys.state ? convoys.place() : 0;
           onConvoy(events);
           void store.completeMission(m, seconds, crew).then((res) => {
             goal("mission");
+            // The others hadn't banked the course yet, being behind: it goes again once they're through.
+            if (crewShort(res) && raceClaim === claim) {
+              claim.refused = true;
+              if (claim.home) return reclaimRace(claim);
+              return say(`Through in ${fmtTime(seconds)}, ${ordinal(place)} so far. Paid when the others are through.`, 8);
+            }
+            if (raceClaim === claim) raceClaim = null;
             const paid = "paid" in res ? `+${fmtMiles(res.paid)} mi` : res.error;
             say(raceOver ? `${raceOver}. ${paid}` : `Through in ${fmtTime(seconds)}, ${ordinal(place)} so far. ${paid}`, 8);
           });
@@ -2206,14 +2341,16 @@ export function Game() {
           }
         }
 
-        if (!film) map.reveal(car.x, car.z);
+        // Only on the map of the world the truck is in. While another stands in for it (the
+        // valley in the opening, until the city's data is in; the one left, once a fare is
+        // paid), nothing is cleared or found: it would be saved against the wrong world.
+        if (!film && world.id === store.get().world) map.reveal(car.x, car.z);
         tendRopes(now);
         const watch = towOn(dt, now);
         // Only while it's driven, and not if something other than a step has since moved it.
         const stepped = (m === "drive" || m === "map") && car.x === stepTo.x && car.y === stepTo.y && car.z === stepTo.z && car.heading === stepTo.heading;
         view.render(stepped ? between(stepFrom, stepTo, acc / STEP, carDrawn) : car, dt, time, spec, m === "boot" || m === "pick", film, watch);
-        // The tags' layer is put away under the map, where they couldn't be measured.
-        if (m !== "map") drawTags(now);
+        drawTags(now);
         aim(dt);
         if (Math.floor(now * 2) !== Math.floor((now - dt) * 2)) {
           setCanChat(nearbyFriends().length > 0);
@@ -2245,6 +2382,13 @@ export function Game() {
       gauge += (Math.abs(car.speed) - gauge) * (1 - Math.exp(-dt * 8));
       const mph = String(Math.round(gauge * MPH));
       if (speedRef.current && speedRef.current.textContent !== mph) speedRef.current.textContent = mph;
+      // While a trip or the opening waits on the city's data, a line under the picture says
+      // so; only after a second, so a short wait says nothing.
+      const waiting = cityWaitFrom !== null && now - cityWaitFrom > 1 ? cityLine() : null;
+      if (waiting !== shownCityLine) {
+        shownCityLine = waiting;
+        setCityWait(waiting);
+      }
       if (first) {
         first = false;
         setReady(true);
@@ -2254,9 +2398,7 @@ export function Game() {
     raf = requestAnimationFrame(frame);
 
     const onUnload = () => {
-      store.addMiles(unbanked);
-      unbanked = 0;
-      void store.flush();
+      bank();
       convoys.leave();
       net?.leave();
     };
@@ -2444,7 +2586,9 @@ export function Game() {
         </ul>
       )}
 
-      {driving && solo && !run && <SoloBanner canSignIn={onlineConfigured} onSignIn={() => setSigningIn(true)} />}
+      {driving && solo && !run && (
+        <SoloBanner canSignIn={onlineConfigured} open={!soloHidden} onSignIn={() => setSigningIn(true)} onHide={() => setSoloHidden(true)} />
+      )}
 
       {DEV && (driving || mode === "map") && dev && (devOpen ? (
         <DevPanel dev={dev} vehicle={profile?.vehicle ?? null} loadout={profile?.loadout ?? STOCK_LOADOUT} onClose={() => setDevOpen(false)} />
@@ -2479,6 +2623,12 @@ export function Game() {
       {mode === "calling" && towFrom && (
         <p className="pointer-events-none absolute inset-x-4 bottom-10 text-center text-sm text-[rgba(255,246,232,0.88)] drop-shadow">
           BBB is leaving {towFrom}
+        </p>
+      )}
+      {/* And the one line while a trip, or the opening, waits in the dark for San Francisco's data (ADR 0022). */}
+      {cityWait && (
+        <p className="pointer-events-none absolute inset-x-4 bottom-10 text-center text-sm text-[rgba(255,246,232,0.88)] drop-shadow">
+          {cityWait}
         </p>
       )}
 
@@ -2676,8 +2826,8 @@ export function Game() {
         />
       )}
 
-      {/* Touch controls; a keyboard is assumed at sm and up. They stay up over the map, which the truck drives on under. */}
-      {(mode === "drive" || mode === "map") && (
+      {/* Touch controls; a keyboard is assumed at sm and up. They stay up over the map, which the truck drives on under, but not over a panel. */}
+      {(mode === "drive" || mode === "map") && !panelOpen && (
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-5 sm:hidden">
           <div className="flex gap-3">
             <TouchButton label="◀" {...hold("left")} />

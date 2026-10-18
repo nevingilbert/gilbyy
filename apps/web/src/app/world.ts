@@ -7,8 +7,9 @@ import { courseDistOf, planMissions, planMore, type Mission } from "./missions";
 import { makeRandom } from "./noise";
 import { PAD, rampLift, rampObstacles, rampPad } from "./ramp";
 import { BED, besideBed, clearBed, lineFrame, mouthAt, pastEnd } from "./rail";
+import { gradeRoad, toPts } from "./roads";
 import { VALLEY_STOP, valleyStation, type Station } from "./station";
-import { buildTerrain, CAFE, CAMP, CELL, FAR, ROW, START, campPitches, gridX, gridZ, level, nearest, sampleGrid, WORLD, type Path, type Pitch, type Terrain, type WorldId } from "./terrain";
+import { buildTerrain, CAFE, CAMP, CAMP_GATE, CELL, FAR, ROW, START, campPitches, gridX, gridZ, level, nearest, sampleGrid, WORLD, type Path, type Pitch, type Terrain, type WorldId } from "./terrain";
 import { TRAIN_LENGTH, bridgeObstacles } from "./track";
 
 export {
@@ -111,6 +112,14 @@ export type World = Ground & Terrain & {
 
 /** A world with an airstrip, as the valley and the island have. */
 export type AirWorld = World & { airport: Airport };
+
+/** How far from the roadside workshop's middle the road to the station goes by: past its levelled yard. */
+const SHOP_ROUND = 45;
+/**
+ * Where a valley road is laid into the ground: half the dirt's width (railway.ts draws it),
+ * the steepest it climbs, rise over run, and how smoothly its rise is spread (roads.ts).
+ */
+const ROAD = { half: 2.8, grade: 0.3, smooth: 40 } as const;
 
 /** How wide a tree, a boulder and a bush stand, for the physics. */
 export const trunkRadius = (t: Tree) =>
@@ -292,12 +301,37 @@ export function buildWorld(seed = 20261006): AirWorld {
   const yard = { x0: Math.min(...corners.map((c) => c.x)), x1: Math.max(...corners.map((c) => c.x)), z0: Math.min(...corners.map((c) => c.z)), z1: Math.max(...corners.map((c) => c.z)) };
   const yardY = (ends[0].y + ends[1].y) / 2 - 0.4;
   const toYard = (x: number, z: number) => Math.hypot(Math.max(yard.x0 - x, 0, x - yard.x1), Math.max(yard.z0 - z, 0, z - yard.z1));
-  const stationRoad: Path = { xs: [CAMP.x - 64, (CAMP.x - 64 + station.x) / 2, station.x], zs: [CAMP.z - 5, (CAMP.z + station.z) / 2 - 40, station.z] };
+  // The road from the camp's west lane out to the station's door. The roadside workshop, the
+  // first garage, stands on the way and faces the camp: the road goes round the south of its
+  // yard, not in at its door and out through its back wall. North of it the ground runs down
+  // to the water.
+  const campEnd = { x: CAMP.x - 64, z: CAMP.z - 5 };
+  const [wx, wz] = [station.x - campEnd.x, station.z - campEnd.z];
+  const wl = Math.hypot(wx, wz);
+  const round = terrain.sites.filter((s) => s.style === "workshop").map((s) => ({ x: s.x + (wz / wl) * SHOP_ROUND, z: s.z - (wx / wl) * SHOP_ROUND }));
+  const stationRoad: Path = {
+    xs: [campEnd.x, ...round.map((p) => p.x), (campEnd.x + station.x) / 2, station.x],
+    zs: [campEnd.z, ...round.map((p) => p.z), (CAMP.z + station.z) / 2 - 40, station.z],
+  };
   const roadNear = nearest(stationRoad, false, 20);
   const fieldAt = (f: Float32Array, x: number, z: number) => sampleGrid(f, x, z);
+  // It, and the camp's road on to the café, climb ground in places too steep for any truck
+  // (physics.ts): the café's up the bluff below it, the station's over the hills past the
+  // workshop. So each is laid into the ground there on an even grade, cut and filled, as the
+  // roads in Vegas and Japan are: the café's from a little way out of the camp's gate to the
+  // turn below the café, the station's from the workshop on, so the camp's ground and the
+  // café's lot stay as they were. The station's yard is levelled over the end of it after.
+  const graded = [
+    toPts({ xs: [CAMP_GATE.x + 42, CAFE.x], zs: [CAMP_GATE.z, CAMP_GATE.z] }),
+    toPts({ xs: stationRoad.xs.slice(1), zs: stationRoad.zs.slice(1) }),
+  ];
+  const gradedNear = graded.map((pts) => nearest({ xs: pts.map((p) => p.x), zs: pts.map((p) => p.z) }, false, 50).dist);
+  // Grading moves the ground out to its blend, and a moved vertex the ground up to a cell beyond.
+  const toGraded = (x: number, z: number) => Math.min(...gradedNear.map((f) => fieldAt(f, x, z)));
   reshape(
-    (x, z) => fieldAt(branchNear.dist, x, z) < 72 || toYard(x, z) < 16 + 2 * CELL || fieldAt(roadNear.dist, x, z) < 8,
+    (x, z) => fieldAt(branchNear.dist, x, z) < 72 || toYard(x, z) < 16 + 2 * CELL || fieldAt(roadNear.dist, x, z) < 8 || toGraded(x, z) < ROAD.half + 22 + 2 * CELL,
     () => {
+      for (const pts of graded) gradeRoad(heights, pts, ROAD.half, ROAD.grade, ROAD.smooth);
       const last = branch.xs.length - 1;
       for (let k = 0; k < heights.length; k++) {
         const d = branchNear.dist[k];

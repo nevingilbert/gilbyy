@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { fieldDist } from "./airport";
+import { buildCity, type CityWorld } from "./city";
+import { loadCityData } from "./city-streets";
 import { buildIsland } from "./island";
 import {
-  ALARM_SPEED, SPECIES, habitat, passable, placeHerds, reach, speciesIn, stepWildlife, type Herd, type SpeciesId, type Threat,
+  ALARM_SPEED, SPECIES, habitat, passable, placeHerds, reach, soarAt, speciesIn, stepWildlife, type Herd, type SpeciesId, type Threat,
 } from "./wildlife";
 import { buildWorld, sampleGrid, WORLD, type World } from "./world";
 
@@ -192,5 +194,78 @@ describe("how they behave", () => {
     for (let t = 0; t < 30; t += STEP) stepWildlife(valley, [herd], [], far, STEP, t);
     expect(herd.active).toBe(false);
     expect(herd.animals.map((a) => [a.x, a.z, a.state])).toEqual(before);
+  });
+});
+
+describe("in San Francisco", () => {
+  let city: CityWorld;
+  // The city's ground and streets are fetched on their own (ADR 0022).
+  beforeAll(async () => {
+    await loadCityData();
+    city = buildCity();
+  }, 60000);
+  const depth = (x: number, z: number) => city.waterAt(x, z) - city.height(x, z);
+
+  it("keeps the bison out of Golden Gate Park's lakes, chased or not", () => {
+    const herd = herdOf(city, "bison");
+    // Spreckels Lake is over the road from the paddock, and the Chain of Lakes a little west.
+    let lake = 0;
+    for (let dz = -240; dz <= 240; dz += 3) {
+      for (let dx = -240; dx <= 240; dx += 3) {
+        const [x, z] = [herd.home.x + dx, herd.home.z + dz];
+        if (depth(x, z) <= SPECIES.bison.wade) continue;
+        lake++;
+        expect(passable(city, "bison", x, z), `in the water at ${x.toFixed(0)}, ${z.toFixed(0)}`).toBe(false);
+      }
+    }
+    expect(lake).toBeGreaterThan(50);
+    // A truck round and round them for a minute: they run, and never into the water.
+    const circling = (t: number): Threat[] => {
+      const a = t * 0.5;
+      return [{ x: herd.home.x + Math.cos(a) * 30, z: herd.home.z + Math.sin(a) * 30, speed: 15, heading: Math.atan2(-Math.sin(a), Math.cos(a)) }];
+    };
+    for (let t = 0; t < 60; t += STEP) {
+      stepWildlife(city, [herd], circling(t), herd.home, STEP, t);
+      for (const a of herd.animals) expect(depth(a.x, a.z), `a bison in the water at ${a.x.toFixed(0)}, ${a.z.toFixed(0)}`).toBeLessThan(SPECIES.bison.wade);
+    }
+  });
+
+  it("flies the parrots over North Beach's roofs, not through them, and low over the ground between", () => {
+    const flocks = placeHerds(city).filter((h) => h.species === "parrot");
+    expect(flocks).toHaveLength(2);
+    const cruise = SPECIES.parrot.cruise!;
+    let lowest = Infinity;
+    let over = 0;
+    let open = 0;
+    for (const h of flocks) {
+      const under = city.city.buildings.filter((b) => Math.hypot(b.x - h.home.x, b.z - h.home.z) < h.loop * 1.4 + 30);
+      for (let t = 0; t < 150; t += 0.1) {
+        for (const a of h.animals) {
+          soarAt(city, h, a, t);
+          const ground = Math.max(city.height(a.x, a.z), city.waterAt(a.x, a.z));
+          expect(a.y - ground).toBeGreaterThan(2);
+          let nearest = Infinity;
+          for (const b of under) {
+            // How far outside the house's footprint the bird is, in the house's own frame.
+            const [px, pz] = [a.x - b.x, a.z - b.z];
+            const lx = Math.abs(px * Math.cos(b.rot) - pz * Math.sin(b.rot)) - b.w / 2;
+            const lz = Math.abs(px * Math.sin(b.rot) + pz * Math.cos(b.rot)) - b.d / 2;
+            nearest = Math.min(nearest, Math.hypot(Math.max(lx, 0), Math.max(lz, 0)));
+            if (lx > 0.5 || lz > 0.5) continue;
+            over++;
+            lowest = Math.min(lowest, a.y - b.top);
+          }
+          // Out over the park, with no roof near, as low as ever, give or take the hill's slope.
+          if (nearest > 20) {
+            open++;
+            expect(a.y - ground).toBeLessThan(cruise + 3);
+          }
+        }
+      }
+    }
+    // Over a roof by a couple of metres at least, wingbeats and all.
+    expect(over).toBeGreaterThan(100);
+    expect(lowest).toBeGreaterThan(1.5);
+    expect(open).toBeGreaterThan(100);
   });
 });

@@ -250,7 +250,9 @@ for sign-in (Google only), and Realtime for the shared valley. See
 
 - The schema, policies and functions are in
   `supabase/migrations/20261007000000_gilbyy_game.sql`. The client holds only the
-  publishable key. Players can read profiles but can't write them; every change is a
+  publishable key. A player can read their own profile and their friends', and nobody
+  else's (every signed-in player could read every profile until
+  `20261017120000_crews_and_profiles.sql`), and can't write any; every change is a
   `security definer` function that checks it (miles no faster than driving, prices
   from `shop_items`, mission payouts and cooldowns from `missions`).
 - `20261007060000_advisor_followups.sql` came out of Supabase's advisors on the real
@@ -330,6 +332,16 @@ for sign-in (Google only), and Realtime for the shared valley. See
   (sold only in Japan), Japan's eight courses, its places and both helipads (a new kind of
   place), and a `helipads` column on `leaderboard()` (ADR 0024). Applied to the live
   project on 2026-10-15, straight after Vegas's.
+- `20261017120000_crews_and_profiles.sql` closes two holes. A crew claim now pays only if
+  a friend is among the drivers it names who banked the course's miles (`pay_run()`):
+  before, a friend who never drove named beside any stranger who was out driving passed.
+  And profiles can be read only by their player and that player's friends: before,
+  anyone signed in could read everyone's miles, balance, world and last bank, a ranking
+  of every player and a live view of who was out where. The game reads the table
+  directly in one place, its friends' names (`friends()` in `store.ts`), which the new
+  policy allows; everything else comes through the `security definer` functions, which
+  aren't held to it, and the names over trucks come from presence. So the order of this
+  and a deploy doesn't matter. Not yet applied to the live project.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).

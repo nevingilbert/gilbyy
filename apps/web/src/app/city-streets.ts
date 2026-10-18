@@ -5,7 +5,8 @@
  * map (`toGame`), and so does a street corner (`corner`). See ADR 0022.
  *
  * The data is big enough to be fetched only for the city, so it's loaded once with
- * `loadCityData()` before the city is built. Pure, no three.js.
+ * `loadCityData()` before the city is built; a load that fails is tried afresh on the
+ * next call. Pure, no three.js.
  */
 import { HALF, ROW } from "./terrain";
 
@@ -89,9 +90,20 @@ export function readStreets(bytes: Uint8Array): Street[] {
   return out;
 }
 
-/** Fetches and unpacks the city's ground and streets, once. The world can't be built until it has. */
+/**
+ * Whether this browser can unpack the city's data. It's done with the browser's own
+ * decompression, which an older one (Safari before 16.4) hasn't got, so there the train
+ * doesn't take you to the city (ADR 0022).
+ */
+export const canOpenCity = () => typeof DecompressionStream === "function";
+
+/**
+ * Fetches and unpacks the city's ground and streets, once. The world can't be built until
+ * it has. A load that fails isn't kept: the network may be back by the next call.
+ */
 export function loadCityData(): Promise<CityData> {
   if (loaded) return Promise.resolve(loaded);
+  if (!canOpenCity()) return Promise.reject(new Error("This browser can't unpack San Francisco's map."));
   loading ??= (async () => {
     const baked = await import("./city-data");
     const [heights, water, streets] = await Promise.all([baked.HEIGHTS, baked.WATER, baked.STREETS].map((s) => inflate(unbase64(s))));
@@ -107,7 +119,11 @@ export function loadCityData(): Promise<CityData> {
     }
     loaded = { elevation, water: water.slice(0, ROW * ROW), streets: readStreets(streets) };
     return loaded;
-  })();
+  })().catch((e: unknown) => {
+    // Forgotten before anyone hears it failed, so whoever asks next starts a fresh load.
+    loading = null;
+    throw e;
+  });
   return loading;
 }
 

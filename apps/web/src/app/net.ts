@@ -1,9 +1,9 @@
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { readConvoy, type ConvoyMsg } from "./convoy";
-import type { Loadout } from "./shop";
+import { STOCK_LOADOUT, type Loadout } from "./shop";
 import { CAMP_PITCHES, type WorldId } from "./terrain";
 import type { TowLine } from "./tow";
-import type { VehicleId } from "./vehicles";
+import { vehicleById, type VehicleId } from "./vehicles";
 
 /**
  * Everyone signed in drives the same valley, or the same island (ADR 0014): each world is
@@ -358,10 +358,20 @@ abstract class Base implements Net {
   }
 }
 
-const isPeer = (p: unknown): p is Peer => {
-  const o = p as Peer;
-  return Boolean(o && typeof o.id === "string" && typeof o.name === "string" && typeof o.tent === "number" && typeof o.joined === "number");
-};
+/**
+ * Someone's presence as a peer, or null if it isn't one. Anyone signed in can put anything
+ * in presence, and the trucks are drawn from it, so one entry that leaves something out
+ * mustn't stop the rest being drawn. A rig this page doesn't know is drawn as the first
+ * one, and a part it doesn't name is the stock one (as from a tab older than the part).
+ */
+export function readPeer(p: unknown): Peer | null {
+  const o = p as Record<string, unknown> | null;
+  if (!o || typeof o !== "object" || typeof o.id !== "string" || typeof o.name !== "string" || typeof o.tent !== "number" || typeof o.joined !== "number") return null;
+  const fitted = (o.loadout && typeof o.loadout === "object" ? o.loadout : {}) as Record<string, unknown>;
+  const loadout = { ...STOCK_LOADOUT };
+  for (const slot of Object.keys(loadout) as (keyof Loadout)[]) if (typeof fitted[slot] === "string") loadout[slot] = fitted[slot];
+  return { id: o.id, name: o.name, vehicle: vehicleById(String(o.vehicle)).id, loadout, tent: o.tent, joined: o.joined };
+}
 
 /** Supabase Realtime: one private channel for the valley, one per pair of friends for chat. */
 export class SupabaseNet extends Base {
@@ -378,7 +388,7 @@ export class SupabaseNet extends Base {
   protected present() {
     const state = this.world?.presenceState<Peer>() ?? {};
     // A player in two tabs shows twice under one key; the earlier claim stands.
-    return Object.values(state).map((metas) => [...metas].filter(isPeer).sort(byArrival)[0]).filter(Boolean) as Peer[];
+    return Object.values(state).map((metas) => metas.map(readPeer).filter((p): p is Peer => p !== null).sort(byArrival)[0]).filter(Boolean) as Peer[];
   }
 
   protected async open() {
@@ -470,19 +480,21 @@ export class SupabaseNet extends Base {
   }
 
   listen(friends: string[]) {
-    const want = new Set(friends.map((f) => chatTopic(this.myId, f)));
+    const want = new Map(friends.map((f) => [chatTopic(this.myId, f), f]));
     for (const [topic, ch] of this.chats) {
       if (!want.has(topic)) {
         void this.sb.removeChannel(ch);
         this.chats.delete(topic);
       }
     }
-    for (const topic of want) {
+    for (const [topic, friend] of want) {
       if (this.chats.has(topic)) continue;
       const ch = this.sb.channel(topic, { config: { private: true, broadcast: { self: false } } });
+      // Only the two of us can send on this channel (the realtime policies), so a line on it
+      // is this friend's, whoever it says it's from. One in my name is from my own other tab.
       ch.on("broadcast", { event: "say" }, ({ payload }) => {
-        if (typeof payload.from === "string" && typeof payload.text === "string") {
-          this.on.chat({ from: payload.from, text: payload.text.slice(0, MAX_CHAT) });
+        if (payload?.from !== this.myId && typeof payload?.text === "string") {
+          this.on.chat({ from: friend, text: payload.text.slice(0, MAX_CHAT) });
         }
       }).subscribe();
       this.chats.set(topic, ch);
@@ -533,8 +545,8 @@ export class LocalNet extends Base {
     this.bus = new BroadcastChannel(`gilbyy-local-${this.topic}`);
     this.bus.onmessage = ({ data }) => {
       const { event, payload } = data as { event: string; payload: Record<string, unknown> };
-      const peer = payload as unknown;
-      if (event === "here" && isPeer(peer) && peer.id !== this.myId) {
+      const peer = event === "here" ? readPeer(payload) : null;
+      if (peer && peer.id !== this.myId) {
         const known = this.others.has(peer.id);
         this.others.set(peer.id, peer);
         this.seen.set(peer.id, Date.now());

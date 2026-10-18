@@ -110,6 +110,14 @@ describe("the way in", () => {
     expect(Math.hypot(hemmed.x, hemmed.z)).toBeCloseTo(TOW_STOP);
   });
 
+  it("comes into a square world's corners, San Francisco's, as far as it can anywhere else", () => {
+    // Stuck well inside the square's corner, but further from the middle than its sides are.
+    const square: Ground = { ...ground(), limit: 1000, square: true };
+    const corner = { x: 850, z: 850 };
+    const line = approachLine(square, corner, { x: 850, z: 200 });
+    expect(line.length).toBe(TOW_RUN);
+  });
+
   it("is there for most trucks stuck on a rock in the real valley", () => {
     const world = buildWorld();
     const spec = specFor("bluff", STOCK_LOADOUT);

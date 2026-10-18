@@ -169,6 +169,22 @@ select pg_temp.check((select count(*) from public.leaderboard()) = 1, 'a strange
 select pg_temp.check((select count(*) from public.friendships) = 0, 'strangers cannot see others'' friendships');
 reset role;
 
+-- Profiles: your own and your friends', and nobody else's (the leaderboard is friends only,
+-- ADR 0007). The game reads its friends' names straight from the table.
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select count(*) from public.profiles where id = auth.uid()) = 1, 'a player reads their own profile');
+select pg_temp.check((select name from public.profiles where id::text like '%00000000000b') = 'Z_', 'and a friend''s, for their name');
+select pg_temp.check((select count(*) from public.profiles where id::text like '%00000000000c') = 0, 'but not a stranger''s');
+reset role;
+select pg_temp.as_player('c');
+set role authenticated;
+select pg_temp.check((select count(*) = 1 and bool_and(id = auth.uid()) from public.profiles), 'a player with no friends reads only their own');
+reset role;
+set role anon;
+select pg_temp.check((select count(*) from public.profiles) = 0, 'and a signed-out visitor reads none');
+reset role;
+
 -- Convoys: driven with friends, and each driver claims their own, naming the others.
 select pg_temp.as_player('a');
 set role authenticated;
@@ -226,6 +242,31 @@ reset role;
 select pg_temp.as_player('c');
 set role authenticated;
 select pg_temp.fails($$ select public.complete_convoy('convoy', 125, '{00000000-0000-0000-0000-00000000000a,00000000-0000-0000-0000-00000000000b}') $$, 'riding along with strangers pays nothing');
+reset role;
+-- Of the crew named, the ones who drove must include a friend: a stranger who happened to
+-- be out driving doesn't stand in for a friend who never set off. Fifteen minutes on, and
+-- the stranger (c) drives while the friend (b) doesn't.
+select pg_temp.rewind('a');
+select pg_temp.rewind('b');
+update public.profiles set last_drive_at = now() - interval '100 seconds' where id::text like '%00000000000c';
+select pg_temp.as_player('c');
+set role authenticated;
+select public.add_miles(2);
+reset role;
+select pg_temp.as_player('a');
+set role authenticated;
+select public.add_miles(2);
+select pg_temp.refused($$ select public.complete_convoy('grand-tour', 200, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c}') $$,
+  'a friend in it who drove', 'a friend who never drove, named beside a stranger who did, pays nothing');
+reset role;
+select pg_temp.as_player('b');
+set role authenticated;
+select public.add_miles(2);
+reset role;
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check(pg_temp.pays($$ select public.complete_convoy('grand-tour', 200, '{00000000-0000-0000-0000-00000000000b,00000000-0000-0000-0000-00000000000c}') $$) = 40,
+  'once the friend has driven it too, the same claim pays');
 reset role;
 
 -- Places: found once, real ones only, and counted beside your miles.
@@ -286,6 +327,8 @@ select pg_temp.check(public.explored() is null, 'one player''s map is not anothe
 reset role;
 
 -- The island: a flight costs its fare, takes you there and is logged, and the way home costs the same.
+-- Short of the fare to start with, whatever the checks above have paid.
+update public.profiles set balance = 100 where id::text like '%00000000000a';
 select pg_temp.as_player('a');
 set role authenticated;
 select pg_temp.check((select world from public.me()) = 'valley', 'everyone starts in the valley');

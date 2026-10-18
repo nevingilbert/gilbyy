@@ -12,15 +12,16 @@
 import { buildDecks, deckIndex, deckPoint, type Deck, type DeckIndex } from "./city-bridges";
 import { layBuildings, Walls, type Building, type District } from "./city-buildings";
 import { DISTRICTS, LANDMARKS, PARKS, type ParkKind, type Spot } from "./city-places";
-import { STREET_WIDTH, cityData, resample, sidewalkOf, streetGraph, toGame, type Pt, type Street, type StreetClass, type StreetGraph } from "./city-streets";
+import { SIDEWALK, STREET_WIDTH, cityData, resample, sidewalkOf, streetGraph, toGame, type Pt, type Street, type StreetClass, type StreetGraph } from "./city-streets";
 import { courseDistOf, courseLength, courseLimits, gatesAlong, type Mission } from "./missions";
 import { makeRandom } from "./noise";
 import { CELL, FAR, HALF, ROW, WORLD, flood, gridX, gridZ, level, nearest, sampleGrid, type Pitch, type Site, type Track } from "./terrain";
 import { cableLine, type CableLine } from "./cable-car";
 import { CONVOY_MAX, lineUp } from "./convoy";
 import { lineUpAlone } from "./mission-run";
-import { BED, besideBed, clearBed, mouthAt, pastEnd } from "./rail";
+import { BED, besideBed, carsOn, clearBed, mouthAt, pastEnd } from "./rail";
 import { cityStation } from "./station";
+import { HEADROOM, trainObstacles } from "./track";
 import { obstacleIndex, trunkRadius, type Bush, type Obstacle, type Rock, type Tree, type World } from "./world";
 
 /** How much shorter than life the hills are drawn: across is 1:2.5, so the streets come out steeper than they are, which suits them. */
@@ -41,6 +42,69 @@ const DISTRICT_CODES: District[] = ["rows", "towers", "midrise", "chinatown", "l
 
 /** Something famous, for the renderer to build: what, where, which way it faces. */
 export type CityLandmark = { kind: keyof typeof LANDMARKS; x: number; z: number; y: number; rot: number };
+
+/** What a landmark stands on: a box, across and along the way it faces, or a round. */
+export type Footprint = readonly [number, number] | { readonly r: number };
+
+/**
+ * What each solid landmark stands on at a truck's height, for the walls, as it's drawn
+ * (city-landmarks.ts): Oracle Park's stands go round, so a round; the Painted Ladies are the
+ * four of theirs that fit their block. The gate and the windmills' sails a truck passes
+ * under or round.
+ */
+export const LANDMARK_FOOTPRINT: Partial<Record<CityLandmark["kind"], Footprint>> = {
+  coitTower: [10, 10], transamerica: [21, 21], salesforce: [22, 22], bankOfAmerica: [22, 22], ferryBuilding: [13, 78], cityHall: [48, 36],
+  graceCathedral: [16, 34], palaceOfFineArts: [22, 22], ghirardelli: [26, 26], pier39: [26, 72], oraclePark: { r: 46 }, missionDolores: [10, 22],
+  cliffHouse: [16, 12], legionOfHonor: [30, 36], paintedLadies: [12, 25.2], fortPoint: [24, 24], conservatory: [30, 12],
+  dutchWindmill: [6, 6], murphyWindmill: [6, 6],
+};
+
+/** How far every landmark's footprint stands back from the kerb: over the pavement, and a little more. */
+export const LANDMARK_BACK = SIDEWALK + 0.4;
+/** How high a bridge's deck has to stand over a landmark for it to stand under the deck: Fort Point under the Golden Gate. */
+const UNDER_DECK = 20;
+/** Which way Pier 39 runs out from the Embarcadero, as the survey has it, north by a little west: a heading from its end back to its entrance. */
+const PIER_RUNS = 0.22;
+
+/** How far a footprint reaches from its middle. */
+const reachOf = (f: Footprint) => ("r" in f ? f.r : Math.hypot(f[0] / 2, f[1] / 2));
+
+/** Points every `step` metres over a footprint turned by `rot`, from its middle: its edge first, then inside it. */
+export function footprintPoints(rot: number, f: Footprint, step = 1): Pt[] {
+  const out: Pt[] = [];
+  if ("r" in f) {
+    for (let r = f.r; r > 0; r -= step) {
+      const n = Math.max(8, Math.ceil((2 * Math.PI * r) / step));
+      for (let i = 0; i < n; i++) out.push({ x: Math.sin((i / n) * 2 * Math.PI) * r, z: Math.cos((i / n) * 2 * Math.PI) * r });
+    }
+    out.push({ x: 0, z: 0 });
+    return out;
+  }
+  const [w, d] = f;
+  const [cos, sin] = [Math.cos(rot), Math.sin(rot)];
+  const na = Math.max(1, Math.ceil(w / step));
+  const nb = Math.max(1, Math.ceil(d / step));
+  // Across the way it faces is (cos, −sin), along it (sin, cos), as the walls have a box.
+  const at = (i: number, j: number) => {
+    const [a, b] = [-w / 2 + (w * i) / na, -d / 2 + (d * j) / nb];
+    out.push({ x: a * cos + b * sin, z: -a * sin + b * cos });
+  };
+  for (let i = 0; i <= na; i++) for (let j = 0; j <= nb; j++) if (i === 0 || j === 0 || i === na || j === nb) at(i, j);
+  for (let i = 1; i < na; i++) for (let j = 1; j < nb; j++) at(i, j);
+  return out;
+}
+
+/** The nearest offset from where something is, ring by ring every half metre out to `reach`, that `ok` takes; null if none does. */
+function nearestOffset(ok: (dx: number, dz: number) => boolean, reach = 60): Pt | null {
+  for (let r = 0.5; r <= reach; r += 0.5) {
+    const n = Math.ceil((2 * Math.PI * r) / 0.5);
+    for (let i = 0; i < n; i++) {
+      const [x, z] = [Math.sin((i / n) * 2 * Math.PI) * r, Math.cos((i / n) * 2 * Math.PI) * r];
+      if (ok(x, z)) return { x, z };
+    }
+  }
+  return null;
+}
 
 /** The railway into Fourth and King: a line from the buffers, out past the platforms, under Potrero Hill and on into the dark. */
 export type CityRail = {
@@ -470,6 +534,8 @@ export function buildCity(seed = 20261015): CityWorld {
 
   // ——— Landmarks ———
 
+  const kerb = kerbMap(streets);
+  const kerbHere = (x: number, z: number) => kerbAt(kerb, x, z);
   const landmarks: CityLandmark[] = [];
   const landmark = (kind: keyof typeof LANDMARKS, rot: number) => {
     const p = at(LANDMARKS[kind] as Spot);
@@ -488,26 +554,58 @@ export function buildCity(seed = 20261015): CityWorld {
   // it and their fronts to it, facing west across it to Alamo Square.
   const row = sideOf(ladies, grove, 0.5, -(STREET_WIDTH[2] / 2 + 1.6 + 6.8));
   landmarks.push({ kind: "paintedLadies", ...row, y: sampleGrid(heights, row.x, row.z), rot: facing(ladies, grove) });
-  // Each faces the way it does: the Ferry Building onto the Embarcadero, the Chinatown gate up Grant.
+  // Each faces the way it does: the Ferry Building onto the Embarcadero, the Chinatown gate up
+  // Grant, City Hall onto Civic Center's plaza, Grace Cathedral across Taylor Street, Mission
+  // Dolores onto Dolores Street and Ghirardelli's sign to the bay; the towers square to their
+  // streets; and Pier 39 out from the Embarcadero the way the survey has it, its front to the
+  // street and the sea lions' floats off its west side.
   const turn = (kind: CityLandmark["kind"], rot: number) => {
     const l = landmarks.find((m) => m.kind === kind);
     if (l) l.rot = rot;
   };
   turn("ferryBuilding", facing(at(["The Embarcadero", "Broadway"]), at(["The Embarcadero", "Howard St"])));
   turn("chinatownGate", facing(at(["Grant Ave", "Bush St"]), at(["Grant Ave", "Pine St"])));
+  turn("cityHall", facing(at(["Van Ness Ave", "McAllister St"]), at(["Polk St", "McAllister St"])));
+  turn("graceCathedral", facing(at(["Jones St", "California St"]), at(["Taylor St", "California St"])));
+  turn("missionDolores", facing(at(["Church St", "16th St"]), at(["Dolores St", "16th St"])));
+  turn("ghirardelli", facing(at(["Larkin St", "N Point St"]), at(["Larkin St", "Beach St"])));
+  turn("transamerica", facing(at(["Montgomery St", "Washington St"]), at(["Montgomery St", "Clay St"])));
+  turn("bankOfAmerica", facing(at(["Kearny St", "California St"]), at(["Kearny St", "Pine St"])));
+  turn("salesforce", facing(at(["1st St", "Mission St"]), at(["Fremont St", "Mission St"])));
+  turn("pier39", PIER_RUNS);
 
-  /** How much room each landmark keeps clear of row houses. */
+  // The survey puts some of them over a street: the blocks are smaller than life, and the
+  // streets aren't. Each stands back from them, at the nearest spot where all of its
+  // footprint is clear of every kerb by the pavement and a little more, and of a bridge's
+  // road unless the deck is high over it, with its middle on dry land. Pier 39 is the other
+  // way about: it's looked for only north of where it was, out over the water from its
+  // entrance on the Embarcadero.
+  const deckOver = (x: number, z: number) => {
+    const n = decksAt.nearest(x, z);
+    return n && n.off < n.deck.half + 3 ? n.y - sampleGrid(heights, x, z) : Infinity;
+  };
+  for (const l of landmarks) {
+    const f = LANDMARK_FOOTPRINT[l.kind];
+    if (!f) continue;
+    const pts = footprintPoints(l.rot, f);
+    const fits = (x: number, z: number) =>
+      (l.kind === "pier39" || sampleGrid(heights, x, z) > sampleGrid(water, x, z)) &&
+      pts.every((p) => kerbHere(x + p.x, z + p.z) >= LANDMARK_BACK && deckOver(x + p.x, z + p.z) > UNDER_DECK);
+    const by = fits(l.x, l.z) ? null : nearestOffset((dx, dz) => (l.kind !== "pier39" || dz <= 0) && fits(l.x + dx, l.z + dz));
+    if (by) [l.x, l.z] = [l.x + by.x, l.z + by.z];
+    // Its own ground; and the pier's deck over the water, and over the sand the survey has under it.
+    l.y = l.kind === "pier39" ? Math.max(WORLD.water + 1.2, ...pts.map((p) => sampleGrid(heights, l.x + p.x, l.z + p.z) - 0.6)) : sampleGrid(heights, l.x, l.z);
+  }
+
+  /** How much room each landmark keeps clear of row houses: at least the whole of its footprint, and a little. */
   const LANDMARK_ROOM: Partial<Record<CityLandmark["kind"], number>> = {
     coitTower: 16, transamerica: 16, salesforce: 18, bankOfAmerica: 16, ferryBuilding: 44, cityHall: 34, graceCathedral: 16,
     palaceOfFineArts: 40, ghirardelli: 22, pier39: 40, oraclePark: 60, missionDolores: 12, cliffHouse: 14,
     legionOfHonor: 26, paintedLadies: 26, fortPoint: 20, dutchWindmill: 8, murphyWindmill: 8, conservatory: 18,
   };
-  /** What each solid landmark stands on, across and along its `rot`, for the walls. The gate and the windmills' sails a truck passes under or round. */
-  const FOOTPRINT: Partial<Record<CityLandmark["kind"], [number, number]>> = {
-    coitTower: [7, 7], transamerica: [20, 20], salesforce: [20, 20], bankOfAmerica: [22, 22], ferryBuilding: [13, 78], cityHall: [46, 30],
-    graceCathedral: [16, 34], palaceOfFineArts: [22, 22], ghirardelli: [28, 28], pier39: [26, 70], oraclePark: [86, 86], missionDolores: [10, 22],
-    cliffHouse: [16, 12], legionOfHonor: [30, 36], paintedLadies: [12, 44], fortPoint: [24, 24], conservatory: [30, 12],
-    dutchWindmill: [6, 6], murphyWindmill: [6, 6],
+  const roomOf = (l: CityLandmark) => {
+    const f = LANDMARK_FOOTPRINT[l.kind];
+    return Math.max(LANDMARK_ROOM[l.kind] ?? 0, f ? reachOf(f) + 4 : 0);
   };
 
   // ——— What may not be built on ———
@@ -545,14 +643,12 @@ export function buildCity(seed = 20261015): CityWorld {
   stamp(camp.fire.x, camp.fire.z, 18);
   stamp(cafe.x, cafe.z, 16);
   for (const s of sites) stamp(s.x, s.z, 24);
-  for (const l of landmarks) if (LANDMARK_ROOM[l.kind]) stamp(l.x, l.z, LANDMARK_ROOM[l.kind]!);
+  for (const l of landmarks) if (roomOf(l)) stamp(l.x, l.z, roomOf(l));
   // Lombard's crooked block, a garden all the way down.
   const lt = at(["Lombard St", "Hyde St"]);
   const lf = at(["Lombard St", "Leavenworth St"]);
   for (let t = 0; t <= 1; t += 0.05) stamp(lt.x + (lf.x - lt.x) * t, lt.z + (lf.z - lt.z) * t, 13);
 
-  const kerb = kerbMap(streets);
-  const kerbHere = (x: number, z: number) => kerbAt(kerb, x, z);
   const ground = (x: number, z: number) => sampleGrid(heights, x, z);
   const blocked = (x: number, z: number) => {
     const i = Math.floor((x + HALF) / BS);
@@ -572,10 +668,12 @@ export function buildCity(seed = 20261015): CityWorld {
     vscale: VSCALE,
     rand,
   });
-  // The landmarks are solid too, as boxes in the same field.
+  // The landmarks are solid too, in the same field, where they're drawn.
   for (const l of landmarks) {
-    const box = FOOTPRINT[l.kind];
-    if (box) walls.addBox(l.x, l.z, l.rot, box[0] / 2, box[1] / 2);
+    const f = LANDMARK_FOOTPRINT[l.kind];
+    if (!f) continue;
+    if ("r" in f) walls.addRound(l.x, l.z, f.r);
+    else walls.addBox(l.x, l.z, l.rot, f[0] / 2, f[1] / 2);
   }
 
   // ——— Fields for the scatter, the grass and the map ———
@@ -710,6 +808,14 @@ export function buildCity(seed = 20261015): CityWorld {
   const solid = obstacleIndex();
   for (const t of trees) solid.add({ x: t.x, z: t.z, r: trunkRadius(t), h: Infinity });
   for (const r of rocks) solid.add({ x: r.x, z: r.z, r: Math.min(r.sx, r.sz) * 0.8, h: r.y + r.sy * 0.95 - ground(r.x, r.z), boulder: true });
+  // The train that always stands at the platform at Fourth and King, as the plane stands on its stand, is solid like it.
+  const station = cityStation(rail.line, rail.portal);
+  for (const o of trainObstacles(carsOn(station.line, station.head, station.facing))) solid.add(o);
+  /** What's built under a bridge's deck, where the deck stands high, is below a truck up on it: Fort Point, under the Golden Gate. */
+  const under = (x: number, z: number, wall: Obstacle[]) => {
+    const road = wall.length ? decksAt.roadAt(x, z) : null;
+    return road !== null && road - ground(x, z) > UNDER_DECK ? wall.map((o) => ({ ...o, top: road - HEADROOM })) : wall;
+  };
 
   /** The ground, or a bridge's deck: whichever is under something whose underside is at `above`, or the higher without it. */
   const height = (x: number, z: number, above?: number) => {
@@ -729,19 +835,21 @@ export function buildCity(seed = 20261015): CityWorld {
     heights, water, forest, trackDist, riverDist: new Float32Array(ROW * ROW).fill(FAR), roadDist, siteDist, campDist, zone,
     snow: new Float32Array(ROW * ROW), ice: new Float32Array(ROW * ROW),
     track: { xs: [], zs: [], ys: [], s: [], length: 0, bridges: [], crossings: [] }, rivers: [], roads: [], sites,
-    trees, bushes, rocks, missions, landmarks: [], courseDist, airport: null, station: cityStation(rail.line, rail.portal), dock: null, pad: null,
+    trees, bushes, rocks, missions, landmarks: [], courseDist, airport: null, station, dock: null, pad: null,
     cafe, start, pitches: camp.pitches, camp: { ...rob, heading: campHeading },
     sea: true, mapSpan: CITY_LIMIT * 2.05, square: true,
     height, waterAt: (x, z) => sampleGrid(water, x, z),
     obstaclesNear: (x, z) => {
       const near = solid.near(x, z);
-      const wall = walls.near(x, z);
+      const wall = under(x, z, walls.near(x, z));
       const rails = decksAt.railings(x, z);
       return wall.length || rails.length ? [...near, ...wall, ...rails] : near;
     },
     limit: CITY_LIMIT,
-    // The streets and their pavements, and the garages' aprons.
-    pavedAt: (x, z) => kerbAt(kerb, x, z) < 1.6 || sampleGrid(siteDist, x, z) < 10,
+    // The streets and their pavements, the garages' aprons, and the bridges' decks. Asked
+    // without a height, it can't tell a truck on a deck from one under it, so under one is
+    // paved too: that's the water, mostly, and streets.
+    pavedAt: (x, z) => kerbAt(kerb, x, z) < 1.6 || sampleGrid(siteDist, x, z) < 10 || decksAt.roadAt(x, z) !== null,
     slipAt: () => 0,
     addObstacles: (list: readonly Obstacle[]) => list.forEach(solid.add),
     setTide: () => {},

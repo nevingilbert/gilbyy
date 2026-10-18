@@ -35,6 +35,9 @@ export type Standing = { id: string; name: string; lifetime: number; me: boolean
 const ONLY_SOLD = (world: WorldId) => `That's only sold on ${WORLDS[world].name}.`;
 /** One world's explored cells, started empty the first time it's asked for. */
 const cellsOf = (all: Map<WorldId, Set<number>>, world: WorldId) => all.get(world) ?? all.set(world, new Set()).get(world)!;
+/** How long to wait before each new try of a claim that got no answer, ms: fifteen seconds in all. */
+export const CLAIM_WAITS = [1000, 2000, 4000, 8000];
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface Store {
   readonly online: boolean;
@@ -256,12 +259,21 @@ export class SupabaseStore implements Store {
     this.listeners.forEach((cb) => cb());
   }
 
-  private async call(fn: string, args: Record<string, unknown>) {
-    const { data, error } = await this.sb.rpc(fn, args);
-    if (error) return error.message;
+  /**
+   * Calls a database function that answers with the profile, and keeps it. `error` is why
+   * not, if it didn't; `lost` says the request had no answer at all, which is the network,
+   * not the database.
+   */
+  private async send(fn: string, args: Record<string, unknown>) {
+    const { data, error, status } = await this.sb.rpc(fn, args);
+    if (error) return { error: error.message, lost: status === 0 };
     this.p = toProfile(data as Row);
     this.notify();
-    return null;
+    return { error: null, lost: false };
+  }
+
+  private async call(fn: string, args: Record<string, unknown>) {
+    return (await this.send(fn, args)).error;
   }
 
   addMiles(miles: number) {
@@ -335,13 +347,24 @@ export class SupabaseStore implements Store {
   }
 
   async completeMission(m: Mission, seconds: number, crew: string[] = []) {
-    await this.flush();
-    const before = this.p.balance;
     const p_seconds = Math.round(seconds * 100) / 100;
-    const error = m.crew > 1
-      ? await this.call("complete_convoy", { p_mission: m.id, p_seconds, p_crew: crew })
-      : await this.call("complete_mission", { p_mission: m.id, p_seconds });
-    return error ? { error } : { paid: this.p.balance - before };
+    const [fn, args]: [string, Record<string, unknown>] = m.crew > 1
+      ? ["complete_convoy", { p_mission: m.id, p_seconds, p_crew: crew }]
+      : ["complete_mission", { p_mission: m.id, p_seconds }];
+    await this.flush();
+    for (let tries = 0; ; tries++) {
+      const before = this.p.balance;
+      const { error, lost } = await this.send(fn, args);
+      if (!error) return { paid: this.p.balance - before };
+      // A refusal is the database's answer, and would be the same again. A claim that got
+      // no answer (a tunnel, a dropped signal) goes again in a moment, after whatever has
+      // been driven since is banked. If the first did get through and only its answer was
+      // lost, the next is refused as too soon, and nothing is paid twice.
+      if (!lost) return { error };
+      if (tries >= CLAIM_WAITS.length) return { error: "Couldn't reach the server, so it may not have been paid." };
+      await wait(CLAIM_WAITS[tries]);
+      await this.flushMiles();
+    }
   }
 
   markGoal(goal: string) {

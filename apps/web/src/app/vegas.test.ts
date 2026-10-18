@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { kerbAt } from "./city";
 import { LINE_UP_BACK } from "./convoy";
+import { crossed } from "./mission-run";
 import { OFF_ROAD, makeCar, step } from "./physics";
 import { METRES_PER_MILE, STOCK_LOADOUT, specFor } from "./shop";
-import { BEACH, CROSS, STRIP_X, VEGAS, buildVegas } from "./vegas";
+import { BEACH, CROSS, STRIP_X, VEGAS, buildVegas, fromResort, resortFrame, resortMasses, type Resort } from "./vegas";
 import { vehicleById } from "./vehicles";
 import { placeHerds } from "./wildlife";
 import type { Mission } from "./world";
@@ -109,10 +110,43 @@ describe("Las Vegas", () => {
     for (const h of herds.filter((h) => h.species === "condor")) expect(ground(h.home.x, h.home.z)).toBeLessThan(VEGAS.rim - 60);
   });
 
+  it("finishes Red Rock Race back at its arch, through flags that face the way the race comes in", () => {
+    const m = vegas.missions.find((q) => q.id === "red-rock-race")!;
+    const [end, before] = [m.gates.at(-1)!, m.gates.at(-2)!];
+    // Once round, and no two flags on one spot.
+    expect(Math.hypot(end.x - m.start.x, end.z - m.start.z)).toBeLessThan(1);
+    m.gates.forEach((g, i) => i && expect(Math.hypot(g.x - m.gates[i - 1].x, g.z - m.gates[i - 1].z), `gate ${i + 1}`).toBeGreaterThan(1));
+    // Driven in from the last flag but one, straight through the finish's middle, it counts.
+    const [dx, dz] = [(end.x - before.x) / Math.hypot(end.x - before.x, end.z - before.z), (end.z - before.z) / Math.hypot(end.x - before.x, end.z - before.z)];
+    expect(crossed(end, { x: end.x - dx * 2, z: end.z - dz * 2 }, { x: end.x + dx * 2, z: end.z + dz * 2 })).toBe(true);
+  });
+
   it("keeps the resorts off the streets", () => {
     for (const r of vegas.vegas.roads) {
       for (let i = 0; i < r.xs.length; i++) expect(vegas.vegas.walls.distance(r.xs[i], r.zs[i]), `${r.name}`).toBeGreaterThan(r.half);
     }
+  });
+
+  it("stands nothing a truck runs into on a road or its pavement: the wheel's feet are clear of Flamingo Road", () => {
+    const { kerb, resorts } = vegas.vegas;
+    const into = new Set<string>();
+    const check = (r: Resort, x: number, z: number) => {
+      if (kerbAt(kerb, x, z) < 1.6) into.add(`the ${r.kind} at ${x.toFixed(0)}, ${z.toFixed(0)}`);
+    };
+    for (const r of resorts) {
+      const { rot } = resortFrame(r);
+      const { boxes, rounds } = resortMasses(r);
+      for (const o of rounds) {
+        const c = fromResort(r, o.x, o.z);
+        for (let a = 0; a < 2 * Math.PI; a += Math.PI / 16) check(r, c.x + Math.cos(a) * o.r, c.z + Math.sin(a) * o.r);
+      }
+      for (const b of boxes) {
+        const c = fromResort(r, b.x, b.z);
+        const [cos, sin] = [Math.cos(rot + b.rot), Math.sin(rot + b.rot)];
+        for (let u = -b.hw; u <= b.hw + 1e-6; u += 1) for (let v = -b.hd; v <= b.hd + 1e-6; v += 1) check(r, c.x + u * cos + v * sin, c.z - u * sin + v * cos);
+      }
+    }
+    expect([...into]).toEqual([]);
   });
 });
 

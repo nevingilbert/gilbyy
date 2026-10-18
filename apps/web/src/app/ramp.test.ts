@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeCar, noInput, step } from "./physics";
 import { FENCE, RAMP, deckLift, rampLift, rampLocal, rampObstacles, rampPoint, type Ramp } from "./ramp";
-import { STOCK_LOADOUT, specFor } from "./shop";
+import { PARTS, STOCK_LOADOUT, specFor, type Loadout } from "./shop";
 import { STARTERS, VEHICLES, type VehicleId } from "./vehicles";
 import type { Ground, Obstacle } from "./world";
 
@@ -13,9 +13,9 @@ const yard = (): Ground => {
 };
 
 /** Drives from (u, w) against the ramp, pointed `turn` round from the way up it, flat out for `seconds`. */
-function drive(id: VehicleId, u: number, w: number, turn: number, seconds: number, gas = true) {
+function drive(id: VehicleId, u: number, w: number, turn: number, seconds: number, gas = true, loadout: Loadout = STOCK_LOADOUT) {
   const ground = yard();
-  const spec = specFor(id, STOCK_LOADOUT);
+  const spec = specFor(id, loadout);
   const from = rampPoint(ramp, u, w);
   const car = makeCar(ground, from.x, from.z, ramp.heading + turn, spec);
   let aloft = 0, air = 0, top = 0;
@@ -126,24 +126,33 @@ describe("what stands round the ramp", () => {
     expect(boards.every((o) => o.top === 1)).toBe(true);
   });
 
-  it("stops a truck driving into the back or a side, without flinging it", () => {
-    const back = drive("duneclaw", RAMP.length + 60, 0, Math.PI, 8);
-    expect(back.u).toBeGreaterThan(RAMP.length + 1);
-    expect(back.top).toBeLessThan(0.6);
-    expect(back.air).toBeLessThan(0.1);
-    const side = drive("duneclaw", RAMP.length - 4, 60, -Math.PI / 2, 8);
-    expect(side.w).toBeGreaterThan(FENCE.out);
-    expect(side.top).toBeLessThan(0.6);
-    expect(side.air).toBeLessThan(0.1);
+  // Big tyres roll over rocks as tall as the fence and the boards, but never over those.
+  it("stops a truck driving into the back or a side, without flinging it, on any tyres", () => {
+    for (const v of JUMPERS) {
+      for (const t of PARTS.tyres) {
+        const fitted = { ...STOCK_LOADOUT, tyres: t.id };
+        const what = `${v.id} on ${t.id}`;
+        const back = drive(v.id, RAMP.length + 60, 0, Math.PI, 8, true, fitted);
+        expect(back.u, what).toBeGreaterThan(RAMP.length + 1);
+        expect(back.top, what).toBeLessThan(0.6);
+        expect(back.air, what).toBeLessThan(0.1);
+        const side = drive(v.id, RAMP.length - 4, 60, -Math.PI / 2, 8, true, fitted);
+        expect(side.w, what).toBeGreaterThan(FENCE.out);
+        expect(side.top, what).toBeLessThan(0.6);
+        expect(side.air, what).toBeLessThan(0.1);
+      }
+    }
   });
 
-  it("lets a truck roll slowly off the lip without catching on the boards under it", () => {
+  it("lets a truck roll slowly off the lip without catching on the boards under it, on any tyres", () => {
     const ground = yard();
-    const spec = specFor("bluff", STOCK_LOADOUT);
-    const at = rampPoint(ramp, RAMP.length - 5, 0);
-    const car = makeCar(ground, at.x, at.z, ramp.heading, spec);
-    for (let t = 0; t < 10; t += 1 / 60) step(car, { ...noInput(), gas: car.speed < 4 }, 1 / 60, ground, spec);
-    expect(rampLocal(ramp, car.x, car.z).u).toBeGreaterThan(RAMP.length + RAMP.back + 5);
-    expect(car.grounded).toBe(true);
+    for (const t of PARTS.tyres) {
+      const spec = specFor("bluff", { ...STOCK_LOADOUT, tyres: t.id });
+      const at = rampPoint(ramp, RAMP.length - 5, 0);
+      const car = makeCar(ground, at.x, at.z, ramp.heading, spec);
+      for (let s = 0; s < 10; s += 1 / 60) step(car, { ...noInput(), gas: car.speed < 4 }, 1 / 60, ground, spec);
+      expect(rampLocal(ramp, car.x, car.z).u, t.id).toBeGreaterThan(RAMP.length + RAMP.back + 5);
+      expect(car.grounded, t.id).toBe(true);
+    }
   });
 });

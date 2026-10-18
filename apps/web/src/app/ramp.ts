@@ -88,16 +88,17 @@ export function fencePosts() {
 
 /**
  * What a truck can't drive through: the fence posts down each side, and the boards under
- * the lip. The boards have a `top`, a metre up, so only a truck on the ground behind the
- * ramp is stopped by them: one on the deck, or leaving it, is above them and passes over.
+ * the lip. Solid, however big its tyres: they aren't rocks, to be rolled over. The boards
+ * have a `top`, a metre up, so only a truck on the ground behind the ramp is stopped by
+ * them: one on the deck, or leaving it, is above them and passes over.
  * `ground` is the ground without the ramp.
  */
 export function rampObstacles(r: Ramp, ground: (x: number, z: number) => number) {
   const out: { x: number; z: number; r: number; h: number; top?: number }[] = [];
-  for (const u of fencePosts()) for (const side of [1, -1]) out.push({ ...rampPoint(r, u, side * FENCE.out), r: 0.35, h: FENCE.height });
+  for (const u of fencePosts()) for (const side of [1, -1]) out.push({ ...rampPoint(r, u, side * FENCE.out), r: 0.35, h: Infinity });
   for (let w = -RAMP.width / 2; w <= RAMP.width / 2 + 0.01; w += 1.4) {
     const p = rampPoint(r, RAMP.length + RAMP.back / 2, w);
-    out.push({ ...p, r: 0.7, h: 1, top: ground(p.x, p.z) + 1 });
+    out.push({ ...p, r: 0.7, h: Infinity, top: ground(p.x, p.z) + 1 });
   }
   return out;
 }

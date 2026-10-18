@@ -1,14 +1,19 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, it, expect } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { describe, it, expect, vi } from "vitest";
 import { ACHIEVEMENTS, achievementsOf } from "./achievements";
 import { currentGoal, GOALS } from "./goals";
 import { COUNTDOWN, crossed, startRun, tick } from "./mission-run";
 import type { Mission } from "./missions";
-import { AWAY_HIDDEN, AWAY_IDLE, HEARTBEAT, MAX_PLAYERS, PoseGate, PresenceBudget, chatTopic, guessPose, isAway, poseInterval, settle, staleAfter, type Peer, type Pose } from "./net";
+import {
+  AWAY_HIDDEN, AWAY_IDLE, HEARTBEAT, MAX_PLAYERS, PoseGate, PresenceBudget, SupabaseNet, chatTopic, guessPose, isAway, poseInterval, readPeer, settle, staleAfter,
+  type ChatLine, type NetHandlers, type Peer, type Pose,
+} from "./net";
 import { makeCar, noInput, step, yawRateOf, STOCK, type Car } from "./physics";
 import { STOCK_LOADOUT } from "./shop";
-import { LocalStore, NAME_PATTERN } from "./store";
+import { CLAIM_WAITS, LocalStore, NAME_PATTERN, SupabaseStore } from "./store";
+import { VEHICLES } from "./vehicles";
 
 const peer = (id: string, tent: number, joined: number): Peer => ({ id, name: id, vehicle: "bluff", loadout: STOCK_LOADOUT, tent, joined });
 
@@ -163,6 +168,99 @@ describe("presence updates", () => {
   });
 });
 
+/**
+ * Just enough of Supabase for SupabaseNet: channels that join at once, and whose presence
+ * and broadcasts the test says.
+ */
+function fakeRealtime() {
+  type Handler = { type: string; event: string; cb: (msg: { payload?: unknown }) => void };
+  const channels = new Map<string, { handlers: Handler[]; presence: Record<string, unknown[]> }>();
+  const sb = {
+    realtime: { setAuth: async () => {} },
+    channel(topic: string) {
+      const c = { handlers: [] as Handler[], presence: {} as Record<string, unknown[]> };
+      channels.set(topic, c);
+      const ch = {
+        state: "joined",
+        on(type: string, filter: { event: string }, cb: Handler["cb"]) {
+          c.handlers.push({ type, event: filter.event, cb });
+          return ch;
+        },
+        subscribe(cb?: (status: string) => void) {
+          cb?.("SUBSCRIBED");
+          return ch;
+        },
+        presenceState: () => c.presence,
+        track: async () => "ok",
+        send: async () => "ok",
+        httpSend: async () => ({ success: true }),
+      };
+      return ch;
+    },
+    removeChannel: async () => "ok",
+  };
+  const fire = (topic: string, type: string, event: string, msg: { payload?: unknown }) => {
+    for (const h of channels.get(topic)?.handlers ?? []) if (h.type === type && h.event === event) h.cb(msg);
+  };
+  return {
+    sb: sb as unknown as SupabaseClient,
+    /** Who is here on `topic`, as the server says it when anyone comes or goes. */
+    present(topic: string, state: Record<string, unknown[]>) {
+      channels.get(topic)!.presence = state;
+      fire(topic, "presence", "sync", {});
+    },
+    broadcast: (topic: string, event: string, payload: unknown) => fire(topic, "broadcast", event, { payload }),
+  };
+}
+
+const ignore = (): NetHandlers => ({
+  peers() {}, pose() {}, wanted() {}, asked() {}, friended() {}, chat() {}, convoy() {}, winched() {}, towed() {},
+});
+
+describe("other players", () => {
+  it("are read from presence with a rig and every part, whatever was left out", () => {
+    expect(readPeer({ id: "a", name: "A", tent: 1, joined: 2 })).toEqual({ id: "a", name: "A", vehicle: VEHICLES[0].id, loadout: STOCK_LOADOUT, tent: 1, joined: 2 });
+    // A part left out, or that isn't a name, is the stock one: a tab from before the winch names no winch.
+    expect(readPeer({ ...peer("a", 1, 2), loadout: { paint: "midnight", tyres: 7 } })?.loadout).toEqual({ ...STOCK_LOADOUT, paint: "midnight" });
+    expect(readPeer({ ...peer("a", 1, 2), vehicle: "hovercraft", loadout: null })).toMatchObject({ vehicle: VEHICLES[0].id, loadout: STOCK_LOADOUT });
+    expect(readPeer({ ...peer("a", 1, 2), vehicle: "summit" })?.vehicle).toBe("summit");
+    expect(readPeer({ name: "A", tent: 1, joined: 2 })).toBeNull();
+    expect(readPeer(null)).toBeNull();
+  });
+
+  it("are all drawn when one of them says nothing of their rig", async () => {
+    vi.useFakeTimers();
+    try {
+      const rt = fakeRealtime();
+      const seen: Peer[][] = [];
+      const net = new SupabaseNet(rt.sb, "me", { ...ignore(), peers: (list) => void seen.push(list) });
+      const joining = net.join({ id: "me", name: "Me", vehicle: "bluff", loadout: STOCK_LOADOUT });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await joining).toHaveProperty("tent");
+      rt.present("world", { ana: [peer("ana", 1, 1)], bare: [{ id: "bare", name: "Bare", tent: 2, joined: 2 }], cy: [peer("cy", 3, 3)] });
+      expect(seen.at(-1)).toEqual([peer("ana", 1, 1), { ...peer("bare", 2, 2), name: "Bare", vehicle: VEHICLES[0].id }, peer("cy", 3, 3)]);
+      net.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("are heard in chat as the friend whose channel it came on, whoever the line says it's from", () => {
+    const rt = fakeRealtime();
+    const heard: ChatLine[] = [];
+    const net = new SupabaseNet(rt.sb, "bea", { ...ignore(), chat: (line) => void heard.push(line) });
+    net.listen(["al", "cy"]);
+    // Only Al and Bea can send on their channel, so this is Al, saying it's Cy.
+    rt.broadcast(chatTopic("al", "bea"), "say", { from: "cy", text: "meet me at the café" });
+    expect(heard).toEqual([{ from: "al", text: "meet me at the café" }]);
+    rt.broadcast(chatTopic("bea", "cy"), "say", { from: "cy", text: "hello" });
+    expect(heard.at(-1)).toEqual({ from: "cy", text: "hello" });
+    // A line in Bea's own name is from her other tab, not from Al.
+    rt.broadcast(chatTopic("al", "bea"), "say", { from: "bea", text: "hi" });
+    expect(heard).toHaveLength(2);
+  });
+});
+
 const course: Mission = {
   id: "test", name: "Test", blurb: "", start: { x: 0, z: -10, heading: 0 },
   gates: [{ x: 0, z: 0, heading: 0, width: 8 }, { x: 0, z: 20, heading: 0, width: 8 }],
@@ -269,5 +367,60 @@ describe("single player progress", () => {
     const s = new LocalStore("me");
     s.markGoal("garage");
     expect(achievementsOf((await s.leaderboard())[0].goals).map((a) => a.name)).toEqual(["First garage"]);
+  });
+});
+
+describe("a finished course's claim, signed in", () => {
+  const row = { id: "me", name: "Me", lifetime: 10, balance: 10, owned: [], vehicle: "bluff", loadout: STOCK_LOADOUT, goals: [], discovered: [], world: "valley" };
+  /** A request that had no answer: what supabase-js says when the fetch itself fails. */
+  const lost = { error: { message: "TypeError: Failed to fetch" }, status: 0 };
+  /** A database whose claims are answered with each of `answers` in turn, and paid 12 once one isn't. */
+  const database = (answers: { error?: { message: string }; status: number }[]) => {
+    const claims: unknown[] = [];
+    const rpc = async (fn: string, args: unknown) => {
+      if (fn === "me") return { data: row, error: null, status: 200 };
+      if (fn === "explored") return { data: null, error: null, status: 200 };
+      claims.push(args);
+      const a = answers.shift() ?? { status: 200 };
+      return a.error ? { data: null, error: a.error, status: a.status } : { data: { ...row, lifetime: 22, balance: 22 }, error: null, status: 200 };
+    };
+    return { sb: { rpc } as unknown as SupabaseClient, claims };
+  };
+  const waited = CLAIM_WAITS.reduce((a, b) => a + b);
+
+  it("is sent again when it had no answer", async () => {
+    vi.useFakeTimers();
+    try {
+      const db = database([lost, lost]);
+      const store = await SupabaseStore.open(db.sb);
+      const claim = store.completeMission(course, 60);
+      await vi.advanceTimersByTimeAsync(waited);
+      expect(await claim).toEqual({ paid: 12 });
+      expect(db.claims).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("but not when the database refused it", async () => {
+    const db = database([{ error: { message: "come back later" }, status: 400 }]);
+    const store = await SupabaseStore.open(db.sb);
+    expect(await store.completeMission(course, 60)).toEqual({ error: "come back later" });
+    expect(db.claims).toHaveLength(1);
+  });
+
+  it("and gives up after a while, saying why", async () => {
+    vi.useFakeTimers();
+    try {
+      const db = database([lost, ...CLAIM_WAITS.map(() => lost)]);
+      const store = await SupabaseStore.open(db.sb);
+      const claim = store.completeMission(course, 60);
+      await vi.advanceTimersByTimeAsync(waited);
+      expect(await claim).toEqual({ error: expect.stringMatching(/couldn't reach/i) });
+      expect(db.claims).toHaveLength(CLAIM_WAITS.length + 1);
+      expect(waited).toBeLessThanOrEqual(15000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

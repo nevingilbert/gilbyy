@@ -67,7 +67,8 @@ function clear(ground: Ground, line: TowLine) {
     const d = Math.max(0, back);
     const [x, z] = [line.x - dx * d, line.z - dz * d];
     const y = ground.height(x, z);
-    if (Math.hypot(x, z) > ground.limit - 2 || ground.waterAt(x, z) - y > 0.3) return false;
+    const out = ground.square ? Math.max(Math.abs(x), Math.abs(z)) : Math.hypot(x, z);
+    if (out > ground.limit - 2 || ground.waterAt(x, z) - y > 0.3) return false;
     if (Math.abs(y - before) > 0.9) return false;
     before = y;
     for (const o of ground.obstaclesNear(x, z)) {

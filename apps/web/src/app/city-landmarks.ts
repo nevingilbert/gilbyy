@@ -35,8 +35,9 @@ function bands(k: Kit, m: THREE.Material, w: number, d: number, y0: number, y1: 
 const coitTower: Build = (k) => {
   const stone = lambert(C.stone);
   const H = up(64);
-  plinth(k, stone, 12, 12);
-  k.box(lambert(tone(C.stone, 0.9)), 12, 4, 12, 0, 2, 0);
+  // On a base as wide as the turning circle at the top of Telegraph Hill leaves room for (city.ts).
+  plinth(k, stone, 10, 10);
+  k.box(lambert(tone(C.stone, 0.9)), 10, 4, 10, 0, 2, 0);
   // The fluted column, and the crown of arched windows round its top.
   shaft(k, stone, 3.2, 3.0, 4, H - 4, 16);
   for (let i = 0; i < 16; i++) {
@@ -242,12 +243,14 @@ const sutroTower: Build = (k, _root, _windows, lamps) => {
 };
 
 const paintedLadies: Build = (k, _root, windows) => {
-  // Seven Queen Anne Victorians in a row along Steiner Street, their fronts to the park,
-  // each its own colour, steep gables against the downtown skyline behind.
+  // Queen Anne Victorians in a row along Steiner Street, their fronts to the park, each its
+  // own colour, steep gables against the downtown skyline behind. There are seven; the
+  // block, smaller than life as all the city's are, has room for four, full size (city.ts).
   const colours = C.ladies;
   const W = 6.3;
-  for (let i = 0; i < 7; i++) {
-    const z = (i - 3) * W;
+  const N = 4;
+  for (let i = 0; i < N; i++) {
+    const z = (i - (N - 1) / 2) * W;
     const body = lambert(colours[i]), trim = lambert(PALETTE.city.trim[i % 2]), accent = lambert(tone(colours[i], 0.7));
     const h = k.at(0, 0, z);
     h.box(body, 10, 9.5, W - 0.2, 0, 4.75, 0);
@@ -291,7 +294,8 @@ const alcatraz: Build = (k, _root, windows, lamps) => {
 
 const ghirardelli: Build = (k, _root, windows, lamps) => {
   const brick = lambert(C.brick[0]), dark = lambert(tone(C.brick[0], 0.8));
-  k.box(brick, 26, 14, 26, 0, 4, 0);
+  // Down into the slope it stands on, so its low side never shows daylight beneath it.
+  k.box(brick, 26, 18, 26, 0, 2, 0);
   bands(k, dark, 26, 26, -3, 11, 3.4, 0.08);
   // The clock tower at the corner, and the big sign on its frame across the top, lit after dark.
   const t = k.at(9, 0, 9);
@@ -331,23 +335,25 @@ const pier39: Build = (k, _root, windows, lamps) => {
 
 const oraclePark: Build = (k, _root, _windows, lamps) => {
   const brick = lambert(C.brick[1]), seats = lambert(PALETTE.city.glass), grass = lambert(PALETTE.city.lawn[1]), steel = lambert(tone(PALETTE.roofTin, 0.7));
-  // A horseshoe of stands round the field, open to the bay in right field.
+  // A horseshoe of stands round the field, open to the bay in right field. Its walls go down
+  // below the ground, where they stand on the shore or in the water of the cove.
   const R = 40;
   k.cyl(grass, R - 10, 0.3, 0, 0.15, 0, 0, 0, 24);
   for (let i = 0; i < 26; i++) {
     const a = -Math.PI * 0.75 + (i / 25) * Math.PI * 1.5;
     const x = Math.sin(a) * R;
     const z = Math.cos(a) * R;
-    k.box(brick, 9.6, 14, 6, x, 7, z, 0, a);
+    k.box(brick, 9.6, 20, 6, x, 4, z, 0, a);
     k.box(seats, 9.4, 1.0, 7.5, Math.sin(a) * (R - 6), 9, Math.cos(a) * (R - 6), -0.5, a);
     if (i % 5 === 0) {
-      k.box(steel, 0.8, 30, 0.8, x * 1.08, 15, z * 1.08);
+      k.box(steel, 0.8, 36, 0.8, x * 1.08, 12, z * 1.08);
       k.box(lamps, 5, 2.2, 0.6, x * 1.08, 30, z * 1.08, 0, a);
     }
   }
-  // The clock tower on the corner, and out past left field the giant bottle and glove.
-  const t = k.at(Math.sin(-Math.PI * 0.75) * (R + 4), 0, Math.cos(-Math.PI * 0.75) * (R + 4));
-  t.box(brick, 6, 26, 6, 0, 13, 0);
+  // The clock tower at the end of the stands, within the round the city walls it in by
+  // (city.ts), and out past left field the giant bottle and glove.
+  const t = k.at(Math.sin(-Math.PI * 0.75) * (R + 1), 0, Math.cos(-Math.PI * 0.75) * (R + 1));
+  t.box(brick, 6, 32, 6, 0, 10, 0);
   t.add(lambert(PALETTE.roofSlate), new THREE.ConeGeometry(4.6, 5, 4, 1, false, Math.PI / 4), 0, 28.5, 0);
   const lf = k.at(Math.sin(Math.PI * 0.85) * (R - 4), 14, Math.cos(Math.PI * 0.85) * (R - 4));
   lf.cyl(lambert(C.lacquer), 2.2, 12, 0, 6, 0, 0, 0, 12);
@@ -383,7 +389,8 @@ const castroTheatre: Build = (k, _root, _windows, lamps) => {
 
 const missionDolores: Build = (k) => {
   const adobe = lambert(C.adobe), tiles = lambert(C.terracotta);
-  k.box(adobe, 9, 9, 21, 0, 4.5, 0);
+  // Its walls a little below the ground, which falls away along it.
+  k.box(adobe, 9, 11, 21, 0, 3.5, 0);
   k.add(tiles, prism([[5, 0], [0, 3], [-5, 0]], 22), 0, 9, 0);
   // The front: six columns half sunk in the wall, a little bell gable over them.
   for (let x = -3.6; x <= 3.6; x += 1.44) k.cyl(adobe, 0.35, 8, x, 4, 10.6, 0, 0, 8);
@@ -429,7 +436,8 @@ const conservatory: Build = (k, _root, windows) => {
 
 const cliffHouse: Build = (k, _root, windows) => {
   const wall = lambert(C.stucco[3]);
-  k.box(wall, 16, 9, 12, 0, 1.5, 0);
+  // Out on the edge of the cliff, its walls going down the rock to the foot of it.
+  k.box(wall, 16, 19, 12, 0, -3.5, 0);
   for (let x = -6; x <= 6; x += 3) pane(k.at(x, 4.5, 6.05), windows, 2.2, 2, C.trim[0]);
   k.box(lambert(PALETTE.roofSlate), 16.6, 0.6, 12.6, 0, 6.2, 0);
   return { colliders: [] };

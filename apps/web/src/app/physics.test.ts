@@ -138,6 +138,63 @@ describe("tyres", () => {
   });
 });
 
+describe("ground too steep to climb", () => {
+  /** A wall rising at `deg` degrees toward +z from z = 10, sixty metres high. */
+  const wall = (deg: number) => ground((_, z) => Math.min(60, Math.max(0, z - 10) * Math.tan((deg * Math.PI) / 180)));
+  /** The grippiest, punchiest truck there could be: more than enough, on the old physics, to go straight up a cliff. */
+  const CRAWLER: CarSpec = { ...STOCK, accel: 7.6, grip: 1.5 };
+  /** Gas held for `seconds` from `z` (heading `heading`, at `speed`): how high it got, and how high it ended. */
+  const climb = (g: Ground, spec: CarSpec, { heading = 0, z = 0, speed = 0, seconds = 30 } = {}) => {
+    const c = makeCar(g, 0, z, heading, spec);
+    c.speed = speed;
+    let top = 0;
+    for (let t = 0; t < seconds; t += DT) {
+      step(c, { ...noInput(), gas: true }, DT, g, spec);
+      top = Math.max(top, g.height(c.x, c.z));
+    }
+    return { top, end: g.height(c.x, c.z) };
+  };
+
+  it("is climbed just short of 40 degrees with grip enough, and not past it whatever the tyres", () => {
+    expect(climb(wall(38), CRAWLER).end).toBeCloseTo(60);
+    for (const deg of [42, 50, 85]) {
+      for (const spec of [STOCK, CRAWLER]) expect(climb(wall(deg), spec).top, `${deg} degrees`).toBeLessThan(3);
+    }
+  });
+
+  it("is slid back down, however long the driver keeps the gas on", () => {
+    for (const deg of [45, 60]) expect(climb(wall(deg), CRAWLER).end, `${deg} degrees`).toBeLessThan(1.5);
+  });
+
+  it("isn't driven up slantwise either", () => {
+    // Most of the way along a slope, a truck climbs it at a fraction of its pitch: but the ground is no less steep.
+    for (const [deg, off] of [[50, 70], [60, 75], [85, 87]]) {
+      expect(climb(wall(deg), CRAWLER, { heading: (off * Math.PI) / 180 }).top, `${off} degrees off straight up ${deg}`).toBeLessThan(3);
+    }
+  });
+
+  it("doesn't carry a truck far up it from a run at it flat out", () => {
+    for (const deg of [50, 85]) {
+      const run = climb(wall(deg), CRAWLER, { z: -200, speed: CRAWLER.maxSpeed });
+      expect(run.top, `${deg} degrees`).toBeLessThan(8);
+      expect(run.end, `${deg} degrees`).toBeLessThan(1.5);
+    }
+  });
+
+  it("is free to drive down", () => {
+    const c = makeCar(wall(60), 0, 40, Math.PI, CRAWLER);
+    run(c, wall(60), { gas: true }, 6, CRAWLER);
+    expect(c.z).toBeLessThan(5);
+  });
+
+  it("counts only a road's own grade, however steeply the ground falls away across it", () => {
+    // Up at 25 degrees, along a hillside of 50 degrees: a road cut across it can be driven, the hillside can't.
+    const hillside = ground((x, z) => z * Math.tan((25 * Math.PI) / 180) + x * Math.tan((50 * Math.PI) / 180));
+    expect(climb(hillside, CRAWLER, { seconds: 8 }).end).toBeLessThan(3);
+    expect(climb({ ...hillside, pavedAt: () => true }, CRAWLER, { seconds: 8 }).end).toBeGreaterThan(20);
+  });
+});
+
 describe("snow and ice", () => {
   const snow = ground(() => 0, [], -100, 1);
   const ice = ground(() => 0, [], -100, 2);

@@ -203,7 +203,8 @@ const RESORTS: Omit<Resort, "y" | "tone">[] = [
   { kind: "lion", x: -125, z: 520, hw: 95, hd: 75 },
   { kind: "slab", x: -150, z: 330, hw: 70, hd: 66 },
   { kind: "eiffel", x: -100, z: 110, hw: 55, hd: 60 },
-  { kind: "wheel", x: 80, z: -110, hw: 10, hd: 46 },
+  // Far enough back from Flamingo Road that its feet stand clear of the pavement.
+  { kind: "wheel", x: 80, z: -130, hw: 10, hd: 46 },
   { kind: "venice", x: -130, z: -292, hw: 85, hd: 82 },
   { kind: "sphere", x: 40, z: -485, hw: 38, hd: 38 },
   { kind: "bronze", x: -125, z: -620, hw: 90, hd: 85 },
@@ -780,11 +781,12 @@ function planVegasCourses(kit: CourseKit): Mission[] {
     }
     legs.push(...(i ? leg.slice(1) : leg));
   }
-  // The arch is at the first turn: the way in to it, behind, is the last leg's way.
+  // The arch is at the first turn: the way in to it, behind, is the last leg's way. The
+  // legs come back round to where they began, so the last flag, the finish, is at the arch.
   if (legs.length > 4) {
     course(
       "red-rock-race", "Red Rock Race", "Two to ten friends, once round among the red mesas. Quickest wins; every finisher is paid the same.",
-      legs[0], [...legs.slice(1), legs[0]], 16, { reward: 35, repeatReward: 12 }, 2, true,
+      legs[0], legs.slice(1), 16, { reward: 35, repeatReward: 12 }, 2, true,
     );
   }
   return out;
