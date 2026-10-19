@@ -367,3 +367,108 @@ export function Leaderboard({
     </div>
   );
 }
+
+/** How many seconds of frames the frame-rate readout looks back over. */
+const FRAME_SPAN = 5;
+/** Room for those seconds at 240 frames a second, the quickest screens', and more. */
+const FRAME_ROOM = 2048;
+
+/** What the frame-rate readout tells: the last few seconds of frames, and what the last one took to draw. */
+export type FrameStats = {
+  /** Frames a second on average, and how many frames that was. */
+  fps: number;
+  frames: number;
+  /** How long frames took, ms: 95 in a hundred took no longer than `p95`, 99 in a hundred no longer than `p99`, and the slowest took `max`. */
+  p95: number;
+  p99: number;
+  max: number;
+  /** The pixel ratio the picture is drawn at, the screen's own, and the picture's size in pixels. */
+  ratio: number;
+  screen: number;
+  width: number;
+  height: number;
+  /** The last frame's draw calls and triangles, the sun's shadows among them. */
+  calls: number;
+  triangles: number;
+};
+
+/**
+ * The time between frames, as the browser handed them to the game loop (the timestamps
+ * requestAnimationFrame gives it), over the last few seconds: the frames that were really
+ * shown, not a timer's. A frame costs it a subtraction and two stores; the sum and the sort
+ * wait until something reads it.
+ */
+export class FrameMeter {
+  private gaps = new Float64Array(FRAME_ROOM);
+  private ends = new Float64Array(FRAME_ROOM);
+  private sorted = new Float64Array(FRAME_ROOM);
+  private next = 0;
+  private held = 0;
+  private last = -1;
+
+  /** A frame, at the time the browser gave it, ms. */
+  tick(at: number) {
+    if (this.last >= 0 && at > this.last) {
+      this.gaps[this.next] = at - this.last;
+      this.ends[this.next] = at;
+      this.next = (this.next + 1) % FRAME_ROOM;
+      this.held = Math.min(this.held + 1, FRAME_ROOM);
+    }
+    this.last = at;
+  }
+
+  /** The frames stopped, and not because they were slow (the tab was hidden): the next one starts afresh. */
+  pause() {
+    this.last = -1;
+  }
+
+  /** The frames of the few seconds before `at`, ms; null until there are any. */
+  read(at: number) {
+    let n = 0;
+    let sum = 0;
+    let max = 0;
+    for (let i = 1; i <= this.held; i++) {
+      const k = (this.next - i + FRAME_ROOM) % FRAME_ROOM;
+      if (this.ends[k] <= at - FRAME_SPAN * 1000) break;
+      const gap = this.gaps[k];
+      this.sorted[n++] = gap;
+      sum += gap;
+      max = Math.max(max, gap);
+    }
+    if (!n) return null;
+    const sorted = this.sorted.subarray(0, n).sort();
+    // The gap that this share of all the frames took no longer than (a hair off, so 95% of 300 is the 285th).
+    const within = (share: number) => sorted[Math.max(1, Math.ceil(n * share - 1e-9)) - 1];
+    return { fps: (n * 1000) / sum, frames: n, p95: within(0.95), p99: within(0.99), max };
+  }
+}
+
+const fmtRatio = (r: number) => `${Number(r.toFixed(2))}×`;
+const fmtCount = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : String(n));
+
+/** The frame-rate readout's lines, here and in the dev panel. */
+export const frameLines = (s: FrameStats) => [
+  `${s.fps.toFixed(0)} fps over ${FRAME_SPAN} s`,
+  `frames: 95% ≤ ${s.p95.toFixed(1)} · 99% ≤ ${s.p99.toFixed(1)} · max ${s.max.toFixed(1)} ms`,
+  `drawn at ${fmtRatio(s.ratio)} · screen ${fmtRatio(s.screen)} · ${s.width}×${s.height} px`,
+  `${fmtCount(s.calls)} draw calls · ${fmtCount(s.triangles)} triangles`,
+];
+
+/**
+ * The frame-rate readout, for `?fps` on the address (Game.tsx), so frame rate can be read on
+ * a real phone: small and quiet, in the left margin. `read` is the game loop's; it's asked
+ * twice a second, and only the readout is drawn again, not the rest of the HUD.
+ */
+export function FrameRate({ read }: { read: () => FrameStats | null }) {
+  const [stats, setStats] = useState<FrameStats | null>(null);
+  useEffect(() => {
+    const t = window.setInterval(() => setStats(read()), 500);
+    return () => window.clearInterval(t);
+  }, [read]);
+  if (!stats) return null;
+  return (
+    <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 whitespace-pre font-mono text-[10px] leading-snug tabular-nums text-[rgba(255,246,232,0.72)] drop-shadow">
+      {frameLines(stats).join("\n")}
+    </div>
+  );
+}

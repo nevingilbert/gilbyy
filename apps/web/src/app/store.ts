@@ -4,6 +4,7 @@ import { EXPLORE_MAX, FOG_CELLS, decodeCells } from "./fog";
 import type { Mission } from "./missions";
 import { countFound, type FoundCount } from "./places";
 import { PARTS, STOCK_LOADOUT, freshProgress, itemKey, owns, priceOf, soldOnlyIn, type Loadout, type Progress } from "./shop";
+import { KEEPALIVE } from "./supabase";
 import type { WorldId } from "./terrain";
 import { TOW_FEE } from "./tow";
 import { VEHICLES, type VehicleId } from "./vehicles";
@@ -46,7 +47,11 @@ export interface Store {
   subscribe(cb: () => void): () => void;
   /** Miles just driven. Banked now (single player) or in batches (online). */
   addMiles(miles: number): void;
-  flush(): Promise<void>;
+  /**
+   * Sends what's waiting to be banked. `going` is for the bank made as the page hides or
+   * closes: its requests are made to get there even if the page is gone first.
+   */
+  flush(going?: boolean): Promise<void>;
   buy(key: string): Promise<string | null>;
   equip(vehicle: VehicleId, loadout: Loadout): Promise<string | null>;
   /** A finished run. A convoy (`m.crew` > 1) names who else set off, and one of them must be a friend. */
@@ -259,21 +264,27 @@ export class SupabaseStore implements Store {
     this.listeners.forEach((cb) => cb());
   }
 
+  /** A database function's request. One made as the page goes is marked to be kept alive past it (supabase.ts). */
+  private ask(fn: string, args: Record<string, unknown>, going = false) {
+    const request = this.sb.rpc(fn, args);
+    return going ? request.setHeader(KEEPALIVE, "1") : request;
+  }
+
   /**
    * Calls a database function that answers with the profile, and keeps it. `error` is why
    * not, if it didn't; `lost` says the request had no answer at all, which is the network,
    * not the database.
    */
-  private async send(fn: string, args: Record<string, unknown>) {
-    const { data, error, status } = await this.sb.rpc(fn, args);
+  private async send(fn: string, args: Record<string, unknown>, going = false) {
+    const { data, error, status } = await this.ask(fn, args, going);
     if (error) return { error: error.message, lost: status === 0 };
     this.p = toProfile(data as Row);
     this.notify();
     return { error: null, lost: false };
   }
 
-  private async call(fn: string, args: Record<string, unknown>) {
-    return (await this.send(fn, args)).error;
+  private async call(fn: string, args: Record<string, unknown>, going = false) {
+    return (await this.send(fn, args, going)).error;
   }
 
   addMiles(miles: number) {
@@ -282,20 +293,26 @@ export class SupabaseStore implements Store {
     this.notify();
   }
 
-  async flush() {
-    await Promise.all([this.flushMiles(), this.flushFog()]);
+  async flush(going = false) {
+    await Promise.all([this.flushMiles(going), this.flushFog(going)]);
   }
 
-  private async flushMiles() {
+  /**
+   * The miles waiting, banked. They're taken off as they're sent, so a second bank made
+   * while the first is on its way (the page hides, then closes) has nothing to send: it
+   * isn't refused for coming within two seconds of the first, and the first, sent as the
+   * page went, gets there on its own.
+   */
+  private async flushMiles(going = false) {
     if (this.pending <= 0) return;
     const sending = this.pending;
     this.pending = 0;
-    const error = await this.call("add_miles", { p_miles: sending });
+    const error = await this.call("add_miles", { p_miles: sending }, going);
     // The server banks what it believes; a failed call puts the miles back to try again.
     if (error) this.pending += sending;
   }
 
-  private async flushFog() {
+  private async flushFog(going = false) {
     if (!this.unsent.length) return;
     // One world's cells at a time: each is saved against the world it was explored in.
     const world = this.unsent[0].world;
@@ -304,7 +321,7 @@ export class SupabaseStore implements Store {
     const p_cells = sending.map((u) => u.cell);
     // The valley is the default, and named only by leaving it out, so this still saves
     // against a database that hasn't heard of the island yet.
-    const { error } = await this.sb.rpc("explore", world === "valley" ? { p_cells } : { p_cells, p_world: world });
+    const { error } = await this.ask("explore", world === "valley" ? { p_cells } : { p_cells, p_world: world }, going);
     if (error) this.unsent.unshift(...sending);
   }
 
