@@ -7,17 +7,16 @@ they were using (ADR 0018), without touching anyone's miles.
 
 ## Decisions made
 
-- **Rishi (rchillerz) and Eshan (sixseveshan) were cheating by direct RPC**, watched
-  live through `private.drive_log`: an `add_miles(10000)` loop (Eshan peaked at ~42
-  calls/second, 4.18M miles asked, 8.46 paid), course claims with round made-up times
-  (`p_seconds` of exactly `300.00`), and Eshan claimed a convoy naming a friend
-  (gilbyy, Rev or spr — Rishi isn't his friend) who never ran one. The 0017-era clamps
-  held, so the economy was never compromised; the real damage was free-tier request
-  load and `drive_log` row growth. Full case notes in auto-memory
-  (`cheaters-rchillerz-sixseveshan.md`).
+- **Two players were cheating by direct RPC**, watched live through
+  `private.drive_log`: an `add_miles(10000)` loop (one peaked at ~42 calls/second,
+  4.18M miles asked, 8.46 paid), course claims with round made-up times (`p_seconds` of
+  exactly `300.00`), and one claimed a convoy naming a friend who never ran one. The
+  0017-era clamps held, so the economy was never compromised; the real damage was
+  free-tier request load and `drive_log` row growth. (Who they were is kept out of the
+  repo, which is public.)
 - **Their miles stay.** The owner's call, same reasoning as ADR 0017: the fake gains
-  were small (~50 miles of standard course rewards for Eshan, ~27 for Rishi) and a
-  clawback would make the ledger lie about what was paid.
+  were small (~50 and ~27 miles of standard course rewards) and a clawback would make
+  the ledger lie about what was paid.
 - **A crew claim is only as good as its crew** (ADR 0018). `complete_convoy` passes the
   named crew to `private.pay_run`, which pays only if at least `crew − 1` of them
   banked the course's `min_miles` over the same look-back as the claimer. One who set
@@ -34,9 +33,9 @@ they were using (ADR 0018), without touching anyone's miles.
 - **`pay_run` grew a fourth argument** (`p_crew uuid[] default null`), so the
   three-argument version was dropped, not replaced.
 - **`game.test.sql` now matches test players by the full id tail** (`like
-  '%00000000000a'`, not `like '%a'`): real profiles' ids now end in `a`, `b` and `c`
-  (poo, zeetushar/Shmid, sixseveshan/Devin/Teresa), so the old single-character
-  patterns would have swept up real rows — the hazard the tests' README warned about.
+  '%00000000000a'`, not `like '%a'`): real profiles' ids now end in `a`, `b` and `c`,
+  so the old single-character patterns would have swept up real rows — the hazard the
+  tests' README warned about.
 - **The migration is applied to the live project** (`apqlumghzqkklmpwizex`) and PR #15
   is open against main with all checks green — same pattern as the island: live first,
   merged the same day. Both scripters fell back to the honest rate the moment it landed.
