@@ -71,8 +71,13 @@ export type Ground = {
   limit: number;
   /** The world's edge is a square `limit` either side of the middle, not a circle. The city's is (ADR 0022). */
   square?: boolean;
-  /** Whether a spot is tarmac or paving, which a racing car needs under it to go fast (ADR 0023). None where it's left out. */
-  pavedAt?(x: number, z: number): boolean;
+  /**
+   * Whether a spot is tarmac or paving, which a racing car needs under it to go fast (ADR
+   * 0023). None where it's left out. Where a bridge crosses over, given `above` as `height`
+   * takes it, it's whichever surface is under the asker: a truck under a deck is on what's
+   * under the deck. Without, a deck counts.
+   */
+  pavedAt?(x: number, z: number, above?: number): boolean;
 };
 
 export type World = Ground & Terrain & {

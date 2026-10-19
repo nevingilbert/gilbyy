@@ -4,12 +4,12 @@ import { LANDMARK_FOOTPRINT, buildCity, footprintPoints, inCrooked, kerbAt, type
 import { deckPoint } from "./city-bridges";
 import { fogAt } from "./city-model";
 import { SIDEWALK, STREET_WIDTH, loadCityData, toGame } from "./city-streets";
-import { makeCar, step } from "./physics";
+import { OFF_ROAD, makeCar, step, underside } from "./physics";
 import { BED, carsOn, linePoint } from "./rail";
 import { STOCK_LOADOUT, specFor } from "./shop";
 import { vehicleById } from "./vehicles";
 import { placeHerds, speciesIn } from "./wildlife";
-import { sampleGrid } from "./world";
+import { sampleGrid, type Ground } from "./world";
 
 let city: CityWorld;
 // The city's ground and streets are fetched on their own (ADR 0022).
@@ -45,6 +45,62 @@ describe("San Francisco", () => {
       expect(sampleGrid(city.siteDist, b.x, b.z)).toBeGreaterThan(12);
       expect(sampleGrid(city.trackDist, b.x, b.z)).toBeGreaterThan(6);
     }
+  });
+
+  it("stands no house on a street anywhere in its footprint, alleys included", () => {
+    const { buildings, kerb } = city.city;
+    const on: string[] = [];
+    for (const b of buildings) {
+      const p = footprintPoints(b.rot, [b.w, b.d]).find((q) => kerbAt(kerb, b.x + q.x, b.z + q.z) < 0);
+      if (p) on.push(`the house at ${b.x.toFixed(0)}, ${b.z.toFixed(0)}, at ${(b.x + p.x).toFixed(0)}, ${(b.z + p.z).toFixed(0)}`);
+    }
+    expect(on).toEqual([]);
+  });
+
+  it("has no street a truck can drive steeper than 40 degrees along it", () => {
+    const most = Math.tan((40 * Math.PI) / 180);
+    const ground = (x: number, z: number) => sampleGrid(city.heights, x, z);
+    const steep: string[] = [];
+    for (const s of city.city.streets) {
+      // A bridge's deck is a road of its own, laid even.
+      if (s.cls === 4) continue;
+      const half = STREET_WIDTH[s.cls] / 2;
+      for (let k = 1; k < s.xs.length; k++) {
+        const [ax, az] = [s.xs[k - 1], s.zs[k - 1]];
+        const len = Math.hypot(s.xs[k] - ax, s.zs[k] - az);
+        if (len < 0.01) continue;
+        const [ux, uz] = [(s.xs[k] - ax) / len, (s.zs[k] - az) / len];
+        // Every metre along it, down the middle and a metre in from each kerb, over two metres of it, as a truck's wheels are.
+        for (let d = 0; d <= len; d += 1) {
+          for (const w of [-(half - 1), 0, half - 1]) {
+            const [x, z] = [ax + ux * d + uz * w, az + uz * d - ux * w];
+            if (Math.max(Math.abs(x), Math.abs(z)) > city.limit) continue;
+            const grade = Math.abs(ground(x + ux, z + uz) - ground(x - ux, z - uz)) / 2;
+            if (grade > most) steep.push(`${s.name || "a lane"} at ${x.toFixed(0)}, ${z.toFixed(0)}, ${((Math.atan(grade) * 180) / Math.PI).toFixed(0)} degrees`);
+          }
+        }
+      }
+    }
+    expect(steep).toEqual([]);
+  });
+
+  it("takes the stairways and the quarry's cliffs off the streets, and builds nothing on them", () => {
+    const { graph, streets, walls } = city.city;
+    // The Oakhurst Lane stairway, and the Greenwich and Filbert Steps up Telegraph Hill, aren't
+    // drawn or driven, or paved; nor built on, as they never were.
+    expect(streets.some((s) => s.name === "Oakhurst Ln")).toBe(false);
+    expect(graph.corner("Greenwich St", "Montgomery St")).toBeNull();
+    expect(graph.corner("Filbert St", "Darrell Pl")).toBeNull();
+    for (const [x, z] of [[1120, -1432], [1118, -1389]]) {
+      expect(city.pavedAt!(x, z), `${x}, ${z}`).toBe(false);
+      expect(walls.distance(x, z), `${x}, ${z}`).toBeGreaterThan(2);
+    }
+    // Union Street stops at Calhoun Terrace, at the top of the cliff; Lombard Street starts again at Winthrop, at its foot.
+    const top = graph.corner("Union St", "Calhoun Ter")!;
+    const foot = graph.corner("Union St", "Sansome St")!;
+    expect(graph.path(top, foot).length).toBeGreaterThan(2);
+    expect(graph.corner("Lombard St", "Winthrop St")).not.toBeNull();
+    expect(graph.corner("Lombard St", "Kearny St")).not.toBeNull();
   });
 
   it("stands its landmarks back off the streets and their pavements, solid where each is drawn", () => {
@@ -117,6 +173,37 @@ describe("San Francisco", () => {
     for (let t = 0; t < 12; t += 1 / 60) step(car, { left: false, right: false, gas: true, brake: false }, 1 / 60, city, spec);
     expect(city.city.deckIndex.roadAt(car.x, car.z)).not.toBeNull();
     expect(car.speed).toBeGreaterThan(vehicleById("slipstream").maxSpeed * 0.95);
+  });
+
+  it("paves a deck for the racing car up on it, not for one on the bare ground under it", () => {
+    const bay = city.city.decks.find((d) => d.name === "bay")!;
+    const spec = specFor("slipstream", STOCK_LOADOUT);
+    // A hundred metres out along the Bay Bridge's approach from Rincon Hill, between two
+    // streets: bare ground, with the deck fifteen metres over it.
+    const p = deckPoint(bay, 100);
+    const ground = sampleGrid(city.heights, p.x, p.z);
+    expect(p.y - ground).toBeGreaterThan(10);
+    expect(kerbAt(city.city.kerb, p.x, p.z)).toBeGreaterThan(3);
+    // Asked from the ground, it's the ground; from the deck, the deck; without a height, a deck counts.
+    expect(city.pavedAt!(p.x, p.z, ground - 0.5)).toBe(false);
+    expect(city.pavedAt!(p.x, p.z, p.y - 0.5)).toBe(true);
+    expect(city.pavedAt!(p.x, p.z)).toBe(true);
+    /** Two seconds flat out along the approach from a standstill, on the ground under it or up on the deck, as Game.tsx steps it. */
+    const run = (y: number) => {
+      const car = makeCar(city, p.x, p.z, Math.atan2(p.fx, p.fz), spec);
+      Object.assign(car, { y: y + spec.ride, groundY: y });
+      const surface: Ground = { ...city, height: (x, z) => city.height(x, z, underside(car, spec)) };
+      for (let t = 0; t < 2; t += 1 / 120) step(car, { left: false, right: false, gas: true, brake: false }, 1 / 120, surface, spec);
+      return { car, deck: city.city.deckIndex.roadAt(car.x, car.z) };
+    };
+    const under = run(ground);
+    expect(under.deck).not.toBeNull();
+    expect(under.car.y).toBeLessThan(under.deck! - 5);
+    expect(under.car.speed).toBeLessThan(spec.maxSpeed * OFF_ROAD.speed);
+    const over = run(p.y);
+    expect(over.deck).not.toBeNull();
+    expect(over.car.y).toBeGreaterThan(over.deck!);
+    expect(over.car.speed).toBeGreaterThan(spec.maxSpeed * OFF_ROAD.speed * 1.4);
   });
 
   it("carries a truck across the Golden Gate, high over the water, and lets it pass under", () => {

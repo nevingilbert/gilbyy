@@ -66,6 +66,161 @@ export function gradeRoad(heights: Float32Array, pts: Pt[], half: number, grade:
 }
 
 /**
+ * Eases the ground under roads where it's steeper along one than `grade`, rise over run,
+ * moving as little of it as will do: gentler than `gradeRoad`, for a whole city of streets
+ * of which only a few are too steep (ADR 0022). Each triangle of the grid a road crosses,
+ * split as sampleGrid splits a cell, is brought back to `grade` along the road, its corners
+ * moved toward one another, the high ones down and the low ones up; and again wherever that
+ * tips another past it, until none is. A grid point `fixed` says is left where it is, and a
+ * triangle whose middle isn't `within` is let be. Returns how many grid points moved.
+ */
+export function easeRoads(
+  heights: Float32Array, roads: readonly { xs: ArrayLike<number>; zs: ArrayLike<number>; half: number }[], grade: number,
+  fixed: (k: number) => boolean = () => false, within: (x: number, z: number) => boolean = () => true,
+) {
+  /** Whether a road's rectangle (its middle, its way, half its length and width) and a triangle are apart along (px, pz). */
+  const apart = (px: number, pz: number, c: number, reach: number, xs: number[], zs: number[]) => {
+    const [p, q, s] = [px * xs[0] + pz * zs[0], px * xs[1] + pz * zs[1], px * xs[2] + pz * zs[2]];
+    return Math.max(p, q, s) < c - reach || Math.min(p, q, s) > c + reach;
+  };
+  /** The six triangles a grid point is a corner of. */
+  const round = (k: number) => [2 * k, 2 * (k - 1), 2 * (k - 1) + 1, 2 * (k - ROW), 2 * (k - ROW) + 1, 2 * (k - ROW - 1) + 1];
+  // A triangle is numbered twice its cell, and one more for the one with the cell's far
+  // corner. Only one steeper than `grade` some way can be too steep along a road over it, and
+  // few are: those, and later any that bringing them back tips past it.
+  const most = (grade * CELL) ** 2;
+  const steep = new Uint8Array(2 * ROW * ROW);
+  for (let j = 0; j < ROW - 1; j++) {
+    for (let i = 0; i < ROW - 1; i++) {
+      const c = j * ROW + i;
+      const a = heights[c];
+      const b = heights[c + 1];
+      const d = heights[c + ROW];
+      const e = heights[c + ROW + 1];
+      if ((b - a) ** 2 + (d - a) ** 2 > most) steep[2 * c] = 1;
+      if ((e - d) ** 2 + (e - b) ** 2 > most) steep[2 * c + 1] = 1;
+    }
+  }
+  /** Whether a triangle, if its cell is on the grid, is steeper some way than `grade`. */
+  const tooSteep = (t: number) => {
+    const c = t >> 1;
+    if (t < 0 || c % ROW > ROW - 2 || c >= (ROW - 1) * ROW) return false;
+    const gx = t & 1 ? heights[c + ROW + 1] - heights[c + ROW] : heights[c + 1] - heights[c];
+    const gz = t & 1 ? heights[c + ROW + 1] - heights[c + 1] : heights[c + ROW] - heights[c];
+    return gx * gx + gz * gz > most;
+  };
+  // Each of those a road crosses, and the ways along it, x then z, that the roads over it run.
+  const along = new Map<number, number[]>();
+  /** Adds the ways of the roads that cross the triangles `ts`; or, without, any steep one. */
+  const cross = (ts: number[] | null) => {
+    for (const r of roads) {
+      for (let k = 1; k < r.xs.length; k++) {
+        const [ax, az] = [r.xs[k - 1], r.zs[k - 1]];
+        const len = Math.hypot(r.xs[k] - ax, r.zs[k] - az);
+        if (len < 0.01) continue;
+        const [ux, uz] = [(r.xs[k] - ax) / len, (r.zs[k] - az) / len];
+        // The road's rectangle, a metre past each end: its middle, and half its length and width.
+        const [cx, cz, hl, hw] = [ax + (ux * len) / 2, az + (uz * len) / 2, len / 2 + 1, r.half];
+        const ex = Math.abs(ux) * hl + Math.abs(uz) * hw;
+        const ez = Math.abs(uz) * hl + Math.abs(ux) * hw;
+        const i0 = Math.max(0, Math.floor((cx - ex + HALF) / CELL));
+        const i1 = Math.min(ROW - 2, Math.floor((cx + ex + HALF) / CELL));
+        const j0 = Math.max(0, Math.floor((cz - ez + HALF) / CELL));
+        const j1 = Math.min(ROW - 2, Math.floor((cz + ez + HALF) / CELL));
+        // How far the rectangle reaches across the cells' diagonals.
+        const [cd, rd] = [cx + cz, Math.abs(ux + uz) * hl + Math.abs(uz - ux) * hw];
+        const visit = (t: number, i: number, j: number) => {
+          // The cells overlap it, so it's only apart from a triangle if a line between them
+          // runs along the triangle's long side, or along the road, or across it.
+          const side = t & 1;
+          const [x0, z0] = [gridX(i), gridZ(j)];
+          const d0 = x0 + z0 + side * CELL;
+          if (d0 + CELL < cd - rd || d0 > cd + rd) return;
+          const xs = side ? [x0 + CELL, x0, x0 + CELL] : [x0, x0 + CELL, x0];
+          const zs = side ? [z0 + CELL, z0 + CELL, z0] : [z0, z0, z0 + CELL];
+          if (apart(ux, uz, ux * cx + uz * cz, hl, xs, zs) || apart(uz, -ux, uz * cx - ux * cz, hw, xs, zs)) return;
+          const m = side ? (2 * CELL) / 3 : CELL / 3;
+          if (within(x0 + m, z0 + m)) (along.get(t) ?? along.set(t, []).get(t)!).push(ux, uz);
+        };
+        if (ts) {
+          for (const t of ts) {
+            const [i, j] = [(t >> 1) % ROW, Math.floor((t >> 1) / ROW)];
+            if (i >= i0 && i <= i1 && j >= j0 && j <= j1) visit(t, i, j);
+          }
+          continue;
+        }
+        for (let j = j0; j <= j1; j++) {
+          for (let i = i0; i <= i1; i++) {
+            for (let side = 0; side < 2; side++) if (steep[2 * (j * ROW + i) + side]) visit(2 * (j * ROW + i) + side, i, j);
+          }
+        }
+      }
+    }
+  };
+  // Whether each grid point may move, asked once, before it does: 0 not yet asked, 1 it may, 2 not.
+  const may = new Uint8Array(ROW * ROW);
+  const share = (k: number) => ((may[k] ||= fixed(k) ? 2 : 1) === 1 ? 1 : 0);
+  const moved = new Uint8Array(ROW * ROW);
+  const queued = new Uint8Array(2 * ROW * ROW);
+  let count = 0;
+  cross(null);
+  let queue = [...along.keys()];
+  for (let pass = 0; pass < 20 && queue.length; pass++) {
+    for (const t of queue) queued[t] = 1;
+    const touched: number[] = [];
+    for (let q = 0, steps = 0; q < queue.length && steps < 1e6; q++) {
+      const t = queue[q];
+      queued[t] = 0;
+      // Its corners, and what each one's height counts toward its slope along a way (ux, uz),
+      // times CELL: the first corner's −(ux + uz), the next two's ux and uz; the other way
+      // about for the triangle with the cell's far corner, which comes first.
+      const c = t >> 1;
+      const ks = t & 1 ? [c + ROW + 1, c + ROW, c + 1] : [c, c + 1, c + ROW];
+      const sign = t & 1 ? -1 : 1;
+      const ways = along.get(t)!;
+      for (let d = 0; d < ways.length; d += 2) {
+        const w = [-sign * (ways[d] + ways[d + 1]), sign * ways[d], sign * ways[d + 1]];
+        const slope = (w[0] * heights[ks[0]] + w[1] * heights[ks[1]] + w[2] * heights[ks[2]]) / CELL;
+        const over = Math.abs(slope) - grade;
+        if (over <= 1e-5) continue;
+        const free = ks.map(share);
+        const sum = w[0] * w[0] * free[0] + w[1] * w[1] * free[1] + w[2] * w[2] * free[2];
+        if (sum < 1e-9) continue;
+        // Each corner that may move does, as much as it counts: the least that brings it back.
+        const by = (Math.sign(slope) * over * CELL) / sum;
+        steps++;
+        for (let v = 0; v < 3; v++) {
+          if (!free[v] || !w[v]) continue;
+          const k = ks[v];
+          heights[k] -= by * w[v];
+          touched.push(k);
+          if (!moved[k]) [moved[k], count] = [1, count + 1];
+          for (const n of round(k)) {
+            if (n >= 0 && !queued[n] && along.has(n)) {
+              queued[n] = 1;
+              queue.push(n);
+            }
+          }
+        }
+      }
+    }
+    // Round again for any triangle by what moved that it's tipped past `grade`, with a road over it.
+    const tipped: number[] = [];
+    for (const k of touched) {
+      for (const t of round(k)) {
+        if (steep[t] || !tooSteep(t)) continue;
+        steep[t] = 1;
+        tipped.push(t);
+      }
+    }
+    if (!tipped.length) break;
+    cross(tipped);
+    queue = tipped.filter((t) => along.has(t));
+  }
+  return count;
+}
+
+/**
  * The cheapest way across the grid from one spot to another for a truck: no steeper than
  * `steep`, nowhere under `water` (each grid point's), and dearer the steeper it gets. As
  * flags along it, each as far from the last as `every` or as a straight line from the last

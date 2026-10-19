@@ -171,6 +171,26 @@ export function layBuildings(rules: LotRules): { buildings: Building[]; walls: W
     const k = cellOf(x, z);
     return k >= 0 && !taken[k] && !blocked(x, z) && kerb(x, z) > 0.4;
   };
+  /**
+   * Whether a lot is off every street all over, not only at its corners and middle: an alley
+   * can run in between them. Along each edge, a step at a time as far as the kerb's distance
+   * lets it go without coming nearer than the corners may (it changes no faster than 1.5 m a
+   * metre on the map), and half a metre at least; and across it every four metres, which no
+   * street is narrow enough to slip between.
+   */
+  const offStreets = (fx: number, fz: number, ux: number, uz: number, nx: number, nz: number, w: number, d: number) => {
+    const edge = (a: number, b: number, ea: number, eb: number, len: number) => {
+      for (let s = 0; ; ) {
+        const k = kerb(fx + ux * (a + ea * s) + nx * (b + eb * s), fz + uz * (a + ea * s) + nz * (b + eb * s));
+        if (k <= 0.4) return false;
+        if (s >= len) return true;
+        s = Math.min(len, s + Math.max(0.5, (k - 0.4) / 1.5));
+      }
+    };
+    if (!edge(0, 0, 1, 0, w) || !edge(0, d, 1, 0, w) || !edge(0, 0, 0, 1, d) || !edge(w, 0, 0, 1, d)) return false;
+    for (let a = 4; a < w; a += 4) for (let b = 4; b < d; b += 4) if (kerb(fx + ux * a + nx * b, fz + uz * a + nz * b) <= 0.4) return false;
+    return true;
+  };
   const buildings: Building[] = [];
   const walls = new Walls();
 
@@ -232,14 +252,8 @@ export function layBuildings(rules: LotRules): { buildings: Building[]; walls: W
           const floors = lot.floors[0] + Math.floor(rand() * (lot.floors[1] - lot.floors[0] + 1));
           // Towers are tallest in the middle of downtown, and only some of them.
           const real = floors * lot.storey * (kind === "towers" ? (rand() < 0.35 ? 1 : 0.45) : 1);
-          const mx = cx + nx * (d / 2);
-          const mz = cz + nz * (d / 2);
-          const rot = Math.atan2(-nx, -nz);
-          buildings.push({
-            x: mx, z: mz, rot, w, d, base: low - 0.6, top: high + drawnHeight(real, vscale),
-            district: kind, tone: rand(), bay: rand() < lot.bay,
-          });
-          walls.addBox(mx, mz, rot, w / 2, d / 2);
+          const tone = rand();
+          const bay = rand() < lot.bay;
           // Mark the lot taken, cell by cell.
           for (let a = 0; a <= w; a += 1) {
             for (let b = 0; b <= d; b += 1) {
@@ -248,6 +262,15 @@ export function layBuildings(rules: LotRules): { buildings: Building[]; walls: W
             }
           }
           t += w;
+          // A lot that a street runs into, an alley most often, stands empty. It's still taken,
+          // and what would have stood on it has had its throws, so every house after it stands
+          // as it did.
+          if (!offStreets(fx, fz, ux, uz, nx, nz, w, d)) continue;
+          const mx = cx + nx * (d / 2);
+          const mz = cz + nz * (d / 2);
+          const rot = Math.atan2(-nx, -nz);
+          buildings.push({ x: mx, z: mz, rot, w, d, base: low - 0.6, top: high + drawnHeight(real, vscale), district: kind, tone, bay });
+          walls.addBox(mx, mz, rot, w / 2, d / 2);
         }
       }
     }
