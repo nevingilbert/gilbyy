@@ -1079,6 +1079,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     /** San Francisco's cable cars where they are just now; none anywhere else. */
     cableCars: () => stage.town?.cableCars() ?? [],
     hour: () => hour,
+    /** What the last frame took to draw, and at what pixel ratio: for the frame-rate readout. Read only. */
+    drawn: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, ratio: renderer.getPixelRatio() }),
     /** The colour the distance fades to just now, as CSS: what a cloud looks like from inside. */
     haze: () => fog.color.getStyle(),
     carTop: () => car.top,

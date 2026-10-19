@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { DevSpot } from "./dev";
+import { frameLines, type FrameStats } from "./Panels";
 import { METRES_PER_MILE, PARTS, type Loadout, type PartCategory } from "./shop";
 import type { WorldId } from "./terrain";
 import { VEHICLES, type VehicleId } from "./vehicles";
@@ -12,7 +13,8 @@ import { WORLDS } from "./worlds";
  * builds only (`pnpm dev`), never on gilbyy.com, and only in single player, where nothing
  * is saved: it can put you in any world and anywhere in it, fit any rig, set the clock
  * and the tide, show what the truck runs into, and let it get hung up on a rock as it
- * would signed in. The backtick key opens and closes it. See docs/dev-panel.md.
+ * would signed in. It tells the frame rate too, as `?fps` does on any build, signed in or
+ * not. The backtick key opens and closes it. See docs/dev-panel.md.
  */
 
 /** What the panel shows about the truck and the ground under it, a few times a second. */
@@ -35,6 +37,8 @@ export type DevInfo = {
   stuck: boolean;
   hour: number;
   tide: "live" | "low" | "high";
+  /** The frame rate, as `?fps` shows it; null until there are frames to tell of. */
+  frames: FrameStats | null;
 };
 
 /** Something "Check this world" found wrong, and where, to jump to. */
@@ -116,6 +120,17 @@ export function DevPanel({ dev, vehicle, loadout, onClose }: { dev: DevControls;
             ` to close
           </button>
         </div>
+
+        {/* Only reading, so signed in too. A dev build's frame rate isn't a production build's: gilbyy.com/?fps is the one to trust. */}
+        {info.frames && (
+          <p className="mt-2 font-mono text-[11px] tabular-nums text-[rgba(255,246,232,0.78)]">
+            {frameLines(info.frames).map((line, i) => (
+              <span key={i} className="block">
+                {line}
+              </span>
+            ))}
+          </p>
+        )}
 
         {blocked ? (
           <p className="mt-2 text-[rgba(255,246,232,0.7)]">{blocked}</p>

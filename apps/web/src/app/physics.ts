@@ -140,6 +140,13 @@ export type Input = { left: boolean; right: boolean; gas: boolean; brake: boolea
 
 export const noInput = (): Input => ({ left: false, right: false, gas: false, brake: false });
 
+/**
+ * Where a truck's surface is asked for from, the `above` that `Ground.height` and
+ * `Ground.pavedAt` take: where its wheels rest, and a little slack. So a truck on a
+ * bridge's deck is on the deck, and one under it on the ground.
+ */
+export const underside = (car: Pick<Car, "y">, spec: Pick<CarSpec, "ride">) => car.y - spec.ride - 0.5;
+
 export function makeCar(ground: Ground, x: number, z: number, heading: number, spec: CarSpec = STOCK): Car {
   const groundY = ground.height(x, z);
   return {
@@ -208,7 +215,9 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
   // across it. `rise` is how steeply it goes up along the truck, nose up.
   const [bfl, bfr, brl, brr] = wheelGround(car, ground, spec, near, false);
   const rise = (bfl + bfr - brl - brr) / 2 / spec.wheelbase;
-  const across = ground.pavedAt?.(car.x, car.z) ? 0 : (bfl + brl - bfr - brr) / 2 / spec.track;
+  // Tarmac under it: a bridge's deck it's up on, but not one it's under.
+  const paved = ground.pavedAt?.(car.x, car.z, underside(car, spec)) ?? false;
+  const across = paved ? 0 : (bfl + brl - bfr - brr) / 2 / spec.track;
   const steep = Math.hypot(rise, across) > STEEP;
   // How fast the ground under the body is rising. Capped, so a facet edge on a steep
   // outcrop can't fling the car skyward.
@@ -235,7 +244,7 @@ export function step(car: Car, input: Input, dt: number, ground: Ground, spec: C
   const wading = depth > 0 ? Math.min(1, depth / spec.wade) : 0;
   const grip = traction(ground.slipAt(car.x, car.z), spec);
   // A racing car off the tarmac: its wings and its slicks do nothing for it out there.
-  const rough = spec.road && !ground.pavedAt?.(car.x, car.z) ? spec.road : 0;
+  const rough = spec.road && !paved ? spec.road : 0;
   let drive = 0;
 
   if (car.grounded) {

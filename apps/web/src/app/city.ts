@@ -20,6 +20,7 @@ import { cableLine, type CableLine } from "./cable-car";
 import { CONVOY_MAX, lineUp } from "./convoy";
 import { lineUpAlone } from "./mission-run";
 import { BED, besideBed, carsOn, clearBed, mouthAt, pastEnd } from "./rail";
+import { easeRoads } from "./roads";
 import { cityStation } from "./station";
 import { HEADROOM, trainObstacles } from "./track";
 import { obstacleIndex, trunkRadius, type Bush, type Obstacle, type Rock, type Tree, type World } from "./world";
@@ -28,6 +29,8 @@ import { obstacleIndex, trunkRadius, type Bush, type Obstacle, type Rock, type T
 export const VSCALE = 1.7;
 /** The edge of the world is a square this far either side of the middle; past it there is only the sea, or the hills to the south and north. */
 export const CITY_LIMIT = 2880;
+/** The steepest any street is along itself, rise over run: 38 degrees, short of the 40 that no truck climbs past (physics.ts). */
+export const STREET_GRADE = Math.tan((38 * Math.PI) / 180);
 
 /** The street map the terrain is painted from: distance to the nearest kerb, every KERB_CELL metres. */
 export const KERB_N = 2048;
@@ -106,6 +109,9 @@ function nearestOffset(ok: (dx: number, dz: number) => boolean, reach = 60): Pt 
   return null;
 }
 
+/** How high the hill stands over the rails where the line into the city goes in under it. */
+const TUNNEL_COVER = 7;
+
 /** The railway into Fourth and King: a line from the buffers, out past the platforms, under Potrero Hill and on into the dark. */
 export type CityRail = {
   line: Track;
@@ -177,9 +183,8 @@ function fillPolygon(pts: Pt[], n: number, size: number, cell: (i: number, j: nu
 /** The kerb map: every texel's distance to the nearest kerb, from every street but the bridges' decks (they're drawn as decks). */
 export const kerbMap = (streets: Street[]) => kerbMapOf(streets.filter((s) => s.cls !== 4).map((s) => ({ xs: s.xs, zs: s.zs, half: STREET_WIDTH[s.cls] / 2 })));
 
-/** A kerb map of any roads, each a line and half its paved width: Vegas's too (ADR 0023). */
-export function kerbMapOf(roads: { xs: ArrayLike<number>; zs: ArrayLike<number>; half: number }[]) {
-  const out = new Uint8Array(KERB_N * KERB_N).fill(255);
+/** A kerb map of any roads, each a line and half its paved width: Vegas's too (ADR 0023). Or those roads added to the map `out`. */
+export function kerbMapOf(roads: { xs: ArrayLike<number>; zs: ArrayLike<number>; half: number }[], out = new Uint8Array(KERB_N * KERB_N).fill(255)) {
   for (const s of roads) {
     const half = s.half;
     const reach = half + 6;
@@ -296,6 +301,72 @@ function withCrookedLane(streets: Street[], top: Pt, bottom: Pt): Street[] {
   return out;
 }
 
+/**
+ * Stretches the survey has as streets that aren't: stairways, and the way down the cliffs
+ * of Telegraph Hill's old quarry, which no street takes. Each is a street, all of it or
+ * from one spot along it to another. They aren't drawn or driven, but what stands along
+ * them stands as it did, and nothing grows on them: they're still the ways people go.
+ */
+const NOT_STREETS: { street: string; from?: Spot; to?: Spot }[] = [
+  // The Greenwich Steps, up from Sansome Street, across Montgomery, to Coit Tower.
+  { street: "Greenwich St", from: ["Greenwich St", "Sansome St"], to: ["Greenwich St", "Telegraph Hill Blvd"] },
+  // The Filbert Steps the same way up, from their foot, and the boardwalk and the lane off them.
+  { street: "Filbert St", from: ["Filbert St", "Sansome St"], to: [-122.4034, 37.802114] },
+  { street: "Filbert St", from: ["Filbert St", "Napier Ln"], to: ["Filbert St", "Telegraph Hill Blvd"] },
+  { street: "Napier Ln" },
+  { street: "Darrell Pl" },
+  // Down the quarry's face: Union Street ends at Calhoun Terrace, Alta Street and Montgomery
+  // Street at the top, and Lombard Street turns into Telegraph Hill Boulevard at Kearny and
+  // starts again at Winthrop, at the foot.
+  { street: "Union St", from: ["Union St", "Calhoun Ter"], to: ["Union St", "Sansome St"] },
+  { street: "Alta St", from: ["Alta St", "Montgomery St"], to: [-122.40294, 37.80171] },
+  { street: "Montgomery St", from: ["Montgomery St", "Greenwich St"], to: ["Montgomery St", "Lombard St"] },
+  { street: "Lombard St", from: ["Lombard St", "Kearny St"], to: ["Lombard St", "Winthrop St"] },
+  // The Oakhurst Lane stairway in Forest Knolls, the longest in the city.
+  { street: "Oakhurst Ln" },
+];
+
+/**
+ * The streets without what isn't a street (NOT_STREETS), each one cut where a stretch comes
+ * out of it, its parts where it was in the list; and those stretches. Spots are found on `graph`.
+ */
+function takeOut(streets: Street[], graph: StreetGraph): { streets: Street[]; out: Street[] } {
+  const kept = [...streets];
+  const out: Street[] = [];
+  /** The point of a street within a metre of a spot, or -1. */
+  const pointAt = (s: Street, p: Pt) => {
+    let best = -1;
+    let far = 1;
+    for (let i = 0; i < s.xs.length; i++) {
+      const d = Math.hypot(s.xs[i] - p.x, s.zs[i] - p.z);
+      if (d < far) [best, far] = [i, d];
+    }
+    return best;
+  };
+  for (const { street, from, to } of NOT_STREETS) {
+    const a = from ? spotOf(graph, from) : null;
+    const b = to ? spotOf(graph, to) : null;
+    for (let n = kept.length - 1; n >= 0; n--) {
+      const s = kept[n];
+      if (s.name !== street) continue;
+      if (!from || !to) {
+        out.push(s);
+        kept.splice(n, 1);
+        continue;
+      }
+      const [i, j] = a && b ? [pointAt(s, a), pointAt(s, b)] : [-1, -1];
+      if (i < 0 || j < 0 || i === j) continue;
+      const [lo, hi] = i < j ? [i, j] : [j, i];
+      out.push({ ...s, xs: s.xs.slice(lo, hi + 1), zs: s.zs.slice(lo, hi + 1) });
+      const parts: Street[] = [];
+      if (lo > 0) parts.push({ ...s, xs: s.xs.slice(0, lo + 1), zs: s.zs.slice(0, lo + 1) });
+      if (hi < s.xs.length - 1) parts.push({ ...s, xs: s.xs.slice(hi), zs: s.zs.slice(hi) });
+      kept.splice(n, 1, ...parts);
+    }
+  }
+  return { streets: kept, out };
+}
+
 export function buildCity(seed = 20261015): CityWorld {
   const data = cityData();
   if (!data) throw new Error("The city's data isn't loaded yet (loadCityData).");
@@ -306,7 +377,9 @@ export function buildCity(seed = 20261015): CityWorld {
   const crookedFoot = surveyed.corner("Lombard St", "Leavenworth St");
   const allStreets = crookedTop && crookedFoot ? withCrookedLane(data.streets, crookedTop, crookedFoot) : data.streets;
   const crookedPts = crookedTop && crookedFoot ? crookedLane(crookedTop, crookedFoot) : [];
-  const graph = streetGraph(allStreets);
+  // And what isn't a street comes out of what's drawn and driven (NOT_STREETS).
+  const { streets: drawn, out: notStreets } = takeOut(allStreets, surveyed);
+  const graph = streetGraph(drawn);
   const at = (s: Spot): Pt => {
     const p = spotOf(graph, s);
     if (!p) throw new Error(`No such place in the city: ${s.join(" & ")}`);
@@ -423,7 +496,8 @@ export function buildCity(seed = 20261015): CityWorld {
   // ——— Streets ———
 
   // The campground's lanes are streets too, laid with the rest once the camp is placed (below).
-  const streets = [...allStreets];
+  const streets = [...drawn];
+  const lanes: Street[] = [];
   const decksGround = (x: number, z: number) => sampleGrid(heights, x, z);
   const decks = buildDecks(decksGround);
   const decksAt = deckIndex(decks);
@@ -454,10 +528,11 @@ export function buildCity(seed = 20261015): CityWorld {
     const b = camp.pitches[row * 10 + 9].parking;
     const fx = Math.sin(campHeading) * 6;
     const fz = Math.cos(campHeading) * 6;
-    streets.push(lane([{ x: a.x + fx - (b.x - a.x) * 0.08, z: a.z + fz - (b.z - a.z) * 0.08 }, { x: b.x + fx + (b.x - a.x) * 0.15, z: b.z + fz + (b.z - a.z) * 0.15 }]));
+    lanes.push(lane([{ x: a.x + fx - (b.x - a.x) * 0.08, z: a.z + fz - (b.z - a.z) * 0.08 }, { x: b.x + fx + (b.x - a.x) * 0.15, z: b.z + fz + (b.z - a.z) * 0.15 }]));
   }
   const gateNode = graph.nearestNode(camp.fire);
-  streets.push(lane([camp.fire, { x: graph.xs[gateNode], z: graph.zs[gateNode] }]));
+  lanes.push(lane([camp.fire, { x: graph.xs[gateNode], z: graph.zs[gateNode] }]));
+  streets.push(...lanes);
 
   // The café, in Washington Square, North Beach: in the square's north-west corner, looking
   // out over the lawn to Saints Peter and Paul.
@@ -506,6 +581,13 @@ export function buildCity(seed = 20261015): CityWorld {
     return { x: x / (2 * ROUND + 1), z: z / (2 * ROUND + 1) };
   }));
 
+  // The street map as it's drawn and driven; and `ways`, with the stretches that aren't
+  // streets back in it, which is what the houses, the trees and the landmarks are laid out
+  // round, as they were before those came out.
+  const kerb = kerbMap(streets);
+  const ways = kerbMapOf(notStreets.map((s) => ({ xs: s.xs, zs: s.zs, half: STREET_WIDTH[s.cls] / 2 })), kerb.slice());
+  const kerbHere = (x: number, z: number) => kerbAt(ways, x, z);
+
   // ——— The railway into Fourth and King ———
 
   const rail = layRail(graph, heights, at);
@@ -528,14 +610,20 @@ export function buildCity(seed = 20261015): CityWorld {
     // A level bed for the rails; banks either side, and a walled cutting where they go in under the hill.
     heights[k] = besideBed(heights[k], bed, d);
   }
+  const dug = heights.slice();
   clearBed(heights, rail.line, 0, rail.portal + 2);
+  // On a grid ten metres square the floor's last metres reach in under a street that crosses
+  // over the line by the mouth, and dig the middle out of it: Eighteenth Street's. A street
+  // that stands as high over the rails as the hill over the tunnel goes over them: it keeps
+  // its ground, and the tunnel goes in short of it.
+  for (let k = 0; k < heights.length; k++) {
+    if (dug[k] - heights[k] > TUNNEL_COVER && kerbAt(kerb, gridX(k % ROW), gridZ(Math.floor(k / ROW))) < 0) heights[k] = dug[k];
+  }
   // The tunnel's face stands where the cutting's floor ends.
   rail.portal = mouthAt(rail.line, rail.portal - 40, (x, z) => sampleGrid(heights, x, z));
 
   // ——— Landmarks ———
 
-  const kerb = kerbMap(streets);
-  const kerbHere = (x: number, z: number) => kerbAt(kerb, x, z);
   const landmarks: CityLandmark[] = [];
   const landmark = (kind: keyof typeof LANDMARKS, rot: number) => {
     const p = at(LANDMARKS[kind] as Spot);
@@ -658,8 +746,9 @@ export function buildCity(seed = 20261015): CityWorld {
 
   // ——— Buildings ———
 
+  // Along the stairways too: the houses that stand along the Filbert Steps do.
   const { buildings, walls } = layBuildings({
-    streets,
+    streets: [...allStreets, ...lanes],
     frontAt: (cls) => STREET_WIDTH[cls as StreetClass] / 2 + sidewalkOf(cls as StreetClass),
     kerb: kerbHere,
     blocked,
@@ -797,6 +886,31 @@ export function buildCity(seed = 20261015): CityWorld {
   for (let i = trees.length - 1; i >= 0; i--) if (inTheWay(trees[i].x, trees[i].z, trunkRadius(trees[i]))) trees.splice(i, 1);
   for (let i = rocks.length - 1; i >= 0; i--) if (inTheWay(rocks[i].x, rocks[i].z, Math.max(rocks[i].sx, rocks[i].sz))) rocks.splice(i, 1);
 
+  // ——— Streets a truck can climb ———
+
+  // On a grid ten metres square the survey's ground has a few streets steeper along
+  // themselves than any truck climbs: where one runs along the foot of a cliff, or off the
+  // camp's level onto the bank round it. Under those the ground is eased until none is
+  // steeper than STREET_GRADE, as little of it as will do, and the rails' bed, the water's
+  // edge and the levelled camp, café and garages stay as they are. It's done last, so
+  // nothing is laid out any differently for it: what stands where the ground moved moves with it.
+  const uneased = heights.slice();
+  const keep = (k: number) => heights[k] < water[k] + 0.5 || trackDist[k] < BED.half + 3 || campDist[k] < 13 || siteDist[k] < 15;
+  const inCity = (x: number, z: number) => Math.max(Math.abs(x), Math.abs(z)) < CITY_LIMIT;
+  const roads = streets.filter((s) => s.cls !== 4).map((s) => ({ xs: s.xs, zs: s.zs, half: STREET_WIDTH[s.cls] / 2 }));
+  if (easeRoads(heights, roads, STREET_GRADE, keep, inCity)) {
+    const lift = (x: number, z: number) => sampleGrid(heights, x, z) - sampleGrid(uneased, x, z);
+    for (const s of [...trees, ...bushes, ...rocks, ...flowers, ...landmarks]) s.y += lift(s.x, s.z);
+    // A building's base and top go by its lowest and highest corner (city-buildings.ts).
+    for (const b of buildings) {
+      const [ax, az, fx, fz] = [(Math.cos(b.rot) * b.w) / 2, (-Math.sin(b.rot) * b.w) / 2, (Math.sin(b.rot) * b.d) / 2, (Math.cos(b.rot) * b.d) / 2];
+      const corners = [[0, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]].map(([p, q]) => [b.x + ax * p + fx * q, b.z + az * p + fz * q]);
+      const [was, now] = [uneased, heights].map((h) => corners.map(([x, z]) => sampleGrid(h, x, z)));
+      b.base += Math.min(...now) - Math.min(...was);
+      b.top += Math.max(...now) - Math.max(...was);
+    }
+  }
+
   // ——— Who can get where ———
 
   const start = camp.pitches[0].parking;
@@ -846,10 +960,17 @@ export function buildCity(seed = 20261015): CityWorld {
       return wall.length || rails.length ? [...near, ...wall, ...rails] : near;
     },
     limit: CITY_LIMIT,
-    // The streets and their pavements, the garages' aprons, and the bridges' decks. Asked
-    // without a height, it can't tell a truck on a deck from one under it, so under one is
-    // paved too: that's the water, mostly, and streets.
-    pavedAt: (x, z) => kerbAt(kerb, x, z) < 1.6 || sampleGrid(siteDist, x, z) < 10 || decksAt.roadAt(x, z) !== null,
+    // The streets and their pavements, the garages' aprons, and the bridges' decks. Given
+    // the asker's underside, as `height` takes it, a deck is paved for a truck up on it: on
+    // its road, or where it meets the ground, at its ends and in a tunnel's mouth, on the
+    // ground that comes up within reach of its road. Not for one on the ground under it,
+    // which is on whatever that is, or on the hill over its tunnel. Without, a deck is paved
+    // wherever it is.
+    pavedAt: (x, z, above) => {
+      const road = decksAt.roadAt(x, z);
+      if (road !== null && (above === undefined || Math.abs(height(x, z, above) - road) < 3)) return true;
+      return kerbAt(kerb, x, z) < 1.6 || sampleGrid(siteDist, x, z) < 10;
+    },
     slipAt: () => 0,
     addObstacles: (list: readonly Obstacle[]) => list.forEach(solid.add),
     setTide: () => {},
@@ -936,7 +1057,7 @@ function layRail(graph: StreetGraph, heights: Float32Array, at: (s: Spot) => Pt)
   const after16 = s[near16];
   let mouth = pts.length - 1;
   for (let i = near16; i < pts.length; i++) {
-    if (ground(pts[i]) - ys[i] > 7) {
+    if (ground(pts[i]) - ys[i] > TUNNEL_COVER) {
       mouth = i;
       break;
     }

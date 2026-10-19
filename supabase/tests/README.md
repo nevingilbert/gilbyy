@@ -6,10 +6,15 @@ pay once per cooldown, players can't write their own profile, a player can read 
 their own profile and their friends', friending needs both players, a convoy pays only
 when a friend in it drove, only friends can use their chat channel, a flight to the island
 costs its fare and moves you there, only players on the island can use its channel, a
-winch has to be bought before it can be fitted, and a tow from BBB takes its fee.
+winch has to be bought before it can be fitted, a tow from BBB takes its fee, and a convoy
+message goes out through `say_convoy()` in its sender's own name, on the convoy channel of
+their world, only if it's a message the game sends and no faster than thirty at once and
+then one a second. Nobody can send on a convoy channel directly, and only a world's players
+can hear its convoy channel (the valley's, like its own channel, anyone signed in).
 
 It runs on a plain local Postgres, with `local-stubs.sql` standing in for the bits of
-Supabase it needs (`auth.users`, `auth.uid()`, `realtime.messages`, `realtime.topic()`):
+Supabase it needs (`auth.users`, `auth.uid()`, `realtime.messages`, `realtime.topic()`,
+`realtime.send()`):
 
 ```sh
 createdb gilbyy_test

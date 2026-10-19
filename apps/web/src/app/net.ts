@@ -15,6 +15,9 @@ import { vehicleById, type VehicleId } from "./vehicles";
  *
  * Two transports with the same shape. Online it's a private Supabase Realtime channel,
  * which only signed-in players can join (see the realtime policies in the migration).
+ * Convoy messages go another way online: through the server, which writes in who sent
+ * each one, and back on a second channel of the world's that only the server sends on
+ * (ADR 0025).
  * `?net=local` swaps in a BroadcastChannel so two tabs of one browser can play
  * together without a Supabase project, for testing.
  *
@@ -71,7 +74,10 @@ export interface Net {
   friended(to: string): void;
   /** Says `text` to each of `to` (friends close enough to hear). */
   say(to: string[], text: string): void;
-  /** Tells the valley about a convoy. Only the gatherer's friends take any notice. */
+  /**
+   * Tells everyone in the world about a convoy, me included online, where the server says
+   * who it's from (ADR 0025). Only the gatherer's friends take any notice.
+   */
   convoy(msg: ConvoyMsg): void;
   /** Hooks a winch onto a stuck truck. Its driver decides whether that's believable. */
   winch(to: string): void;
@@ -88,6 +94,16 @@ export const MAX_PLAYERS = CAMP_PITCHES;
  * there was anywhere else. Must match the realtime policies in the migrations.
  */
 export const worldTopic = (world: WorldId) => (world === "valley" ? "world" : `world:${world}`);
+/** The world whose channel `worldTopic` named. */
+const worldOf = (topic: string) => (topic.startsWith("world:") ? topic.slice("world:".length) : "valley") as WorldId;
+/**
+ * The channel a world's convoy messages come on (ADR 0025). The server sends on it, through
+ * say_convoy(), and nobody else may, so a message on it is from whoever it says. Must match
+ * say_convoy() and the realtime policy in 20261018120000_convoy_relay.sql.
+ */
+export const convoyTopic = (world: WorldId) => `convoy:${world}`;
+/** At most how long a convoy message waits on the one before it. Seconds. */
+const SAY_WAIT = 5;
 /**
  * There are only thirty tents, so a player who isn't really here gives theirs back: after
  * this long with the tab out of sight, or this long without touching the game. Seconds.
@@ -319,6 +335,7 @@ abstract class Base implements Net {
     if (this.me) this.emit("friended", { from: this.me.id, to });
   }
 
+  /** Between tabs, on the bus with everything else. SupabaseNet hands them to the server. */
   convoy(msg: ConvoyMsg) {
     if (this.me) this.emit("convoy", msg);
   }
@@ -373,13 +390,19 @@ export function readPeer(p: unknown): Peer | null {
   return { id: o.id, name: o.name, vehicle: vehicleById(String(o.vehicle)).id, loadout, tent: o.tent, joined: o.joined };
 }
 
-/** Supabase Realtime: one private channel for the valley, one per pair of friends for chat. */
+/**
+ * Supabase Realtime: one private channel for the world, one for its convoy messages, which
+ * only the server sends on, and one per pair of friends for chat.
+ */
 export class SupabaseNet extends Base {
   private world: RealtimeChannel | null = null;
+  private convoys: RealtimeChannel | null = null;
   private chats = new Map<string, RealtimeChannel>();
   /** Set by `leave()`, so a join or a return still in flight knows to stop. */
   private left = false;
   private reopening = false;
+  /** The convoy message last handed to the server, which the next one waits for. */
+  private saying: PromiseLike<unknown> = Promise.resolve();
 
   constructor(private sb: SupabaseClient, private myId: string, on: NetHandlers, private topic = worldTopic("valley")) {
     super(on);
@@ -401,9 +424,28 @@ export class SupabaseNet extends Base {
       if (attempt) await wait(1500 * attempt);
       if (this.left) break;
       error = await this.subscribe();
-      if (!error) return null;
+      if (!error) {
+        this.hearConvoys();
+        return null;
+      }
     }
     return error ?? "Left the valley.";
+  }
+
+  /**
+   * Opens the world's convoy channel beside its own, unless it's open already. Nobody can
+   * send on it but the server, which says who each message is from (ADR 0025), so a convoy
+   * message there is from whoever it says. If the server closes it, it's opened again.
+   */
+  private hearConvoys() {
+    if (this.convoys || this.left) return;
+    const channel = this.sb.channel(convoyTopic(worldOf(this.topic)), { config: { private: true } });
+    channel.on("broadcast", { event: "convoy" }, ({ payload }) => this.heard("convoy", payload)).subscribe((status) => {
+      if (status !== "CLOSED" || this.convoys !== channel) return;
+      this.convoys = null;
+      setTimeout(() => this.hearConvoys(), 2000);
+    });
+    this.convoys = channel;
   }
 
   /** One attempt at joining the valley's channel. Leaves no channel behind if it fails. */
@@ -417,7 +459,8 @@ export class SupabaseNet extends Base {
       .on("broadcast", { event: "where" }, ({ payload }) => this.heard("where", payload))
       .on("broadcast", { event: "ask" }, ({ payload }) => this.heard("ask", payload))
       .on("broadcast", { event: "friended" }, ({ payload }) => this.heard("friended", payload))
-      .on("broadcast", { event: "convoy" }, ({ payload }) => this.heard("convoy", payload))
+      // Not convoys: anyone here can send anything on this channel in anyone's name, so
+      // they're heard on the convoy channel only, from the server.
       .on("broadcast", { event: "winch" }, ({ payload }) => this.heard("winch", payload))
       .on("broadcast", { event: "tow" }, ({ payload }) => this.heard("tow", payload));
     this.world = channel;
@@ -479,6 +522,18 @@ export class SupabaseNet extends Base {
     this.emit("pose", { id: this.myId, p: packPose(pose) });
   }
 
+  /**
+   * Hands a convoy message to the server, which writes in who it's from and sends it on to
+   * everyone in the world, me too, on the convoy channel (say_convoy, ADR 0025). Each waits
+   * for the one before to be answered, so they're heard in the order they were said, as
+   * they were over the socket; none waits long for one that's gone astray.
+   */
+  convoy(msg: ConvoyMsg) {
+    if (!this.me) return;
+    const say = () => Promise.race([this.sb.rpc("say_convoy", { p_message: msg }), wait(SAY_WAIT * 1000)]);
+    this.saying = this.saying.then(say, say);
+  }
+
   listen(friends: string[]) {
     const want = new Map(friends.map((f) => [chatTopic(this.myId, f), f]));
     for (const [topic, ch] of this.chats) {
@@ -516,8 +571,10 @@ export class SupabaseNet extends Base {
     this.me = null;
     this.hush();
     const world = this.world;
-    this.world = null;
+    const convoys = this.convoys;
+    this.world = this.convoys = null;
     if (world) void this.sb.removeChannel(world);
+    if (convoys) void this.sb.removeChannel(convoys);
     for (const ch of this.chats.values()) void this.sb.removeChannel(ch);
     this.chats.clear();
   }

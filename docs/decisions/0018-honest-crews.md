@@ -36,7 +36,10 @@ were missing.
   pays nothing. The crew is kept on the run (`mission_runs.crew`), so the ledger can be
   read later. A scripter naming a friend who happens to be out driving can still slip a
   claim through — but their own banked miles are spent on it, so it pays no better than
-  driving the course, which is the `0017` bar.
+  driving the course, which is the `0017` bar. Since 2026-10-17
+  (`20261017120000_crews_and_profiles.sql`) the drivers named who banked the miles must
+  include a friend of the claimer: before, a friend who never drove, named beside a
+  stranger who happened to be out driving, passed.
 - **A course pays only in its world.** `missions.world` names where each course is
   (mirroring `shop_items.world`), and `pay_run` refuses a claim from anywhere else.
   Before this, the island's Jungle Loop (35 miles) was claimable from the valley by

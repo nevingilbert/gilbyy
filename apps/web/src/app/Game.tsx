@@ -22,7 +22,7 @@ import { createMap } from "./map";
 import { fmtAir, fmtTime, lineUpAlone, missionAt, startRun, tick, type Run } from "./mission-run";
 import { stackTags, type TagBox } from "./name-tags";
 import { CHAT_RANGE, LocalNet, MAX_CHAT, PoseGate, SupabaseNet, isAway, worldTopic, type Net, type NetHandlers, type Peer } from "./net";
-import { LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker, TripCard } from "./Panels";
+import { FrameMeter, FrameRate, LandmarkCard, Leaderboard, NamePanel, SignInPanel, SoloBanner, StarterPicker, TripCard, type FrameStats } from "./Panels";
 import { PALETTE } from "./palette";
 import { KEY_TURN, clampOrbit, dragOrbit, photoName, zoomOrbit, type Orbit } from "./photo";
 import { between, makeCar, noInput, step, yawRateOf, type Input } from "./physics";
@@ -173,6 +173,8 @@ type Actions = {
   snap(): void;
   /** A shift-click on the open map in a development build: the truck goes there. */
   devJumpMap(fx: number, fy: number): void;
+  /** Stranded in a city this browser can't open: the train home, unseen. Resolves to why not, or null as the page reloads. */
+  trainHome(): Promise<string | null>;
 };
 const noop = () => {};
 /** At a start line before "go". Not the brake: held at a standstill, that reverses. */
@@ -244,7 +246,7 @@ export function Game() {
   /** Things the UI asks the game loop to do; the loop owns all the state. */
   const actions = useRef<Actions>({
     act: noop, leave: noop, toggleMap: noop, pin: noop, look: noop, pick: noop, preview: noop, fit: noop, say: noop,
-    photo: noop, turnPhoto: noop, zoomPhoto: noop, snap: noop, devJumpMap: noop,
+    photo: noop, turnPhoto: noop, zoomPhoto: noop, snap: noop, devJumpMap: noop, trainHome: async () => null,
     buy: async () => null, fly: async () => null, setName: async () => null, leaderboard: async () => [], chatOpen: () => false,
   });
   const turnRef = useRef(0);
@@ -275,6 +277,15 @@ export function Game() {
   const [pinned, setPinned] = useState(false);
   /** The line under the picture while a trip, or the opening, waits for San Francisco's data. */
   const [cityWait, setCityWait] = useState<string | null>(null);
+  /**
+   * Signed in, the truck is in San Francisco, and this browser can't open the city's map:
+   * the opening can't go on, so under its line is a way out (signing out, to drive solo).
+   */
+  const [stranded, setStranded] = useState(false);
+  /** What the train home said when it couldn't go, under the way out. */
+  const [strandedSaid, setStrandedSaid] = useState<string | null>(null);
+  /** What the frame-rate readout reads, once the loop is running: only when the address asks for it, with `?fps`. */
+  const [frameRead, setFrameRead] = useState<(() => FrameStats | null) | null>(null);
   /** The single-player banner, hidden: kept here, as the banner comes and goes with the HUD. */
   const [soloHidden, setSoloHidden] = useState(false);
   const [devOpen, setDevOpen] = useState(false);
@@ -301,7 +312,8 @@ export function Game() {
     // ?miles= starts single player with miles to spend (and with ?rig= and ?winch, one of
     // them fitted), ?net=local plays across tabs of this browser with no account,
     // ?tide=low or high holds the island's tide there, ?station parks you beside the train's
-    // flat wagon. Not linked from anywhere.
+    // flat wagon, ?fps shows the frame rate (in production too, for a real phone). Not
+    // linked from anywhere.
     const params = new URLSearchParams(window.location.search);
     const localNet = params.get("net") === "local";
     const worldParam = params.get("world");
@@ -366,6 +378,14 @@ export function Game() {
       if (fadeRef.current) fadeRef.current.style.opacity = "0";
       return; // No WebGL. The fog-coloured backdrop is all there is to see.
     }
+    // The frame rate: for `?fps`, and the dev panel. Without either nothing is kept, and a
+    // frame pays for one look at `meter`.
+    const showFps = params.has("fps");
+    const meter = showFps || DEV ? new FrameMeter() : null;
+    const readFrames = (): FrameStats | null => {
+      const frames = meter?.read(performance.now());
+      return frames ? { ...frames, ...view.drawn(), screen: window.devicePixelRatio || 1, width: canvas.width, height: canvas.height } : null;
+    };
     const mapOf = () => createMap(world, (key) => store.discover(key), (cell) => store.explore(cell));
     let map = mapOf();
     let pitches = world.pitches;
@@ -408,7 +428,7 @@ export function Game() {
       get square() {
         return world.square;
       },
-      pavedAt: (x, z) => world.pavedAt?.(x, z) ?? false,
+      pavedAt: (x, z, above = car.y - spec.ride - 0.5) => world.pavedAt?.(x, z, above) ?? false,
       obstaclesNear: (x, z) => {
         const still = world.obstaclesNear(x, z);
         const near = moving.filter((o) => Math.abs(o.x - x) < 24 && Math.abs(o.z - z) < 24);
@@ -793,15 +813,25 @@ export function Game() {
       touchedAt = Date.now();
       comeBack();
     };
-    /** What's been driven, banked: into the store now, and on to the server. */
+    /**
+     * What's been driven, banked as the tab hides or closes: into the store now, and on to
+     * the server in requests that get there even if the page goes first (`going`, store.ts).
+     * Hidden a moment before it closed, the tab banked as it hid, and that bank is on its
+     * way by itself: the one at closing finds nothing new to send (a hidden tab draws no
+     * frames), so nothing comes within the two seconds the server wants between banks.
+     */
     const bank = () => {
       store.addMiles(unbanked);
       unbanked = 0;
-      void store.flush();
+      void store.flush(true);
     };
     const onVisibility = () => {
       hiddenAt = document.hidden ? Date.now() : 0;
-      if (!document.hidden) touched();
+      if (!document.hidden) {
+        // The time away isn't one slow frame.
+        meter?.pause();
+        touched();
+      }
       // A hidden tab draws no frames, and a phone may close it without a word: bank it now.
       else bank();
     };
@@ -838,10 +868,14 @@ export function Game() {
       if (store.get().world !== world.id) {
         // The city's data first, if that's where the truck is (ADR 0022): tried until it comes,
         // and said so under the picture. A browser that can't open it stays on the opening
-        // shot, and the line says why.
+        // shot, where the line says why and offers the train home, film unseen, or to sign
+        // out: single player is the valley, which it can open.
         if (store.get().world === "city") {
           cityWaitFrom = performance.now() / 1000;
-          if (!(await cityArrives())) return;
+          if (!(await cityArrives())) {
+            if (!cancelled && !canOpenCity() && store.online) setStranded(true);
+            return;
+          }
           cityWaitFrom = null;
         }
         if (cancelled) return;
@@ -992,6 +1026,12 @@ export function Game() {
     };
     actions.current.leaderboard = () => store.leaderboard();
     actions.current.chatOpen = () => nearbyFriends().length > 0;
+    // fly() takes the fare and only goes where the train does, whether or not its film was seen.
+    actions.current.trainHome = async () => {
+      const err = await store.fly("valley");
+      if (!err) window.location.reload();
+      return err;
+    };
     actions.current.say = (text) => {
       const t = text.trim().slice(0, MAX_CHAT);
       const to = nearbyFriends();
@@ -1592,9 +1632,10 @@ export function Game() {
             world: world.id, x: car.x, z: car.z, heading: car.heading,
             ground: world.height(car.x, car.z, below),
             depth: Math.max(0, world.waterAt(car.x, car.z) - world.height(car.x, car.z, below)),
-            wade: spec.wade, paved: world.pavedAt?.(car.x, car.z) ?? false, slip: world.slipAt(car.x, car.z),
+            wade: spec.wade, paved: world.pavedAt?.(car.x, car.z, below) ?? false, slip: world.slipAt(car.x, car.z),
             speed: car.speed, nearest, stuck: Boolean(car.stuck), hour: view.hour(),
             tide: heldTide === null ? "live" : heldTide > 0 ? "low" : "high",
+            frames: readFrames(),
           };
         },
         spots: () => ({ world: world.id, list: devSpots(world) }),
@@ -2249,6 +2290,7 @@ export function Game() {
     };
 
     const frame = (nowMs: number) => {
+      meter?.tick(nowMs);
       // Never negative: the first frame's timestamp can be a hair earlier than `last` was set.
       const dt = Math.max(0, Math.min((nowMs - last) / 1000, 0.1));
       last = nowMs;
@@ -2329,7 +2371,8 @@ export function Game() {
         flushClock += dt;
         if (store.online && flushClock > FLUSH_EVERY) {
           flushClock = 0;
-          void store.flush();
+          // Kept alive too (supabase.ts): a bank on its way as the page goes still gets there.
+          void store.flush(true);
         }
 
         sharePose(now);
@@ -2392,6 +2435,7 @@ export function Game() {
       if (first) {
         first = false;
         setReady(true);
+        if (showFps) setFrameRead(() => readFrames);
       }
       raf = requestAnimationFrame(frame);
     };
@@ -2490,6 +2534,8 @@ export function Game() {
       <div ref={fadeRef} className={`pointer-events-none absolute inset-0 bg-black ${onlineConfigured ? "opacity-100" : "opacity-0"}`} />
       {/* The shutter's flash in photo mode. */}
       <div ref={flashRef} className="pointer-events-none absolute inset-0 bg-[rgba(255,246,232,1)] opacity-0" />
+      {/* The frame rate, with ?fps: over the films and the dark too, which are frames like any other. */}
+      {frameRead && <FrameRate read={frameRead} />}
 
       {mode !== "photo" && (
         <h1 className="pointer-events-none absolute left-5 top-4 text-lg font-semibold tracking-tight text-[rgba(255,246,232,0.78)] drop-shadow-sm">
@@ -2627,9 +2673,28 @@ export function Game() {
       )}
       {/* And the one line while a trip, or the opening, waits in the dark for San Francisco's data (ADR 0022). */}
       {cityWait && (
-        <p className="pointer-events-none absolute inset-x-4 bottom-10 text-center text-sm text-[rgba(255,246,232,0.88)] drop-shadow">
-          {cityWait}
-        </p>
+        <div className="pointer-events-none absolute inset-x-4 bottom-10 flex flex-col items-center gap-3">
+          <p className="text-center text-sm text-[rgba(255,246,232,0.88)] drop-shadow">{cityWait}</p>
+          {/* The opening has no HUD to sign out from, so the ways out are here. */}
+          {stranded && (
+            <div className="pointer-events-auto flex flex-wrap justify-center gap-2">
+              <button
+                onClick={() => void actions.current.trainHome().then(setStrandedSaid)}
+                disabled={(profile?.balance ?? 0) < WORLDS.valley.fare}
+                className="min-h-11 rounded-full border border-white/25 bg-black/30 px-4 text-sm text-[rgba(255,246,232,0.9)] outline-none backdrop-blur focus-visible:border-white/60 disabled:opacity-40"
+              >
+                Take the train home · {fmtMiles(WORLDS.valley.fare)} mi
+              </button>
+              <button
+                onClick={() => void signOut().then(() => window.location.reload())}
+                className="min-h-11 rounded-full border border-white/25 bg-black/30 px-4 text-sm text-[rgba(255,246,232,0.9)] outline-none backdrop-blur focus-visible:border-white/60"
+              >
+                Sign out and drive solo
+              </button>
+            </div>
+          )}
+          {stranded && strandedSaid && <p className="text-center text-xs text-[rgba(255,246,232,0.7)] drop-shadow">{strandedSaid}</p>}
+        </div>
       )}
 
       {toast && driving && (

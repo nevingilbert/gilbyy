@@ -1,7 +1,13 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
-import { CALL_EVERY, CONVOY_MAX, CONVOY_SILENCE, Convoys, LINE_UP_BACK, countEvery, flagGap, lineUp, readConvoy, type ConvoyEvent, type ConvoyMsg } from "./convoy";
+import {
+  CALL_EVERY, CONVOY_MAX, CONVOY_SILENCE, Convoys, FLAGS_MAX, ID_MAX, LINE_UP_BACK, TIME_MAX, countEvery, flagGap, lineUp, readConvoy,
+  type ConvoyEvent, type ConvoyMsg,
+} from "./convoy";
 import { buildIsland } from "./island";
-import type { Mission } from "./missions";
+import { TOO_QUICK, type Mission } from "./missions";
+import { buildVegas } from "./vegas";
 import { CAFE, CAMP_GATE, buildWorld } from "./world";
 
 const course: Mission = {
@@ -13,9 +19,11 @@ const course: Mission = {
 /**
  * Players on one broadcast channel. Messages arrive after the call that sent them has
  * returned, as they would over a network, and reach everyone else unless `drop` says
- * otherwise. `friends` lists who counts whom as a friend.
+ * otherwise. `friends` lists who counts whom as a friend. `online` is how it is signed in
+ * (ADR 0025): the server writes its sender's own id into every message, whatever it said,
+ * and sends it to everyone, the sender too.
  */
-function valley(ids: string[], friends: [string, string][], courses: Mission[] = [course]) {
+function valley(ids: string[], friends: [string, string][], courses: Mission[] = [course], online = false) {
   const events = new Map<string, ConvoyEvent[]>(ids.map((id) => [id, []]));
   const isFriend = (me: string) => (id: string) => friends.some(([a, b]) => (a === me && b === id) || (b === me && a === id));
   let now = 0;
@@ -25,8 +33,9 @@ function valley(ids: string[], friends: [string, string][], courses: Mission[] =
   for (const id of ids) players.set(id, new Convoys(() => id, (msg) => void (drop(id, msg) || queue.push([id, msg])), courses));
   const deliver = () => {
     for (let next = queue.shift(); next; next = queue.shift()) {
-      const [from, msg] = next;
-      for (const [other, p] of players) if (other !== from) events.get(other)!.push(...p.hear(msg, now, isFriend(other)));
+      const [from, said] = next;
+      const msg = online ? { ...said, from } : said;
+      for (const [other, p] of players) if (online || other !== from) events.get(other)!.push(...p.hear(msg, now, isFriend(other)));
     }
   };
   return {
@@ -54,7 +63,10 @@ function valley(ids: string[], friends: [string, string][], courses: Mission[] =
     dropWhen(f: typeof drop) {
       drop = f;
     },
-    /** Puts `msg` on the channel as `from` says it: anyone in the world can send anything, in any name. */
+    /**
+     * Puts `msg` on the channel as `from` says it: anyone in the world can send anything, in
+     * any name, but online it goes out in `from`'s own.
+     */
     forge(from: string, msg: ConvoyMsg) {
       queue.push([from, msg]);
     },
@@ -193,13 +205,42 @@ describe("gathering a convoy", () => {
     const ana = v.p("ana");
     const id = ana.state!.id;
     // Calls and the word to go only ever come from the gatherer, so these, for Ana's own
-    // convoy, are someone else's.
-    ana.hear({ kind: "open", id, mission: course.id, crew: ["ben", "cy"] }, v.now, () => true);
-    ana.hear({ kind: "go", id, mission: course.id, crew: ["ana", "cy"] }, v.now, () => true);
+    // convoy, are someone else's: whatever name they carry, and whoever they put first.
+    ana.hear({ kind: "open", id, from: "ben", mission: course.id, crew: ["ben", "cy"] }, v.now, () => true);
+    ana.hear({ kind: "go", id, from: "cy", mission: course.id, crew: ["ana", "cy"] }, v.now, () => true);
+    ana.hear({ kind: "go", id, from: "ana", mission: course.id, crew: ["ana", "cy"] }, v.now, () => true);
     expect(ana.state).toMatchObject({ phase: "gathering", leader: "ana" });
     expect(ana.state!.crew.map((d) => d.id)).toEqual(["ana", "ben"]);
     ana.go(v.now);
     expect(ana.state!.with).toEqual(["ben"]);
+  });
+
+  it("takes a call or the word to go only from the one gathering, and joiners keep to the one they joined", () => {
+    // Cy is Ben's friend, not Ana's, so Ana's calls mean nothing to her. She has the convoy's
+    // id, though: every message goes to everyone in the world.
+    const v = valley(["ana", "ben", "cy"], [["ana", "ben"], ["ben", "cy"]]);
+    v.p("ana").gather(course, v.now);
+    v.p("ben").join(v.p("ben").callFor("convoy")!.id, v.now);
+    for (const who of ["ana", "ben", "cy"]) v.seen(who);
+    const id = v.p("ana").state!.id;
+    // A call for Ana's convoy with Cy at its head, a go in Ana's name that Cy sends, and one
+    // with Ana first that says it's from Cy.
+    v.forge("cy", { kind: "open", id, from: "cy", mission: course.id, crew: ["cy", "ben"] });
+    v.forge("cy", { kind: "go", id, from: "cy", mission: course.id, crew: ["ana"] });
+    v.forge("cy", { kind: "go", id, from: "cy", mission: course.id, crew: ["ana", "cy"] });
+    expect(v.seen("ben")).toEqual([]);
+    expect(v.p("ben").state).toMatchObject({ id, leader: "ana", phase: "gathering" });
+    expect(v.p("ben").state!.crew.map((d) => d.id)).toEqual(["ana", "ben"]);
+    expect(v.p("ben").callFor("convoy")?.leader).toBe("ana");
+  });
+
+  it("keeps a friend's call in mind whoever else counts in it", () => {
+    const v = gathered();
+    const id = v.p("ana").state!.id;
+    v.p("cy").hear({ kind: "open", id, from: "ana", mission: course.id, crew: ["ana", "ben"] }, v.now, () => true);
+    // Only its gatherer counting would mean it had set off.
+    v.forge("ben", { kind: "pass", id, from: "ben", passed: 1 });
+    expect(v.p("cy").callFor("convoy")?.leader).toBe("ana");
   });
 
   it("gets a joiner in even if their first ask is lost", () => {
@@ -331,16 +372,65 @@ describe("driving as a convoy", () => {
     expect(v.p("ana").passed(course.gates.length, v.now)).toEqual([{ kind: "home", mission: course, with: ["ben"], times: [] }]);
     expect(v.seen("ben")).toContainEqual({ kind: "home", mission: course, with: ["ana"], times: [] });
   });
+
+  it("goes the same online, where all that's said comes back to its sender, in their own name", () => {
+    const v = valley(["ana", "ben", "cy"], [["ana", "ben"]], [course], true);
+    v.p("ana").gather(course, v.now);
+    // Her own call comes back to her, and is nothing new.
+    expect(v.seen("ana")).toEqual([]);
+    expect(v.seen("ben")).toEqual([{ kind: "called", leader: "ana", mission: course }]);
+    v.p("ben").join(v.p("ben").callFor("convoy")!.id, v.now);
+    expect(v.seen("ana")).toEqual([{ kind: "joined", who: "ben", mission: course }]);
+    expect(v.seen("ben")).toEqual([{ kind: "joined", who: "ben", mission: course }]);
+    v.p("ana").go(v.now);
+    expect(v.seen("ben")).toEqual([{ kind: "go", mission: course, slot: 1, crew: ["ana", "ben"] }]);
+    for (let n = 1; n <= course.gates.length; n++) v.p("ana").passed(n, v.now);
+    for (let n = 1; n < course.gates.length; n++) v.p("ben").passed(n, v.now);
+    expect(v.p("ben").passed(course.gates.length, v.now)).toEqual([{ kind: "home", mission: course, with: ["ana"], times: [] }]);
+    expect(v.seen("ana")).toContainEqual({ kind: "home", mission: course, with: ["ben"], times: [] });
+    expect(v.seen("cy")).toEqual([]);
+  });
+
+  it("online, can't be called off, set off, counted or left in anyone's name but the sender's", () => {
+    const v = valley(["ana", "ben", "cy"], [["ana", "ben"], ["ben", "cy"]], [course], true);
+    v.p("ana").gather(course, v.now);
+    v.p("ben").join(v.p("ben").callFor("convoy")!.id, v.now);
+    const id = v.p("ana").state!.id;
+    // While it gathers, Cy says Ana has called it off, and sets it off without Ben.
+    v.forge("cy", { kind: "leave", id, from: "ana" });
+    v.forge("cy", { kind: "go", id, from: "ana", mission: course.id, crew: ["ana"] });
+    expect(v.p("ben").state).toMatchObject({ id, phase: "gathering" });
+    v.p("ana").go(v.now);
+    for (const who of ["ana", "ben", "cy"]) v.seen(who);
+    // Once they're off, she says Ben is through the finish, and then that he has left.
+    v.forge("cy", { kind: "pass", id, from: "ben", passed: course.gates.length, seconds: 1 });
+    v.forge("cy", { kind: "leave", id, from: "ben" });
+    expect(v.p("ana").others()).toEqual([expect.objectContaining({ id: "ben", passed: 0 })]);
+    expect(v.seen("ana")).toEqual([]);
+    // So Ana through the finish isn't home: Ben has still to come.
+    for (let n = 1; n <= course.gates.length; n++) v.p("ana").passed(n, v.now);
+    expect(v.p("ana").state?.phase).toBe("running");
+  });
 });
 
 describe("convoy messages", () => {
+  const relay = readFileSync(resolve(__dirname, "../../../../supabase/migrations/20261018120000_convoy_relay.sql"), "utf8");
+  const uuid = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
+  /** How Postgres writes jsonb out, which is what the server measures: a space after every colon and comma. */
+  const asJsonb = (v: unknown): string =>
+    Array.isArray(v) ? `[${v.map(asJsonb).join(", ")}]`
+    : v !== null && typeof v === "object" ? `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${asJsonb(x)}`).join(", ")}}`
+    : JSON.stringify(v);
+
   it("are checked before they're believed", () => {
-    expect(readConvoy({ kind: "open", id: "x", mission: "convoy", crew: ["a", "b"] })).toEqual({ kind: "open", id: "x", mission: "convoy", crew: ["a", "b"] });
+    expect(readConvoy({ kind: "open", id: "x", from: "a", mission: "convoy", crew: ["a", "b"] })).toEqual({ kind: "open", id: "x", from: "a", mission: "convoy", crew: ["a", "b"] });
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3 })).toEqual({ kind: "pass", id: "x", from: "a", passed: 3 });
-    expect(readConvoy({ kind: "open", id: "x", mission: "convoy", crew: [] })).toBeNull();
+    expect(readConvoy({ kind: "open", id: "x", from: "a", mission: "convoy", crew: [] })).toBeNull();
+    // Every kind says who it's from, a call as much as a count: the server writes it in.
+    expect(readConvoy({ kind: "open", id: "x", mission: "convoy", crew: ["a", "b"] })).toBeNull();
     const ten = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
-    expect(readConvoy({ kind: "go", id: "x", mission: "convoy", crew: ten })).toEqual({ kind: "go", id: "x", mission: "convoy", crew: ten });
-    expect(readConvoy({ kind: "open", id: "x", mission: "convoy", crew: [...ten, "k"] })).toBeNull();
+    expect(readConvoy({ kind: "go", id: "x", from: "a", mission: "convoy", crew: ten })).toEqual({ kind: "go", id: "x", from: "a", mission: "convoy", crew: ten });
+    expect(readConvoy({ kind: "open", id: "x", from: "a", mission: "convoy", crew: [...ten, "k"] })).toBeNull();
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3, seconds: 92.5 })).toEqual({ kind: "pass", id: "x", from: "a", passed: 3, seconds: 92.5 });
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3, seconds: -1 })).toBeNull();
     expect(readConvoy({ kind: "pass", id: "x", from: "a", passed: 3, seconds: "fast" })).toBeNull();
@@ -350,6 +440,101 @@ describe("convoy messages", () => {
     expect(readConvoy({ kind: "steal", id: "x", from: "a" })).toBeNull();
     expect(readConvoy(null)).toBeNull();
     expect(readConvoy("open")).toBeNull();
+  });
+
+  it("carry nothing the server doesn't take, and are held to the same limits there", () => {
+    expect(relay).toContain(`length(p_message->>'id') not between 1 and ${ID_MAX}`);
+    expect(relay).toContain(`jsonb_array_length(p_message->'crew') not between 1 and ${CONVOY_MAX}`);
+    expect(relay).toContain(`::numeric not between 0 and ${FLAGS_MAX}`);
+    expect(relay).toContain(`::numeric not between 0 and ${TIME_MAX}`);
+    // What the server lets each kind carry.
+    const takes = new Map([...relay.matchAll(/when '(\w+)' then array\[([^\]]*)\]/g)].map(([, kind, list]) => [kind, list.split(",").map((f) => f.trim().replace(/'/g, ""))]));
+    expect([...takes.keys()].sort()).toEqual(["go", "join", "leave", "open", "pass"]);
+    // Everything the game says over a race, from gathering to coming home, and one called off.
+    const said: ConvoyMsg[] = [];
+    const race: Mission = { ...course, id: "race", race: true };
+    const v = valley(["ana", "ben"], [["ana", "ben"]], [race]);
+    v.dropWhen((_, msg) => (said.push(msg), false));
+    v.p("ana").gather(race, v.now);
+    v.p("ben").join(v.p("ben").callFor("race")!.id, v.now);
+    v.wait(CALL_EVERY + 1);
+    v.p("ana").go(v.now);
+    v.wait(2);
+    for (const who of ["ana", "ben"]) for (let n = 1; n <= race.gates.length; n++) v.p(who).passed(n, v.now, n === race.gates.length ? 60 : undefined);
+    v.p("ana").gather(race, v.now);
+    v.p("ana").leave();
+    expect(new Set(said.map((m) => m.kind))).toEqual(new Set(["open", "join", "go", "pass", "leave"]));
+    expect(said.some((m) => m.kind === "pass" && m.seconds !== undefined)).toBe(true);
+    for (const m of said) expect(Object.keys(m).every((k) => takes.get(m.kind)!.includes(k)), JSON.stringify(m)).toBe(true);
+  });
+
+  it("are never longer than the server takes, even a call with ten in the crew", () => {
+    const cap = Number(relay.match(/octet_length\(p_message::text\) > (\d+)/)?.[1]);
+    expect(cap).toBeGreaterThan(0);
+    // Everything in it as long as it may be.
+    const biggest: ConvoyMsg = { kind: "open", id: `${uuid(0)}:`.padEnd(ID_MAX, "z"), from: uuid(0), mission: "m".repeat(ID_MAX), crew: Array.from({ length: CONVOY_MAX }, (_, i) => uuid(i)) };
+    expect(readConvoy(biggest)).toEqual(biggest);
+    expect(asJsonb(biggest).length).toBeLessThan(cap);
+    // What the game itself sends is shorter still: at most a call for ten, on the course with the longest name.
+    const ids = Array.from({ length: CONVOY_MAX }, (_, i) => uuid(i));
+    const prix: Mission = { ...course, id: "grand-prix-race" };
+    const said: ConvoyMsg[] = [];
+    const v = valley(ids, ids.slice(1).map((id) => [ids[0], id] as [string, string]), [prix]);
+    v.dropWhen((_, msg) => (said.push(msg), false));
+    v.p(ids[0]).gather(prix, v.now);
+    for (const id of ids.slice(1)) v.p(id).join(v.p(id).callFor(prix.id)!.id, v.now);
+    v.wait(1);
+    expect(said.filter((m) => m.kind === "open").at(-1)).toMatchObject({ crew: ids });
+    expect(Math.max(...said.map((m) => asJsonb(m).length))).toBeLessThan(600);
+  });
+
+  it("name the gatherer at the head of a convoy's id and first in its crew, as the server checks", () => {
+    const c = new Convoys(() => uuid(7), () => {}, [course]);
+    c.gather(course, 0);
+    expect(c.state!.id.startsWith(`${uuid(7)}:`)).toBe(true);
+    expect(c.state!.crew[0].id).toBe(uuid(7));
+    expect(relay).toContain("starts_with(p_message->>'id', me::text || ':')");
+    expect(relay).toContain("p_message->'crew'->>0 <> me::text");
+  });
+
+  it("are never said faster than the server lets a player, by ten gathering at once or two racing the Grand Prix flat out", () => {
+    const burst = Number(relay.match(/burst constant int := (\d+);/)?.[1]);
+    const perSecond = Number(relay.match(/per_second constant numeric := ([\d.]+);/)?.[1]);
+    expect(burst).toBeGreaterThan(0);
+    expect(perSecond).toBeGreaterThan(0);
+    /** Whether the server would refuse any of a player's messages, said at `times`. */
+    const refused = (times: number[]) => {
+      let spare = burst;
+      let last = -Infinity;
+      return times.some((t) => {
+        spare = Math.min(burst, spare + (t - last) * perSecond) - 1;
+        last = t;
+        return spare < 0;
+      });
+    };
+    const prix = buildVegas().missions.find((m) => m.id === "grand-prix-race")!;
+    for (const crew of [CONVOY_MAX, 2]) {
+      const ids = Array.from({ length: crew }, (_, i) => `p${i}`);
+      const v = valley(ids, ids.slice(1).map((id) => ["p0", id] as [string, string]), [prix], true);
+      const when = new Map(ids.map((id) => [id, [] as number[]]));
+      v.dropWhen((from) => (when.get(from)!.push(v.now), false));
+      // Everyone asks at once, and they wait a while to set off.
+      v.p("p0").gather(prix, v.now);
+      for (const id of ids.slice(1)) v.p(id).join(v.p(id).callFor(prix.id)!.id, v.now);
+      v.wait(20);
+      v.p("p0").go(v.now);
+      // Then every truck through every flag together, at a speed no rig can average.
+      const pts = [prix.start, ...prix.gates];
+      let at = v.now;
+      for (const [i, g] of prix.gates.entries()) {
+        at += Math.hypot(g.x - pts[i].x, g.z - pts[i].z) / TOO_QUICK;
+        v.wait(at - v.now);
+        for (const id of ids) v.p(id).passed(i + 1, v.now, i + 1 === prix.gates.length ? v.now : undefined);
+      }
+      v.wait(5);
+      expect(v.p("p0").state).toBeNull();
+      for (const id of ids) expect(refused(when.get(id)!), `${id} of ${crew}`).toBe(false);
+    }
   });
 });
 

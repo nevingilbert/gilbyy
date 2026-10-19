@@ -30,6 +30,12 @@ over one drawn from memory, and 150 miles each way, the same as the plane.
   alleys whatever TIGER calls them; stairways and paths are left out; of the freeways
   only the two bridges and the Presidio's approach stay. It is about 415 KB, fetched
   only when the city is wanted (`loadCityData`), so the valley never pays for it.
+  Some stairways come through as streets anyway (the Greenwich and Filbert Steps, the
+  Oakhurst Lane stairway), and some streets cross cliffs they don't in life (Telegraph
+  Hill's Union, Alta, Montgomery and Lombard). Since 2026-10-18 `NOT_STREETS` in
+  `city.ts` takes those out of what's drawn, driven, routed and paved, and the city's
+  other streets are eased to no steeper than 38 degrees along themselves (`easeRoads`),
+  as no truck climbs past 40. The tunnel's mouth moved 5 m so 18th Street keeps its ground.
 - **Streets are painted, buildings are boxes.** A 2048-square distance-to-the-kerb map is
   painted by the terrain's shader as asphalt, kerb and pavement. About 30,000 buildings
   stand along the street fronts in lots by district: Victorian rows, the avenues'

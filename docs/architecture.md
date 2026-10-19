@@ -83,10 +83,11 @@ Pure modules, no three.js, all unit-tested:
   physics, the camera and the grass, and `ramp-model.ts` builds the boards from the same
   surface. Its fence and the boards under its lip are obstacles; the boards have a
   `top`, so only a truck on the ground behind is stopped by them.
-- `convoy.ts`: a convoy or race of two to ten friends, agreed among their clients over
-  the `world` channel: gathering at the arch, setting off, flag counts, finish times,
-  places, and coming home. Every message is safe to hear twice and is repeated until
-  answered (`decisions/0010-convoys.md`, `0011-races.md`).
+- `convoy.ts`: a convoy or race of two to ten friends, agreed among their clients in
+  messages the server hands on, writing in who sent each (`say_convoy()`,
+  `decisions/0025-convoy-messages-through-the-server.md`): gathering at the arch, setting
+  off, flag counts, finish times, places, and coming home. Every message is safe to hear
+  twice and is repeated until answered (`decisions/0010-convoys.md`, `0011-races.md`).
 - `world.ts`: trees, rocks and bushes scattered over all that, a bucketed obstacle
   lookup (each obstacle has a height, so tyres can decide what to climb), and the
   `Ground` interface the physics reads, including how slippery the ground is.
@@ -186,8 +187,10 @@ Pure modules, no three.js, all unit-tested:
   settle again; macaws and dolphins go where the time says. Not shared between players.
 - `store.ts`: progress behind one interface. `LocalStore` is in memory for single
   player; `SupabaseStore` calls the database functions.
-- `net.ts`: presence, tents, poses, friend requests and chat. `SupabaseNet` runs over
-  Supabase Realtime; `LocalNet` runs over a `BroadcastChannel`, for testing across
+- `net.ts`: presence, tents, poses, friend requests, chat and convoy messages.
+  `SupabaseNet` runs over Supabase Realtime, and sends convoy messages through
+  `say_convoy()` and hears them on the world's convoy channel, which only the server sends
+  on (`decisions/0025`); `LocalNet` runs over a `BroadcastChannel`, for testing across
   tabs.
 - `winch.ts`: the rules for pulling a stuck truck off a rock (ADR 0021). The sticking
   itself is in `physics.ts`; who is stuck travels in the poses, and hooking on is one
@@ -341,7 +344,16 @@ for sign-in (Google only), and Realtime for the shared valley. See
   directly in one place, its friends' names (`friends()` in `store.ts`), which the new
   policy allows; everything else comes through the `security definer` functions, which
   aren't held to it, and the names over trucks come from presence. So the order of this
-  and a deploy doesn't matter. Not yet applied to the live project.
+  and a deploy doesn't matter. Applied to the live project on 2026-10-18, after a
+  rolled-back dry run with `game.test.sql` passed; the checks pass against the migrated
+  project too.
+- `20261018120000_convoy_relay.sql` sends convoy messages through the server
+  (`decisions/0025`): `say_convoy()` writes in the caller's id as the sender, refuses
+  anything the game doesn't send, holds each player to thirty at once and one a second
+  after (`private.convoy_allowance`), and broadcasts with `realtime.send()` on
+  `convoy:<world>` for the world in the caller's profile. A policy lets the players in a
+  world listen there (the valley's, like `world`, anyone signed in), and none lets anyone
+  send. Pages need it before they're deployed. Not yet applied to the live project.
 - `supabase/tests/game.test.sql` plays three accounts against all of it, on a plain
   local Postgres or against the linked project in a transaction that rolls back (see
   `supabase/tests/README.md`).
@@ -366,8 +378,8 @@ To do it again from nothing:
 2. `supabase link --project-ref <ref>`, then `supabase db push`. Run the security and
    performance advisors afterwards.
 3. Realtime → Settings: turn **off** "Allow public access", so only signed-in players
-   can join the private `world` and `chat:` channels. A signed-out client then gets
-   `PrivateOnly` on any public channel.
+   can join the private `world`, `convoy:` and `chat:` channels. A signed-out client then
+   gets `PrivateOnly` on any public channel.
 4. Authentication → URL Configuration: Site URL `https://gilbyy.com`, and these
    redirect URLs:
    - `https://gilbyy.com/**` and `https://www.gilbyy.com/**` (`www` serves the site
@@ -437,7 +449,10 @@ that repo's problem, not this one's.
   someone resumes the project.
   `private.drive_log` is the one table that grows with play: a row per bank, every
   15 s while a truck moves, about 240 rows (roughly 30 kB) per hour of driving. A
-  thousand hours of play is around 30 MB, so nothing prunes it yet.
+  thousand hours of play is around 30 MB, so nothing prunes it yet. Convoy messages are
+  rows too, of `realtime.messages`, which Realtime drops after three days: a couple of
+  hundred a convoy, and at most 86,400 a day from any one player, held there by
+  `say_convoy()` (`decisions/0025`).
 - **Supabase Realtime free:**
   - **200 concurrent connections, 100 messages a second, and 2 million messages a
     month.** A broadcast counts once when it's sent and once for each player who
@@ -471,11 +486,19 @@ that repo's problem, not this one's.
   - Each world has its own channel (`worldTopic` in `net.ts`: `world` for the valley,
     `world:island` for the island) and its own thirty tents, so a pose is only ever
     delivered to players in the same world. The limits above are per project, though:
-    both channels draw on the same budget.
-  - Convoys and races (`convoy.ts`) are broadcasts too, received by everyone in the valley: while
-    gathering, a call every 3 s and a reply every 3 s from each joiner; while running,
-    each driver's flag count on every flag and every 5 s. A two-minute convoy of two
-    with four players in the valley is a few hundred messages, less than their poses.
+    both channels draw on the same budget. Each world has a convoy channel too
+    (`convoyTopic`: `convoy:valley`, `convoy:island` and so on), which only the server
+    sends on.
+  - Convoys and races (`convoy.ts`) go through the server (`decisions/0025`). Each
+    message is a call to `say_convoy()`, which writes in who sent it and passes it to
+    `realtime.send()` on the convoy channel of the sender's world. That counts like a
+    broadcast, once for each player there, the sender too (a broadcast from the database
+    has no `self: false`, so that's one more than over the socket). While gathering, a
+    call every 3 s and a reply every 3 s from each joiner; while running, each driver's
+    flag count on every flag and every 5 s. A two-minute convoy of two with four players
+    in the valley is a few hundred messages, less than their poses. `say_convoy()` lets
+    a player say thirty at once and one a second after that, so a script calling it in
+    a loop spends the budget no faster than a driver.
     A crew can be ten (ADR 0019), and ten trucks through one flag in the same second
     would be ten broadcasts to up to thirty players, past the hundred a second. So past
     four in a crew each truck waits half a second per truck between flag counts

@@ -3,7 +3,7 @@ import { dockBoard, dockLeave } from "./dock";
 import { boardSpot, leaveSpot } from "./flight";
 import { padBoard, padLeave } from "./heli";
 import { lineUpAlone, startRun, tick } from "./mission-run";
-import { MAX_CLIMB, makeCar, step, type Car, type CarSpec, type Input } from "./physics";
+import { MAX_CLIMB, makeCar, step, underside, type Car, type CarSpec, type Input } from "./physics";
 import { TIDE } from "./tide";
 import type { Ground, Mission, Obstacle, World } from "./world";
 
@@ -324,15 +324,16 @@ export function driveCourse(world: World, m: Mission, spec: CarSpec, limit = 420
   if (m.ebb !== undefined) world.setTide(TIDE.fall);
   const at = lineUpAlone(m);
   const car = makeCar(world, at.x, at.z, at.heading, spec);
-  // Where a bridge crosses over, whichever surface is under the truck, as Game.tsx has it.
+  // Where a bridge crosses over, whichever surface is under the truck, as Game.tsx has it,
+  // the deck it's up on or the ground under it: its height, and whether it's paved.
   const ground: Ground = {
-    height: (x, z) => world.height(x, z, car.y - spec.ride - 0.5),
+    height: (x, z) => world.height(x, z, underside(car, spec)),
     waterAt: (x, z) => world.waterAt(x, z),
     slipAt: (x, z) => world.slipAt(x, z),
     obstaclesNear: (x, z) => world.obstaclesNear(x, z),
     limit: world.limit,
     square: world.square,
-    pavedAt: (x, z) => world.pavedAt?.(x, z) ?? false,
+    pavedAt: (x, z, above = underside(car, spec)) => world.pavedAt?.(x, z, above) ?? false,
   };
   const run = startRun(m);
   run.clock = 0;
