@@ -6,12 +6,13 @@ import type { Mission } from "./missions";
  * everyone sees the same results. See docs/decisions/0010-convoys.md and
  * 0011-races.md.
  *
- * There is no game server, so the drivers agree among themselves over the valley's
- * broadcast channel (net.ts). One friend gathers at the start arch and calls out; friends
- * who drive up join; the one who gathered sets off; and from then on each truck says how
- * many flags it has passed. Everyone drives the course for themselves, and the convoy is
- * home once everyone still in it is through the finish. Then each claims the payout,
- * naming who they set off with.
+ * There is no game server, so the drivers agree among themselves, in messages that reach
+ * everyone in the world (net.ts). Online the database hands them on, writing in who sent
+ * each one, and decides nothing else (ADR 0025). One friend gathers at the start arch and
+ * calls out; friends who drive up join; the one who gathered sets off; and from then on
+ * each truck says how many flags it has passed. Everyone drives the course for themselves,
+ * and the convoy is home once everyone still in it is through the finish. Then each claims
+ * the payout, naming who they set off with.
  *
  * Broadcasts can be lost, so every message is safe to hear twice and each side repeats
  * itself until it hears back: the call goes out every few seconds while gathering, a
@@ -37,11 +38,15 @@ export const countEvery = (crew: number) => Math.max(COUNT_EVERY, crew * 0.8);
 /** Not heard from for this long, a driver has gone. Seconds. */
 export const CONVOY_SILENCE = 15;
 
+/**
+ * Each says who it's from. Online the server writes that in (say_convoy, ADR 0025), so it's
+ * true; between tabs of one browser (`?net=local`) it's only the tab's word.
+ */
 export type ConvoyMsg =
   /** From whoever is gathering: who is in so far, them first. */
-  | { kind: "open"; id: string; mission: string; crew: string[] }
+  | { kind: "open"; id: string; from: string; mission: string; crew: string[] }
   | { kind: "join"; id: string; from: string }
-  | { kind: "go"; id: string; mission: string; crew: string[] }
+  | { kind: "go"; id: string; from: string; mission: string; crew: string[] }
   /** How many flags `from` has passed, and once through the finish, in how long. */
   | { kind: "pass"; id: string; from: string; passed: number; seconds?: number }
   | { kind: "leave"; id: string; from: string };
@@ -79,23 +84,30 @@ export type ConvoyState = {
 type Call = { leader: string; mission: string; crew: string[]; heard: number };
 
 const KINDS = new Set(["open", "join", "go", "pass", "leave"]);
-const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= 80;
+/**
+ * The longest id a message may carry (a convoy's, a player's, a course's), the most flags it
+ * may count and the longest time it may give, in seconds. say_convoy() on the server takes
+ * no more (convoy.test.ts checks).
+ */
+export const ID_MAX = 80;
+export const FLAGS_MAX = 100;
+export const TIME_MAX = 36000;
+const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= ID_MAX;
 const isCrew = (v: unknown): v is string[] => Array.isArray(v) && v.length >= 1 && v.length <= CONVOY_MAX && v.every(isId);
 
 /** A convoy message off the wire, or null if it isn't one. */
 export function readConvoy(p: unknown): ConvoyMsg | null {
   const o = p as Record<string, unknown> | null;
-  if (!o || typeof o !== "object" || !KINDS.has(o.kind as string) || !isId(o.id)) return null;
+  if (!o || typeof o !== "object" || !KINDS.has(o.kind as string) || !isId(o.id) || !isId(o.from)) return null;
   if (o.kind === "open" || o.kind === "go") {
-    return isId(o.mission) && isCrew(o.crew) ? { kind: o.kind, id: o.id, mission: o.mission, crew: [...o.crew] } : null;
+    return isId(o.mission) && isCrew(o.crew) ? { kind: o.kind, id: o.id, from: o.from, mission: o.mission, crew: [...o.crew] } : null;
   }
-  if (!isId(o.from)) return null;
   if (o.kind === "pass") {
     const n = o.passed;
     const t = o.seconds;
-    if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 100) return null;
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > FLAGS_MAX) return null;
     if (t === undefined) return { kind: "pass", id: o.id, from: o.from, passed: n };
-    return typeof t === "number" && Number.isFinite(t) && t >= 0 && t <= 36000 ? { kind: "pass", id: o.id, from: o.from, passed: n, seconds: t } : null;
+    return typeof t === "number" && Number.isFinite(t) && t >= 0 && t <= TIME_MAX ? { kind: "pass", id: o.id, from: o.from, passed: n, seconds: t } : null;
   }
   return { kind: o.kind as "join" | "leave", id: o.id, from: o.from };
 }
@@ -162,7 +174,10 @@ export class Convoys {
     return 1 + this.others().filter(ahead).length;
   }
 
-  /** Starts gathering a convoy here, with me at its head. */
+  /**
+   * Starts gathering a convoy here, with me at its head. Its id begins with mine and a
+   * colon: online, only the one whose id that is may call it out or set it off (say_convoy).
+   */
   gather(mission: Mission, now: number) {
     if (this.state) return;
     const me = this.me();
@@ -185,7 +200,7 @@ export class Convoys {
   go(now: number): ConvoyEvent[] {
     const s = this.state;
     if (!s || s.leader !== this.me() || s.phase !== "gathering" || s.crew.length < s.mission.crew) return [];
-    this.send({ kind: "go", id: s.id, mission: s.mission.id, crew: s.crew.map((d) => d.id) });
+    this.send({ kind: "go", id: s.id, from: this.me(), mission: s.mission.id, crew: s.crew.map((d) => d.id) });
     return [this.start(now)];
   }
 
@@ -212,13 +227,19 @@ export class Convoys {
     const me = this.me();
     const s = this.state?.id === msg.id ? this.state : null;
     const out: ConvoyEvent[] = [];
-    // I never hear what I say myself, so a message in my name is someone else's doing: a
-    // count that has me through the finish before I am, or a leave that takes me out of my
-    // own convoy.
-    if ("from" in msg && msg.from === me) return out;
-    // Only the one gathering a convoy calls it out and sets it off, so a call or a go for one
-    // I'm gathering is someone else's too: the crew I set off with is the one I took.
-    if ((msg.kind === "open" || msg.kind === "go") && s?.leader === me) return out;
+    // Online, what I say comes back to me (the server sends each message to everyone in the
+    // world), and the name on a message is the sender's. So one in my name is my own, or my
+    // other tab's, and never news. Where a page could put any name on a message, it was
+    // someone else's doing: a count that has me through the finish before I am, or a leave
+    // that takes me out of my own convoy.
+    if (msg.from === me) return out;
+    // Only the one gathering a convoy calls it out and sets it off: the first in its crew,
+    // and for one I'm in or have heard called, the one I know. So a call or a go for one
+    // I'm gathering is never anyone else's: the crew I set off with is the one I took.
+    if (msg.kind === "open" || msg.kind === "go") {
+      const gatherer = s?.leader ?? this.calls.get(msg.id)?.leader ?? msg.crew[0];
+      if (msg.from !== msg.crew[0] || msg.from !== gatherer) return out;
+    }
     if (msg.kind === "open") {
       const leader = msg.crew[0];
       const mission = this.missions.find((m) => m.id === msg.mission);
@@ -251,16 +272,17 @@ export class Convoys {
         out.push({ kind: "off", leader: s.leader, mission: s.mission });
       }
     } else if (msg.kind === "pass") {
-      this.calls.delete(msg.id);
+      // Its gatherer counting means it has set off, and isn't calling for anyone now.
+      if (this.calls.get(msg.id)?.leader === msg.from) this.calls.delete(msg.id);
       if (!s) return out;
       // The gatherer is counting, so it set off and the word didn't reach us.
       if (s.phase === "gathering") {
         if (msg.from !== s.leader || !s.crew.some((d) => d.id === me)) return out;
         out.push(this.start(now));
       }
-      // Counts go to everyone in the world, and anyone can send one in any name, so only
-      // those who set off with us are counted. A stranger's count would have the convoy
-      // wait for them at the finish, and never come home.
+      // Counts go to everyone in the world, and anyone there can count in any convoy, if
+      // only in their own name, so only those who set off with us are counted. A stranger's
+      // count would have the convoy wait for them at the finish, and never come home.
       if (msg.from !== s.leader && !s.with.includes(msg.from)) return out;
       let d = s.crew.find((c) => c.id === msg.from);
       // Back after going quiet.
@@ -325,7 +347,7 @@ export class Convoys {
   private call(now: number) {
     const s = this.state!;
     this.sentAt = now;
-    this.send({ kind: "open", id: s.id, mission: s.mission.id, crew: s.crew.map((d) => d.id) });
+    this.send({ kind: "open", id: s.id, from: this.me(), mission: s.mission.id, crew: s.crew.map((d) => d.id) });
   }
 
   private count(now: number) {

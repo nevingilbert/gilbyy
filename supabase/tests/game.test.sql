@@ -420,6 +420,109 @@ select pg_temp.check((select count(*) from realtime.messages where topic = 'worl
 select pg_temp.check(not public.is_in_world('world:valley') and not public.is_in_world('world') and not public.is_in_world('world:moon'), 'only the world you are in has a channel for you');
 reset role;
 
+-- Convoy messages (ADR 0025) are said through say_convoy(). It sends each on the convoy
+-- channel of the world its sender is in, in the sender's own name whoever the message says
+-- it's from, and only if it's a message the game sends. a is on the island; b and c are in
+-- the valley.
+select pg_temp.as_player('b');
+set role authenticated;
+select public.say_convoy('{"kind": "pass", "id": "00000000-0000-0000-0000-00000000000a:t1", "from": "00000000-0000-0000-0000-00000000000a", "passed": 3, "seconds": 92.5}');
+select public.say_convoy('{"kind": "join", "id": "00000000-0000-0000-0000-00000000000a:t1"}');
+reset role;
+select pg_temp.check((select count(*) = 1 and bool_and(event = 'convoy' and private and extension = 'broadcast'
+    and payload = '{"kind": "pass", "id": "00000000-0000-0000-0000-00000000000a:t1", "from": "00000000-0000-0000-0000-00000000000b", "passed": 3, "seconds": 92.5}')
+  from realtime.messages where topic = 'convoy:valley' and payload->>'kind' = 'pass' and payload->>'id' = '00000000-0000-0000-0000-00000000000a:t1'),
+  'a convoy message goes out on its world''s convoy channel in its sender''s own name, whoever it says it is from');
+select pg_temp.check((select count(*) = 1 and bool_and(payload->>'from' = '00000000-0000-0000-0000-00000000000b')
+  from realtime.messages where topic = 'convoy:valley' and payload->>'kind' = 'join' and payload->>'id' = '00000000-0000-0000-0000-00000000000a:t1'),
+  'and one that names nobody goes out in theirs too');
+select pg_temp.as_player('a');
+set role authenticated;
+select public.say_convoy('{"kind": "open", "id": "00000000-0000-0000-0000-00000000000a:t2", "mission": "coast-convoy", "crew": ["00000000-0000-0000-0000-00000000000a", "00000000-0000-0000-0000-00000000000b"]}');
+select pg_temp.refused($$ select public.say_convoy('{"kind": "open", "id": "00000000-0000-0000-0000-00000000000b:t3", "mission": "coast-convoy", "crew": ["00000000-0000-0000-0000-00000000000a"]}') $$,
+  'only the one gathering', 'nobody calls out a convoy whose id is someone else''s');
+select pg_temp.refused($$ select public.say_convoy('{"kind": "go", "id": "00000000-0000-0000-0000-00000000000a:t2", "mission": "coast-convoy", "crew": ["00000000-0000-0000-0000-00000000000b", "00000000-0000-0000-0000-00000000000a"]}') $$,
+  'only the one gathering', 'nor sets one off with someone else at its head');
+select pg_temp.refused($$ select public.say_convoy('{"kind": "open", "id": "00000000-0000-0000-0000-00000000000a:t3", "mission": "convoy", "crew": ["00000000-0000-0000-0000-00000000000a"]}') $$,
+  'no course for friends here', 'nor gathers one for a course in another world');
+select pg_temp.refused($$ select public.say_convoy('{"kind": "open", "id": "00000000-0000-0000-0000-00000000000a:t3", "mission": "beach-run", "crew": ["00000000-0000-0000-0000-00000000000a"]}') $$,
+  'no course for friends here', 'or for one that is driven alone');
+select pg_temp.refused($$ select public.say_convoy('{"kind": "open", "id": "00000000-0000-0000-0000-00000000000a:t3", "mission": "coast-convoy", "crew": ["00000000-0000-0000-0000-00000000000a", "eve"]}') $$,
+  'not a convoy message', 'or with someone in its crew who is not a player');
+select pg_temp.refused($$ select public.say_convoy('{"kind": "steal", "id": "00000000-0000-0000-0000-00000000000a:t3"}') $$, 'not a convoy message', 'what is not a convoy message is refused');
+select pg_temp.refused($$ select public.say_convoy('{"kind": "join", "id": "00000000-0000-0000-0000-00000000000a:t3", "text": "hello"}') $$, 'not a convoy message', 'and so is one with anything added');
+select pg_temp.refused($$ select public.say_convoy('{"kind": "join"}') $$, 'not a convoy message', 'or anything missing');
+select pg_temp.refused($$ select public.say_convoy('{"kind": "pass", "id": "00000000-0000-0000-0000-00000000000a:t3", "passed": 1.5}') $$, 'not a convoy message', 'or a count of flags that is not a count');
+select pg_temp.refused($$ select public.say_convoy('{"kind": "pass", "id": "00000000-0000-0000-0000-00000000000a:t3", "passed": 3, "seconds": "fast"}') $$, 'not a convoy message', 'or a time that is not a time');
+select pg_temp.refused($$ select public.say_convoy('"open"') $$, 'not a convoy message', 'or no message at all');
+select pg_temp.refused($$ select public.say_convoy(null) $$, 'not a convoy message', 'or nothing');
+select pg_temp.refused($$ select public.say_convoy(('{"kind": "join", "id": "00000000-0000-0000-0000-00000000000a:t3", "from": "' || repeat('x', 1100) || '"}')::jsonb) $$,
+  'too long', 'and one longer than the game ever sends is refused');
+reset role;
+select pg_temp.check((select count(*) = 1 and bool_and(payload->>'from' = '00000000-0000-0000-0000-00000000000a')
+  from realtime.messages where topic = 'convoy:island' and payload->>'id' = '00000000-0000-0000-0000-00000000000a:t2'),
+  'a call goes out on the convoy channel of the world its gatherer is in');
+select pg_temp.check((select count(*) from realtime.messages where topic like 'convoy:%'
+  and payload->>'id' in ('00000000-0000-0000-0000-00000000000b:t3', '00000000-0000-0000-0000-00000000000a:t3')) = 0, 'and nothing refused goes out at all');
+set role anon;
+select pg_temp.refused($$ select public.say_convoy('{"kind": "join", "id": "00000000-0000-0000-0000-00000000000a:t3"}') $$, 'permission denied', 'signed out, nobody can say anything in a convoy');
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+select set_config('request.jwt.claims', '', false);
+set role authenticated;
+select pg_temp.refused($$ select public.say_convoy('{"kind": "join", "id": "00000000-0000-0000-0000-00000000000a:t3"}') $$, 'not signed in', 'nor can a caller with no account');
+reset role;
+-- Thirty at once, then one a second, so a script spends the Realtime budget (and rows of
+-- realtime.messages) no faster than a driver could. All of this runs in one moment.
+select pg_temp.as_player('c');
+set role authenticated;
+do $$ begin for i in 1..30 loop perform public.say_convoy('{"kind": "leave", "id": "00000000-0000-0000-0000-00000000000c:t4"}'); end loop; end $$;
+select pg_temp.refused($$ select public.say_convoy('{"kind": "leave", "id": "00000000-0000-0000-0000-00000000000c:t4"}') $$,
+  'too many', 'a player may say thirty at once, and a thirty-first has to wait');
+reset role;
+select pg_temp.check((select count(*) from realtime.messages where topic = 'convoy:valley' and payload->>'id' = '00000000-0000-0000-0000-00000000000c:t4'
+  and payload->>'from' = '00000000-0000-0000-0000-00000000000c') = 30, 'and only the thirty went out');
+-- Who hears a convoy channel: the players in its world, the valley's being anyone's who is
+-- signed in. Nobody sends on one but say_convoy().
+select set_config('realtime.topic', 'convoy:valley', false);
+select pg_temp.as_player('c');
+set role authenticated;
+select pg_temp.check((select count(*) from realtime.messages where topic = 'convoy:valley' and payload->>'from' = '00000000-0000-0000-0000-00000000000b') = 2,
+  'a player in the valley hears its convoy channel');
+select pg_temp.refused($$ insert into realtime.messages (topic, extension, payload) values (current_setting('realtime.topic'), 'broadcast', '{}') $$,
+  'row-level security', 'but cannot send on it themselves');
+select pg_temp.refused($$ insert into realtime.messages (topic, extension, payload) values (current_setting('realtime.topic'), 'presence', '{}') $$,
+  'row-level security', 'nor be seen there');
+reset role;
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select count(*) from realtime.messages where topic = 'convoy:valley' and payload->>'from' = '00000000-0000-0000-0000-00000000000b') = 2,
+  'the valley''s convoys are anyone''s to hear who is signed in, as its channel is');
+reset role;
+set role anon;
+select pg_temp.check((select count(*) from realtime.messages) = 0, 'and nobody''s who is signed out');
+reset role;
+select set_config('realtime.topic', 'convoy:island', false);
+select pg_temp.as_player('a');
+set role authenticated;
+select pg_temp.check((select count(*) from realtime.messages where topic = 'convoy:island' and payload->>'from' = '00000000-0000-0000-0000-00000000000a') = 1,
+  'a player on the island hears the island''s convoy channel');
+select pg_temp.refused($$ insert into realtime.messages (topic, extension, payload) values (current_setting('realtime.topic'), 'broadcast', '{}') $$,
+  'row-level security', 'and cannot send on it either');
+select pg_temp.check(not public.is_in_world('convoy:island') and not public.is_chat_member('convoy:island')
+  and not public.hears_convoys('world') and not public.hears_convoys('world:island')
+  and not public.hears_convoys('chat:00000000-0000-0000-0000-00000000000a:00000000-0000-0000-0000-00000000000b')
+  and not public.hears_convoys('convoy:city') and not public.hears_convoys('convoy:moon'),
+  'no older channel''s rule opens a convoy channel, and the convoy channels'' rule opens nothing else');
+reset role;
+select pg_temp.as_player('c');
+set role authenticated;
+select pg_temp.check((select count(*) from realtime.messages where topic = 'convoy:island') = 0, 'a player in the valley does not hear the island''s convoys');
+reset role;
+select pg_temp.check(not has_function_privilege('anon', 'public.say_convoy(jsonb)', 'execute') and has_function_privilege('authenticated', 'public.say_convoy(jsonb)', 'execute')
+  and not has_function_privilege('anon', 'public.hears_convoys(text)', 'execute') and has_function_privilege('authenticated', 'public.hears_convoys(text)', 'execute'),
+  'only someone signed in can say anything in a convoy, or be asked whether they hear one');
+
 -- The winch (ADR 0021): bought and fitted like any other part, and worth nothing but itself.
 update public.profiles set balance = 20 where id::text like '%00000000000a';
 select pg_temp.as_player('a');

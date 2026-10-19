@@ -3,11 +3,13 @@ import { resolve } from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, it, expect, vi } from "vitest";
 import { ACHIEVEMENTS, achievementsOf } from "./achievements";
+import type { ConvoyMsg } from "./convoy";
 import { currentGoal, GOALS } from "./goals";
 import { COUNTDOWN, crossed, startRun, tick } from "./mission-run";
 import type { Mission } from "./missions";
 import {
-  AWAY_HIDDEN, AWAY_IDLE, HEARTBEAT, MAX_PLAYERS, PoseGate, PresenceBudget, SupabaseNet, chatTopic, guessPose, isAway, poseInterval, readPeer, settle, staleAfter,
+  AWAY_HIDDEN, AWAY_IDLE, HEARTBEAT, MAX_PLAYERS, PoseGate, PresenceBudget, SupabaseNet, chatTopic, convoyTopic, guessPose, isAway, poseInterval, readPeer, settle,
+  staleAfter, worldTopic,
   type ChatLine, type NetHandlers, type Peer, type Pose,
 } from "./net";
 import { makeCar, noInput, step, yawRateOf, STOCK, type Car } from "./physics";
@@ -170,17 +172,24 @@ describe("presence updates", () => {
 
 /**
  * Just enough of Supabase for SupabaseNet: channels that join at once, and whose presence
- * and broadcasts the test says.
+ * and broadcasts the test says, and database functions that are answered when the test says.
  */
 function fakeRealtime() {
   type Handler = { type: string; event: string; cb: (msg: { payload?: unknown }) => void };
   const channels = new Map<string, { handlers: Handler[]; presence: Record<string, unknown[]> }>();
+  /** Every broadcast the page sent itself, on which channel. */
+  const sent: { topic: string; event: string }[] = [];
+  /** Every channel the page has left. */
+  const removed: string[] = [];
+  /** Every database function called, with what to call to answer it. */
+  const calls: { fn: string; args: unknown; answer: () => void }[] = [];
   const sb = {
     realtime: { setAuth: async () => {} },
     channel(topic: string) {
       const c = { handlers: [] as Handler[], presence: {} as Record<string, unknown[]> };
       channels.set(topic, c);
       const ch = {
+        topic,
         state: "joined",
         on(type: string, filter: { event: string }, cb: Handler["cb"]) {
           c.handlers.push({ type, event: filter.event, cb });
@@ -192,18 +201,28 @@ function fakeRealtime() {
         },
         presenceState: () => c.presence,
         track: async () => "ok",
-        send: async () => "ok",
+        send: async ({ event }: { event: string }) => (sent.push({ topic, event }), "ok"),
         httpSend: async () => ({ success: true }),
       };
       return ch;
     },
-    removeChannel: async () => "ok",
+    removeChannel: async (ch: { topic: string }) => (removed.push(ch.topic), "ok"),
+    rpc(fn: string, args: unknown) {
+      let answer = () => {};
+      const answered = new Promise((done) => (answer = () => done({ data: null, error: null, status: 204 })));
+      calls.push({ fn, args, answer: () => answer() });
+      return answered;
+    },
   };
   const fire = (topic: string, type: string, event: string, msg: { payload?: unknown }) => {
     for (const h of channels.get(topic)?.handlers ?? []) if (h.type === type && h.event === event) h.cb(msg);
   };
   return {
     sb: sb as unknown as SupabaseClient,
+    channels,
+    sent,
+    removed,
+    calls,
     /** Who is here on `topic`, as the server says it when anyone comes or goes. */
     present(topic: string, state: Record<string, unknown[]>) {
       channels.get(topic)!.presence = state;
@@ -258,6 +277,100 @@ describe("other players", () => {
     // A line in Bea's own name is from her other tab, not from Al.
     rt.broadcast(chatTopic("al", "bea"), "say", { from: "bea", text: "hi" });
     expect(heard).toHaveLength(2);
+  });
+});
+
+describe("convoy messages, signed in", () => {
+  /** A page signed in, in the world whose channel is `topic`, with a tent. */
+  const joined = async (rt: ReturnType<typeof fakeRealtime>, on: Partial<NetHandlers> = {}, topic?: string) => {
+    const net = new SupabaseNet(rt.sb, "me", { ...ignore(), ...on }, topic);
+    const joining = net.join({ id: "me", name: "Me", vehicle: "bluff", loadout: STOCK_LOADOUT });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await joining).toHaveProperty("tent");
+    return net;
+  };
+  const pass: ConvoyMsg = { kind: "pass", id: "ana:1", from: "me", passed: 2 };
+  const leave: ConvoyMsg = { kind: "leave", id: "ana:1", from: "me" };
+
+  it("go to the server, one at a time, and never out on the world's channel", async () => {
+    vi.useFakeTimers();
+    try {
+      const rt = fakeRealtime();
+      const net = await joined(rt);
+      net.convoy(pass);
+      net.convoy(leave);
+      await vi.advanceTimersByTimeAsync(0);
+      // The second waits for the first to be answered, so everyone hears them in the order they were said.
+      expect(rt.calls.map((c) => [c.fn, c.args])).toEqual([["say_convoy", { p_message: pass }]]);
+      rt.calls[0].answer();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(rt.calls.map((c) => [c.fn, c.args])).toEqual([["say_convoy", { p_message: pass }], ["say_convoy", { p_message: leave }]]);
+      expect(rt.sent.filter((s) => s.event === "convoy")).toEqual([]);
+      net.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("and one that's never answered holds up the next for only a few seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const rt = fakeRealtime();
+      const net = await joined(rt);
+      net.convoy(pass);
+      net.convoy(leave);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(rt.calls).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(rt.calls.map((c) => c.args)).toEqual([{ p_message: pass }, { p_message: leave }]);
+      net.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("are heard only on the world's convoy channel, which the server alone sends on", async () => {
+    vi.useFakeTimers();
+    try {
+      const rt = fakeRealtime();
+      const heard: ConvoyMsg[] = [];
+      const net = await joined(rt, { convoy: (msg) => void heard.push(msg) });
+      const call: ConvoyMsg = { kind: "open", id: "ana:1", from: "ana", mission: "convoy", crew: ["ana"] };
+      // On the world's channel anyone can say anything in anyone's name, so nobody listens for convoys there.
+      rt.broadcast("world", "convoy", call);
+      expect(heard).toEqual([]);
+      rt.broadcast(convoyTopic("valley"), "convoy", call);
+      expect(heard).toEqual([call]);
+      // Nor is anything believed there that isn't a convoy message.
+      rt.broadcast(convoyTopic("valley"), "convoy", { kind: "open", id: "ana:1", mission: "convoy", crew: ["ana"] });
+      expect(heard).toHaveLength(1);
+      // The convoy channel goes with the world's, and nothing more is said once gone.
+      net.leave();
+      expect(rt.removed).toEqual(expect.arrayContaining(["world", convoyTopic("valley")]));
+      net.convoy(pass);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(rt.calls).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("have a channel in each world, named as the server sends on it", async () => {
+    vi.useFakeTimers();
+    try {
+      const rt = fakeRealtime();
+      const net = await joined(rt, {}, worldTopic("island"));
+      expect([...rt.channels.keys()]).toEqual(expect.arrayContaining([worldTopic("island"), convoyTopic("island")]));
+      expect(rt.channels.has(convoyTopic("valley"))).toBe(false);
+      net.leave();
+    } finally {
+      vi.useRealTimers();
+    }
+    for (const w of ["valley", "island", "city", "vegas", "japan"] as const) expect(convoyTopic(w)).toBe(`convoy:${w}`);
+    const sql = readFileSync(resolve(__dirname, "../../../../supabase/migrations/20261018120000_convoy_relay.sql"), "utf8");
+    expect(sql).toContain("'convoy:' || here, true)");
+    expect(sql).toContain("p_topic = 'convoy:' || p.world");
+    expect(sql).toContain("p_topic = 'convoy:valley'");
   });
 });
 
