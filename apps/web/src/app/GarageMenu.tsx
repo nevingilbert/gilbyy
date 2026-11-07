@@ -131,8 +131,9 @@ export function GarageMenu({
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  // A sheet along the bottom on a screen held upright (an iPhone Duo open, a phone); down the right side otherwise.
   return (
-    <div className="pointer-events-auto absolute inset-x-3 bottom-3 flex max-h-[60dvh] flex-col rounded-2xl border border-white/10 bg-[rgba(24,20,17,0.8)] p-4 text-[rgba(255,246,232,0.86)] shadow-2xl backdrop-blur-md sm:inset-x-auto sm:bottom-auto sm:right-5 sm:top-5 sm:max-h-[calc(100dvh-2.5rem)] sm:w-[380px]">
+    <div className="pointer-events-auto absolute inset-x-3 bottom-3 mx-auto flex max-h-[60dvh] max-w-xl flex-col rounded-2xl border border-white/10 bg-[rgba(24,20,17,0.8)] p-4 text-[rgba(255,246,232,0.86)] shadow-2xl backdrop-blur-md sm:landscape:inset-x-auto sm:landscape:bottom-auto sm:landscape:right-5 sm:landscape:top-5 sm:landscape:max-h-[calc(100%-2.5rem)] sm:landscape:w-[380px]">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-lg font-semibold tracking-tight">{GARAGE_NAMES[style]}</h2>
         <span className="text-sm font-medium text-[rgba(255,246,232,0.85)]">{fmtMiles(profile.balance)} mi</span>
@@ -200,7 +201,7 @@ export function GarageMenu({
       {error && <p className="mt-2 text-xs text-[rgba(255,210,170,0.9)]">{error}</p>}
 
       <div className="mt-3 flex items-center justify-between">
-        <span className="hidden text-[11px] text-[rgba(255,246,232,0.4)] sm:block">← → tabs · ↑ ↓ choose · Enter buy or fit</span>
+        <span className="hidden text-[11px] text-[rgba(255,246,232,0.4)] keys:block">← → tabs · ↑ ↓ choose · Enter buy or fit</span>
         <button
           onClick={onLeave}
           className="rounded-full border border-white/20 px-4 py-1.5 text-sm text-[rgba(255,246,232,0.85)] hover:bg-white/10"
