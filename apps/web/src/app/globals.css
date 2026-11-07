@@ -24,3 +24,41 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/*
+ * Touch or keys, by the pointer rather than the width: an iPhone Duo opened is 669 by 951
+ * points, an iPad wider still, and both are driven with thumbs. `touch:` is a finger,
+ * `keys:` is everything else (a mouse, and the keyboard that comes with it).
+ */
+@custom-variant touch (@media (pointer: coarse));
+@custom-variant keys (@media not all and (pointer: coarse));
+
+/*
+ * The page runs edge to edge (viewport-fit=cover), under the notch, the Dynamic Island and
+ * the home bar. The world fills all of it; the HUD sits in `.safe`, inside the insets.
+ * `.safe` lets touches through to the world, its children take them as they always did.
+ */
+.safe {
+  position: absolute;
+  inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  pointer-events: none;
+}
+@layer base {
+  .safe > * {
+    pointer-events: auto;
+  }
+}
+
+/* A game, not a page: no bounce, no zoom on a double tap, no grey flash on a tap. */
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+  /* The haze (PALETTE.fog), so anything showing round the canvas is the sky's colour. */
+  background: #efb08c;
+}
+body {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}

@@ -2537,6 +2537,8 @@ export function Game() {
       {/* The frame rate, with ?fps: over the films and the dark too, which are frames like any other. */}
       {frameRead && <FrameRate read={frameRead} />}
 
+      {/* The HUD, inside the safe area: clear of the notch, the Dynamic Island and the home bar, in either orientation. */}
+      <div className="safe">
       {mode !== "photo" && (
         <h1 className="pointer-events-none absolute left-5 top-4 text-lg font-semibold tracking-tight text-[rgba(255,246,232,0.78)] drop-shadow-sm">
           gilbyy
@@ -2585,8 +2587,8 @@ export function Game() {
           )}
 
           {/* Minimap, speedometer and odometer: top-right on phones (clear of the thumbs), bottom-left otherwise. */}
-          <div className="absolute right-4 top-12 flex flex-col items-center gap-1 sm:bottom-5 sm:left-5 sm:right-auto sm:top-auto">
-            <canvas ref={miniRef} className="pointer-events-none h-[104px] w-[104px] rounded-full drop-shadow-md sm:h-[150px] sm:w-[150px]" />
+          <div className="absolute right-4 top-12 flex flex-col items-center gap-1 keys:bottom-5 keys:left-5 keys:right-auto keys:top-auto">
+            <canvas ref={miniRef} className="pointer-events-none h-[104px] w-[104px] rounded-full drop-shadow-md touch:sm:h-[136px] touch:sm:w-[136px] keys:h-[150px] keys:w-[150px]" />
             <p className="pointer-events-none -mb-1 text-[rgba(255,246,232,0.82)] drop-shadow-sm">
               <span ref={speedRef} className="text-base font-semibold tabular-nums">0</span>
               <span className="ml-1 text-[10px] font-semibold tracking-wide text-[rgba(255,246,232,0.6)]">mph</span>
@@ -2603,7 +2605,7 @@ export function Game() {
             {canPhoto && mode === "drive" && (
               <button
                 onClick={() => actions.current.photo()}
-                className="mt-1.5 h-11 w-11 rounded-full border border-white/25 bg-black/20 text-xs text-white/75 backdrop-blur sm:hidden"
+                className="mt-1.5 h-11 w-11 rounded-full border border-white/25 bg-black/20 text-xs text-white/75 backdrop-blur keys:hidden"
               >
                 photo
               </button>
@@ -2614,7 +2616,7 @@ export function Game() {
 
       {/* The keys that aren't driving, kept on the right edge for keyboards. Talk only works with a friend near. */}
       {driving && (
-        <ul className="pointer-events-none absolute right-5 top-1/2 hidden -translate-y-1/2 flex-col gap-1.5 text-[11px] font-medium tracking-wide text-[rgba(255,246,232,0.82)] drop-shadow sm:flex">
+        <ul className="pointer-events-none absolute right-5 top-1/2 hidden -translate-y-1/2 flex-col gap-1.5 text-[11px] font-medium tracking-wide text-[rgba(255,246,232,0.82)] drop-shadow keys:flex">
           {[
             { key: "M", label: "map" },
             { key: "L", label: "leaderboard" },
@@ -2656,7 +2658,7 @@ export function Game() {
               {" "}· {run.crew.filter((c) => c.passed >= run.of).length} of {run.crew.length} others through
             </span>
           )}
-          <span className="ml-2 hidden text-xs text-[rgba(255,246,232,0.5)] sm:inline">{run.crew.length || run.through ? "Esc to leave" : "Esc to give up"}</span>
+          <span className="ml-2 hidden text-xs text-[rgba(255,246,232,0.5)] keys:inline">{run.crew.length || run.through ? "Esc to leave" : "Esc to give up"}</span>
         </div>
       )}
       {count !== null && driving && (
@@ -2698,14 +2700,14 @@ export function Game() {
       )}
 
       {toast && driving && (
-        <p className="pointer-events-none absolute inset-x-4 top-[6.5rem] text-center text-sm text-[rgba(255,246,232,0.88)] drop-shadow sm:top-24">
+        <p className="pointer-events-none absolute inset-x-4 top-[6.5rem] text-center text-sm text-[rgba(255,246,232,0.88)] drop-shadow keys:top-24">
           {toast}
         </p>
       )}
 
       {/* Recent chat, and the box to type in. */}
       {driving && (chat.length > 0 || typing) && (
-        <div className="absolute bottom-40 left-4 flex w-[min(20rem,calc(100vw-2rem))] flex-col gap-1 sm:bottom-[13.5rem] sm:left-5">
+        <div className="absolute bottom-40 left-4 flex w-[min(20rem,calc(100vw-2rem))] flex-col gap-1 touch:sm:bottom-44 keys:bottom-[13.5rem] keys:left-5">
           {chat.map((l) => (
             <p key={l.key} className="pointer-events-none text-xs text-[rgba(255,246,232,0.88)] drop-shadow">
               <b className="font-semibold">{l.from}</b> {l.text}
@@ -2738,22 +2740,22 @@ export function Game() {
       )}
 
       <p
-        className={`pointer-events-none absolute inset-x-0 bottom-28 text-center text-sm text-[rgba(255,246,232,0.78)] drop-shadow transition-opacity duration-700 sm:bottom-10 ${
+        className={`pointer-events-none absolute inset-x-0 bottom-28 text-center text-sm text-[rgba(255,246,232,0.78)] drop-shadow transition-opacity duration-700 touch:sm:bottom-32 keys:bottom-10 ${
           showHint && ready && mode === "drive" && !prompt && !run ? "opacity-100" : "opacity-0"
         }`}
       >
-        <span className="hidden sm:inline">arrows or WASD to drive</span>
-        <span className="sm:hidden">hold ▲ to drive</span>
+        <span className="hidden keys:inline">arrows or WASD to drive</span>
+        <span className="keys:hidden">hold ▲ to drive</span>
       </p>
 
       {prompt && mode === "drive" && (
-        <div className="absolute inset-x-0 bottom-28 flex justify-center px-4 sm:bottom-10">
+        <div className="absolute inset-x-0 bottom-28 flex justify-center px-4 touch:sm:bottom-32 keys:bottom-10">
           <button
             onClick={() => actions.current.act()}
             disabled={!pressable}
             className="max-w-md rounded-full border border-white/25 bg-black/30 px-4 py-2 text-sm text-[rgba(255,246,232,0.9)] backdrop-blur"
           >
-            {pressable && <span className="mr-2 hidden rounded border border-white/30 px-1.5 text-xs sm:inline">{prompt.kind === "friend" ? "F" : "E"}</span>}
+            {pressable && <span className="mr-2 hidden rounded border border-white/30 px-1.5 text-xs keys:inline">{prompt.kind === "friend" ? "F" : "E"}</span>}
             {prompt.kind === "garage" && <>Enter {GARAGE_NAMES[prompt.style].replace(/^The /, "the ")}</>}
             {prompt.kind === "mission" && prompt.wait === 0 && (
               <>
@@ -2835,11 +2837,13 @@ export function Game() {
             <span className="h-11 w-11" />
           </div>
           <p className="text-center text-xs text-[rgba(255,246,232,0.78)] drop-shadow">
-            <span className="hidden sm:inline">drag or arrows to move round · scroll to zoom · Space to take a picture · Esc to go back</span>
-            <span className="sm:hidden">drag to move round · pinch to zoom</span>
+            <span className="hidden keys:inline">drag or arrows to move round · scroll to zoom · Space to take a picture · Esc to go back</span>
+            <span className="keys:hidden">drag to move round · pinch to zoom</span>
           </p>
         </div>
       )}
+
+      </div>
 
       {mode === "map" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={() => actions.current.toggleMap()}>
@@ -2855,15 +2859,16 @@ export function Game() {
               else actions.current.pin(fx, fy, box.width);
             }}
           />
-          <p className="pointer-events-none absolute bottom-24 text-center text-xs text-[rgba(255,246,232,0.6)] sm:bottom-4">
+          <p className="pointer-events-none absolute bottom-24 text-center text-xs text-[rgba(255,246,232,0.6)] mb-[env(safe-area-inset-bottom)] keys:bottom-4">
             {profile && <span className="block tabular-nums text-[rgba(255,246,232,0.85)]">{foundLine(countFound(profile.found, profile.world), profile.world)} found</span>}
-            <span className="hidden sm:inline">{pinned ? "click the pin to take it up" : "click the map to set a pin for the compass"} · M or Esc to close</span>
-            <span className="sm:hidden">{pinned ? "tap the pin to take it up" : "tap the map to set a pin"} · tap outside to close</span>
+            <span className="hidden keys:inline">{pinned ? "click the pin to take it up" : "click the map to set a pin for the compass"} · M or Esc to close</span>
+            <span className="keys:hidden">{pinned ? "tap the pin to take it up" : "tap the map to set a pin"} · tap outside to close</span>
           </p>
         </div>
       )}
 
       {mode === "garage" && profile && (
+        <div className="safe">
         <GarageMenu
           style={garageStyle}
           profile={profile}
@@ -2873,9 +2878,14 @@ export function Game() {
           onFit={(v, l) => actions.current.fit(v, l)}
           onLeave={() => actions.current.leave()}
         />
+        </div>
       )}
 
-      {mode === "pick" && !naming && <StarterPicker onLook={look} onPick={pick} />}
+      {mode === "pick" && !naming && (
+        <div className="safe">
+          <StarterPicker onLook={look} onPick={pick} />
+        </div>
+      )}
       {naming && <NamePanel onSave={(name) => actions.current.setName(name)} />}
       {signingIn && <SignInPanel onGoogle={signInWithGoogle} onClose={() => setSigningIn(false)} />}
       {visiting && <LandmarkCard kind={visiting} onClose={() => setVisiting(null)} />}
@@ -2893,8 +2903,9 @@ export function Game() {
 
       {/* Touch controls; a keyboard is assumed at sm and up. They stay up over the map, which the truck drives on under, but not over a panel. */}
       {(mode === "drive" || mode === "map") && !panelOpen && (
-        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-5 sm:hidden">
-          <div className="flex gap-3">
+        <div className="safe">
+        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-5 sm:p-7 keys:hidden">
+          <div className="flex gap-3 sm:gap-4">
             <TouchButton label="◀" {...hold("left")} />
             <TouchButton label="▶" {...hold("right")} />
           </div>
@@ -2914,10 +2925,11 @@ export function Game() {
               </button>
             )}
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 sm:gap-4">
             <TouchButton label="▼" {...hold("brake")} />
             <TouchButton label="▲" {...hold("gas")} />
           </div>
+        </div>
         </div>
       )}
     </div>
@@ -2930,7 +2942,7 @@ function TouchButton({ label, ...handlers }: { label: string } & React.Component
       {...handlers}
       aria-hidden
       tabIndex={-1}
-      className="h-16 w-16 touch-none rounded-full border border-white/25 bg-black/20 text-xl text-white/75 backdrop-blur select-none"
+      className="h-16 w-16 touch-none rounded-full border border-white/25 bg-black/20 text-xl text-white/75 backdrop-blur select-none active:bg-black/35 sm:h-20 sm:w-20 sm:text-2xl"
     >
       {label}
     </button>

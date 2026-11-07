@@ -68,15 +68,15 @@ export function StarterPicker({ onLook, onPick }: { onLook: (id: VehicleId) => v
 export function SoloBanner({ canSignIn, open, onSignIn, onHide }: { canSignIn: boolean; open: boolean; onSignIn: () => void; onHide: () => void }) {
   if (!open) {
     return canSignIn ? (
-      <button onClick={onSignIn} className="pointer-events-auto absolute right-4 top-4 hidden rounded-full border border-white/20 bg-black/25 px-3 py-1 text-xs text-[rgba(255,246,232,0.8)] backdrop-blur sm:block">
+      <button onClick={onSignIn} className="pointer-events-auto absolute right-4 top-4 hidden rounded-full border border-white/20 bg-black/25 px-3 py-1 text-xs text-[rgba(255,246,232,0.8)] backdrop-blur keys:block">
         Sign in
       </button>
     ) : null;
   }
   return (
-    // On phones it sits under the guidance line, clear of the minimap; centred under the compass otherwise.
-    <div className="pointer-events-none absolute left-3 right-[128px] top-[5.5rem] flex sm:inset-x-3 sm:top-14 sm:justify-center">
-      <div className="pointer-events-auto flex max-w-xl items-center gap-3 rounded-2xl border border-white/15 bg-black/30 py-1.5 pl-3 pr-1.5 text-xs text-[rgba(255,246,232,0.82)] backdrop-blur sm:rounded-full sm:pl-4">
+    // On a touch screen it sits under the guidance line, clear of the minimap; centred under the compass otherwise.
+    <div className="pointer-events-none absolute left-3 right-[128px] top-[5.5rem] flex touch:sm:right-[160px] keys:inset-x-3 keys:top-14 keys:justify-center">
+      <div className="pointer-events-auto flex max-w-xl items-center gap-3 rounded-2xl border border-white/15 bg-black/30 py-1.5 pl-3 pr-1.5 text-xs text-[rgba(255,246,232,0.82)] backdrop-blur keys:rounded-full keys:pl-4">
         <span>
           <b className="font-semibold">Single player.</b> Nothing is saved when you leave.
           {canSignIn && <span className="hidden sm:inline"> Sign in to keep your miles and drive with friends.</span>}
@@ -142,7 +142,7 @@ export function LandmarkCard({ kind, onClose }: { kind: LandmarkKind; onClose: (
         <p className="mt-3 text-xs text-[rgba(255,246,232,0.45)]">Something else I made. It opens in a new tab, and the valley stays where it is.</p>
         <div className="mt-3 flex items-center justify-between gap-3">
           <button className="min-h-11 pr-3 text-xs text-[rgba(255,246,232,0.45)] hover:text-[rgba(255,246,232,0.8)]" onClick={onClose}>
-            Keep driving <span className="hidden sm:inline">· Esc</span>
+            Keep driving <span className="hidden keys:inline">· Esc</span>
           </button>
           <a
             href={landmarkUrl(kind)}
@@ -238,7 +238,7 @@ export function TripCard({
         {error && <p className="mt-2 text-xs text-[rgba(255,210,170,0.9)]">{error}</p>}
         <div className="mt-3 flex items-center justify-between gap-3">
           <button className="min-h-11 pr-3 text-xs text-[rgba(255,246,232,0.45)] hover:text-[rgba(255,246,232,0.8)]" onClick={onClose}>
-            Not now <span className="hidden sm:inline">· Esc</span>
+            Not now <span className="hidden keys:inline">· Esc</span>
           </button>
           <button
             className={`${button} inline-flex min-h-11 items-center bg-white/10 outline-none focus-visible:border-white/60`}

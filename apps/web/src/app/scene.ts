@@ -38,6 +38,7 @@ import { buildBubbles } from "./bubbles";
 import { buildColliderView } from "./colliders-view";
 import { buildShowroom } from "./showroom";
 import { buildSky } from "./sky";
+import { BASE_FOV, fovFor, wideShotBack } from "./screen";
 import { buildGrass, buildTerrainMesh, buildWaterMesh, makeSurface } from "./terrain-mesh";
 import { CONSIST, trainMotion } from "./track";
 import { vehicleById, type VehicleId } from "./vehicles";
@@ -398,7 +399,7 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
   scene.background = new THREE.Color(PALETTE.fog);
   const fog = new THREE.FogExp2(PALETTE.fog, 0.0016);
   scene.fog = fog;
-  const camera = new THREE.PerspectiveCamera(48, 1, 0.5, FAR);
+  const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.5, FAR);
 
   const hemi = new THREE.HemisphereLight(PALETTE.hemiSky, PALETTE.hemiGround, 1.5);
   const sun = new THREE.DirectionalLight(PALETTE.sunLight, 3.2);
@@ -712,6 +713,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     const h = canvas.clientHeight;
     renderer.setSize(w, h, false);
     camera.aspect = w / Math.max(1, h);
+    // Upright, the view opens up so it isn't a narrow slice (an iPhone Duo open, a phone).
+    camera.fov = fovFor(camera.aspect);
     camera.updateProjectionMatrix();
     showroom.resize(w, h);
     stale = true;
@@ -848,8 +851,8 @@ export function createView(canvas: HTMLCanvasElement, first: World, vehicle: Veh
     if (film) {
       const c = film.frame.camera;
       look.set(c.to.x, c.to.y, c.to.z);
-      // A phone held upright sees a narrow slice, so where there's room the camera stands further back.
-      const back = c.wide ? Math.min(2.4, Math.max(1, 1.25 / camera.aspect)) : 1;
+      // A screen held upright sees a narrower slice, so where there's room the camera stands further back.
+      const back = c.wide ? wideShotBack(camera.aspect, camera.fov) : 1;
       want.set(c.from.x, c.from.y, c.from.z).sub(look).multiplyScalar(back).add(look);
       // A new shot is a cut. Within one the camera is where the film says, unless it's easing in.
       if (c.shot !== shot || c.ease === 0 || camPos.lengthSq() === 0) {
